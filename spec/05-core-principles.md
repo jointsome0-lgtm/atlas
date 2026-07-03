@@ -1,0 +1,98 @@
+## §5. Core Principles
+
+## §5.1 Suggested Routes Are Optional
+
+A route extracted from a plan is only a proposed path through the field.
+
+It may be:
+
+```text
+followed
+partially followed
+ignored
+hidden
+forgotten
+revisited
+split
+merged
+contradicted
+```
+
+Importing a route does not imply commitment.
+
+## §5.2 Personal Trail Is Sacred
+
+The user’s actual trail must not be overwritten by proposed routes.
+
+A trail is generated from:
+
+```text
+artifacts
+encounters
+questions
+notes
+tests
+code
+diagrams
+reviews
+explanations
+decisions
+```
+
+A trail cannot fail. It is historical memory.
+
+## §5.3 Understanding Is Not Imported
+
+Importing a plan creates candidate graph structure.
+
+It does not update user understanding.
+
+For example:
+
+```text
+Plan mentions Kafka offsets.
+```
+
+This creates:
+
+```yaml
+concept:kafka-offsets
+state:
+  exposure: unseen
+  confidence: unknown
+  clarity: vague
+```
+
+Only user artifacts can update that state.
+
+## §5.4 Materials Are Not Concepts
+
+A material is a source.
+A concept is an area of knowledge.
+
+One material can touch many concepts.
+One concept can be supported by many materials.
+One section of a material can be useful for a different concept than the material’s overall topic.
+
+## §5.5 Primary/Supporting Are Contextual Roles
+
+A material is not globally primary or supporting.
+
+It can be primary in one context and supporting in another.
+
+Correct:
+
+```text
+material X is primary for route step Y
+material X is supporting for question Z
+material X is primary for trail segment W
+```
+
+Incorrect:
+
+```text
+material X is primary forever
+```
+
+---
+
