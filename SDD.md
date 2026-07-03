@@ -9,7 +9,7 @@
 
 ## § Index
 
-Section numbers are stable: issues and the Decision Log cite them as `§7` / `§7.2`. Never renumber. New sections take the next free number or a sub-number; update this index when sections change.
+Section numbers are stable: issues and the Decision Log cite them as `§7` / `§7.2`. Never renumber. New sections take the next free number or a sub-number; update this index when sections change. Retired numbers are never reused: §22 (2026-07-04, merged into §12.3).
 
 - §1 Executive Summary — six layers (FieldGraph → Frontier); never a TODO system
 - §2 Problem Statement — suggested route vs the user's real learning trail
@@ -32,7 +32,6 @@ Section numbers are stable: issues and the Decision Log cite them as `§7` / `§
 - §19 Boundary Checker — forbidden terms, scanned paths
 - §20 Graph Builder — build steps, stdlib-only MVP
 - §21 Importer Design — hybrid deterministic + agent import
-- §22 Example: Uploaded Plan as Atlas Data — plan → nodes and initial state
 - §23 Progression Model — movement loop, no completion
 - §24 Security and Privacy — local-first, ignore paths
 - §25 Non-Functional Requirements — versionable, auditable, low pressure
@@ -41,6 +40,7 @@ Section numbers are stable: issues and the Decision Log cite them as `§7` / `§
 - §28 Risks and Mitigations — drift risks and countermeasures
 - §29 Implementation Phases — Phase 0–5
 - §30 Final Design Statement — three layers that must never collapse
+- §31 Key Invariants (candidates) — distilled hard rules; pending grill/approval
 - Decision Log — dated one-line decisions with rejected alternatives
 
 ---
@@ -96,16 +96,9 @@ REST → idempotency → HTTP status semantics → Redis idempotency keys → Ka
 
 Both are valuable, but they are different things.
 
-Atlas solves this by separating:
+Atlas solves this by separating `SuggestedRoute`, `PersonalTrail`, `InfluenceField`, and `StateGraph` (definitions: §6; principles: §5).
 
-```text
-SuggestedRoute  = path proposed by a plan
-PersonalTrail   = path actually traversed by the user
-InfluenceField  = area affected by user artifacts
-StateGraph      = current understanding state
-```
-
-The uploaded learning plan is a good example: it proposes building around a `distributed-systems-python-lab` repo with FastAPI REST, Redis, Kafka, RabbitMQ, gRPC, tests, and an E2E job flow; it also proposes routes and concrete probes/tests such as idempotency, Kafka offset safety, gRPC timeout handling, RabbitMQ DLQ behavior, and rate limiting. 
+The uploaded learning plan is a good example; see §12.3 for what it becomes (direction, suggested routes, concepts, probes).
 
 ---
 
@@ -1042,7 +1035,15 @@ chat transcript
 
 ## §12.3 Example from Uploaded Plan
 
-The uploaded plan would create a direction like:
+The uploaded plan becomes a plan node:
+
+```yaml
+plan:
+  id: plan:learn-basics-swe
+  title: Backend distributed systems practice in Python
+```
+
+It would create a direction like:
 
 ```yaml
 direction:backend-distributed-systems-python
@@ -1053,6 +1054,13 @@ It would create suggested routes such as:
 ```text
 REST → Redis → Kafka → RabbitMQ → gRPC → E2E
 REST → Redis → Kafka → gRPC → RabbitMQ
+```
+
+with ids:
+
+```text
+suggested-route:learn-basics-swe-default
+suggested-route:learn-basics-swe-roi
 ```
 
 It would create concepts including:
@@ -1091,17 +1099,36 @@ integration testing
 E2E job flow
 ```
 
+with ids such as:
+
+```text
+concept:rest-api
+concept:fastapi
+concept:redis
+concept:kafka
+concept:rabbitmq
+concept:grpc
+concept:idempotency
+concept:rate-limiting
+concept:kafka-offsets
+concept:rabbitmq-dlq
+concept:grpc-deadlines
+concept:e2e-distributed-job-flow
+```
+
 It would create probes such as:
 
 ```text
-duplicate POST idempotency
-Kafka offset commit safety
-gRPC timeout failure
-RabbitMQ DLQ behavior
-Redis rate limiting
+probe:duplicate-post-idempotency
+probe:kafka-offset-commit-safety
+probe:grpc-timeout-failure
+probe:rabbitmq-dlq
+probe:redis-rate-limit
 ```
 
-The plan describes these ideas around a single integrated Python lab using FastAPI, Redis, Kafka, RabbitMQ, gRPC, pytest/Testcontainers, and E2E job-flow tests. 
+All extracted understanding state starts as `unseen` / `unknown` / `vague`; understanding is never imported (see §5.3; §12.2 step 10).
+
+The plan describes these ideas around a single integrated Python lab (`distributed-systems-python-lab` repo) using FastAPI, Redis, Kafka, RabbitMQ, gRPC, pytest/Testcontainers, and E2E job-flow tests.
 
 ---
 
@@ -1578,62 +1605,6 @@ notes: []
 
 ---
 
-## §22. Example: Uploaded Plan as Atlas Data
-
-The uploaded plan becomes:
-
-```yaml
-plan:
-  id: plan:learn-basics-swe
-  title: Backend distributed systems practice in Python
-
-directions:
-  - direction:backend-distributed-systems-python
-
-suggested_routes:
-  - suggested-route:learn-basics-swe-default
-  - suggested-route:learn-basics-swe-roi
-
-concepts:
-  - concept:rest-api
-  - concept:fastapi
-  - concept:redis
-  - concept:kafka
-  - concept:rabbitmq
-  - concept:grpc
-  - concept:idempotency
-  - concept:rate-limiting
-  - concept:kafka-offsets
-  - concept:rabbitmq-dlq
-  - concept:grpc-deadlines
-  - concept:e2e-distributed-job-flow
-
-probes:
-  - probe:duplicate-post-idempotency
-  - probe:kafka-offset-commit-safety
-  - probe:grpc-timeout-failure
-  - probe:rabbitmq-dlq
-  - probe:redis-rate-limit
-```
-
-Initial state:
-
-```yaml
-concept:rest-api:
-  exposure: unseen
-  confidence: unknown
-  clarity: vague
-
-concept:kafka-offsets:
-  exposure: unseen
-  confidence: unknown
-  clarity: vague
-```
-
-Nothing becomes understood just because the plan was imported.
-
----
-
 ## §23. Progression Model
 
 The user progresses by movement, not by completion.
@@ -1689,9 +1660,7 @@ OpenAPI idempotency header
 Kafka idempotent consumer
 ```
 
-None of these are tasks.
-
-They are nearby territory.
+None of these are tasks — they are nearby territory (see §15).
 
 ---
 
@@ -1888,73 +1857,16 @@ validate no global primary/supporting on material node
 
 ## §29. Implementation Phases
 
-## Phase 0 — Repo Skeleton
+Sequencing only; MVP scope is defined in §26.
 
-Create:
-
-```text
-docs/
-atlas/
-state/
-graph/
-viewer/
-scripts/
-```
-
-Add SDD, ADRs, templates, boundary checker.
-
-## Phase 1 — Graph MVP
-
-Implement:
-
-```text
-concept/material/direction/suggested-route parsing
-graph JSON builder
-static viewer
-```
-
-## Phase 2 — Plan Import
-
-Implement:
-
-```text
-Markdown plan import
-extracted YAML
-manual review flow
-example import from uploaded SWE plan
-```
-
-## Phase 3 — Artifact Observation
-
-Implement:
-
-```text
-observe notes/tests/code
-propose artifacts
-update state
-record trail segments
-```
-
-## Phase 4 — Influence and Frontier
-
-Implement:
-
-```text
-influence computation
-frontier suggestions
-question graph
-```
-
-## Phase 5 — Agent Team Integration
-
-Implement:
-
-```text
-agent roles
-review workflows
-Codex checkpoints
-state-auditor gate
-```
+| Phase | Content |
+|-------|---------|
+| 0 — Repo skeleton | Create `docs/`, `atlas/`, `state/`, `graph/`, `viewer/`, `scripts/`; add SDD, ADRs, templates, boundary checker |
+| 1 — Graph MVP | Concept/material/direction/suggested-route parsing; graph JSON builder; static viewer |
+| 2 — Plan import | Markdown plan import; extracted YAML; manual review flow; example import from the uploaded SWE plan |
+| 3 — Artifact observation | Observe notes/tests/code; propose artifacts; update state; record trail segments |
+| 4 — Influence and frontier | Influence computation; frontier suggestions; question graph |
+| 5 — Agent team integration | Agent roles; review workflows; Codex checkpoints; state-auditor gate |
 
 ---
 
@@ -1990,9 +1902,29 @@ Core sentence:
 
 ---
 
+## §31. Key Invariants (candidates)
+
+**Status: candidates, pending grill/approval — not yet approved invariants.** Distilled from existing sections as a safety net for dedup passes: no edit may delete or weaken these statements without an explicit decision. The cited sections remain canonical.
+
+1. **Never a TODO system or guilt machine.** `todo`, `in_progress`, `done`, `blocked`, `deadline`, `ticket`, `sprint` are forbidden as core states; the boundary checker fails on task-manager language. Atlas may show state of understanding, never task-completion pressure. (§1, §4, §19)
+
+2. **The personal trail cannot fail and is never overwritten.** A trail segment is a memory of actual movement, not a commitment; proposed routes must not overwrite the user's actual trail. (§5.2, §9.9)
+
+3. **Understanding is never imported.** Plan import creates candidate graph structure with state `unseen`/`unknown` (unless prior artifacts exist); only user artifacts update understanding state. (§5.3, §12.2 step 10)
+
+4. **No global primary/supporting on materials.** `primary`/`supporting` are roles on contextual edges (route step, question, trail segment); the graph must never store global primary/supporting flags on a Material node. (§5.5, §11)
+
+5. **State and confidence upgrades require evidence.** Exposure levels are defined by user actions (read, summarized, applied, taught); every state update must be traceable to an artifact, encounter, question, manual note, or agent review; agents must not claim understanding without artifacts or upgrade confidence without reason. (§14, §17.2, §25.3)
+
+6. **Frontier wording carries no obligation.** The frontier is the visible edge of the influence field, not a TODO list: items carry `pressure: none` and use adjacency wording (nearby, adjacent, naturally connected, open, available, possible), never `next task` / `must do` / `overdue` / `blocked` / `remaining`. (§15)
+
+---
+
 ## Decision Log
 
 Format: `YYYY-MM-DD — decision in one phrase; rejected alternative and why.`
 
 - 2026-07-03 — Keep the SDD as a single file navigated via the § Index (map-as-interface); a physical split into a map file plus per-section files is deferred until after the structural dedup pass, and if done, must be a purely mechanical commit (concatenated section files must reproduce the original). Revisit triggers: code lands and sections graduate into living docs/tests; full-pass reviews start hitting context limits; parallel per-section editing becomes the norm; the file exceeds ~30–40K tokens despite dedup. Rejected alternative: splitting now — point reads already load only the needed section (§ Index + grep), a split does not fix the actual pain (cross-section duplication and drift), and splitting before dedup would migrate content about to be merged or deleted.
+- 2026-07-04 — Added §31 Key Invariants (candidates): six hard rules distilled from §1/§4/§5/§9.9/§11/§12.2/§14/§15/§17.2/§19/§25.3 as a safety net for dedup passes, explicitly marked pending grill/approval. Rejected alternative: approving invariants in the same pass — they deserve a dedicated grill session; unapproved candidates are enough to guard dedup against silent loss.
+- 2026-07-04 — Structural dedup, no decision changes (version stays 0.1): §22 merged into §12.3 (plan node, route/concept/probe ids; number §22 retired, never reused), §2 layer-definition block and uploaded-plan description replaced with refs to §5/§6/§12.3 (repo name moved to §12.3), §23.2 closing mantra compressed to a one-liner referencing §15, §29 compressed to a phase→content table with scope left to §26. Rejected alternative: leaving duplicates as is — copies drift further apart and cost more with every polishing session.
 
