@@ -7,7 +7,45 @@
 
 ---
 
-## 1. Executive Summary
+## § Index
+
+Section numbers are stable: issues and the Decision Log cite them as `§7` / `§7.2`. Never renumber. New sections take the next free number or a sub-number; update this index when sections change.
+
+- §1 Executive Summary — six layers (FieldGraph → Frontier); never a TODO system
+- §2 Problem Statement — suggested route vs the user's real learning trail
+- §3 Goals — product goals; cognitive goals (no guilt)
+- §4 Non-Goals — forbidden framings and states (todo/done/deadline…)
+- §5 Core Principles — routes optional; trail sacred; understanding not imported; materials ≠ concepts; primary/supporting contextual
+- §6 Core Ontology — glossary: Field, Concept, Material(Part), Encounter, Artifact, Probe, Question, Route, Trail, Influence, State, Frontier
+- §7 High-Level Architecture — plan-import and artifact-observation pipelines
+- §8 Repository Layout — target file tree
+- §9 Data Model — schemas: Concept, Material, MaterialPart, SuggestedRoute, Direction, Artifact, Encounter, Question, Trail, InfluenceField
+- §10 Graph Model — node types, edge types, edge metadata
+- §11 Primary and Supporting Materials — contextual roles per route/question/trail
+- §12 Plan Import Flow — inputs, import steps, example
+- §13 Artifact Observation Flow — inputs, observation steps, example
+- §14 State Update Rules — exposure, confidence, clarity, coverage scales
+- §15 Frontier Computation — inputs, output format, allowed/forbidden wording
+- §16 Viewer Design — modes, visual semantics, required UI behavior
+- §17 Agent Architecture — core agents and agent rules
+- §18 Codex Role — checkpoints and challenge questions
+- §19 Boundary Checker — forbidden terms, scanned paths
+- §20 Graph Builder — build steps, stdlib-only MVP
+- §21 Importer Design — hybrid deterministic + agent import
+- §22 Example: Uploaded Plan as Atlas Data — plan → nodes and initial state
+- §23 Progression Model — movement loop, no completion
+- §24 Security and Privacy — local-first, ignore paths
+- §25 Non-Functional Requirements — versionable, auditable, low pressure
+- §26 MVP Scope — must have / can skip
+- §27 Acceptance Criteria — 10 MVP checks
+- §28 Risks and Mitigations — drift risks and countermeasures
+- §29 Implementation Phases — Phase 0–5
+- §30 Final Design Statement — three layers that must never collapse
+- Decision Log — dated one-line decisions with rejected alternatives
+
+---
+
+## §1. Executive Summary
 
 **Atlas** is a local-first system for building a living knowledge graph of a technical field and the user’s movement through it.
 
@@ -36,7 +74,7 @@ Atlas must never become a TODO system, productivity ledger, sprint board, or gui
 
 ---
 
-## 2. Problem Statement
+## §2. Problem Statement
 
 Learning plans are useful, but they usually produce pressure:
 
@@ -71,9 +109,9 @@ The uploaded learning plan is a good example: it proposes building around a `dis
 
 ---
 
-## 3. Goals
+## §3. Goals
 
-### 3.1 Product Goals
+### §3.1 Product Goals
 
 Atlas should:
 
@@ -87,7 +125,7 @@ Atlas should:
 8. Support agent-based analysis, review, and graph maintenance.
 9. Keep all data local, versionable, inspectable, and editable.
 
-### 3.2 Cognitive Goals
+### §3.2 Cognitive Goals
 
 Atlas should help the user feel:
 
@@ -109,7 +147,7 @@ Atlas must not create:
 
 ---
 
-## 4. Non-Goals
+## §4. Non-Goals
 
 Atlas is not:
 
@@ -142,9 +180,9 @@ Atlas may show **state of understanding**, but never **task completion pressure*
 
 ---
 
-## 5. Core Principles
+## §5. Core Principles
 
-## 5.1 Suggested Routes Are Optional
+## §5.1 Suggested Routes Are Optional
 
 A route extracted from a plan is only a proposed path through the field.
 
@@ -164,7 +202,7 @@ contradicted
 
 Importing a route does not imply commitment.
 
-## 5.2 Personal Trail Is Sacred
+## §5.2 Personal Trail Is Sacred
 
 The user’s actual trail must not be overwritten by proposed routes.
 
@@ -185,7 +223,7 @@ decisions
 
 A trail cannot fail. It is historical memory.
 
-## 5.3 Understanding Is Not Imported
+## §5.3 Understanding Is Not Imported
 
 Importing a plan creates candidate graph structure.
 
@@ -209,7 +247,7 @@ state:
 
 Only user artifacts can update that state.
 
-## 5.4 Materials Are Not Concepts
+## §5.4 Materials Are Not Concepts
 
 A material is a source.
 A concept is an area of knowledge.
@@ -218,7 +256,7 @@ One material can touch many concepts.
 One concept can be supported by many materials.
 One section of a material can be useful for a different concept than the material’s overall topic.
 
-## 5.5 Primary/Supporting Are Contextual Roles
+## §5.5 Primary/Supporting Are Contextual Roles
 
 A material is not globally primary or supporting.
 
@@ -240,7 +278,7 @@ material X is primary forever
 
 ---
 
-## 6. Core Ontology
+## §6. Core Ontology
 
 ```text
 Field          = knowledge space
@@ -262,7 +300,7 @@ Frontier       = nearby territory naturally suggested by current state
 
 ---
 
-## 7. High-Level Architecture
+## §7. High-Level Architecture
 
 ```text
                    ┌────────────────────┐
@@ -328,7 +366,7 @@ User artifacts / notes / code / tests
 
 ---
 
-## 8. Repository Layout
+## §8. Repository Layout
 
 ```text
 atlas/
@@ -427,9 +465,9 @@ atlas/
 
 ---
 
-## 9. Data Model
+## §9. Data Model
 
-## 9.1 Concept
+## §9.1 Concept
 
 A **Concept** is a knowledge region.
 
@@ -494,7 +532,7 @@ state:
 
 ---
 
-## 9.2 Material
+## §9.2 Material
 
 A **Material** is a source.
 
@@ -532,7 +570,7 @@ internal
 
 ---
 
-## 9.3 MaterialPart
+## §9.3 MaterialPart
 
 A **MaterialPart** is created when a material has sections that map to different concepts.
 
@@ -566,7 +604,7 @@ Create MaterialPart only when whole-material mapping would be misleading.
 
 ---
 
-## 9.4 SuggestedRoute
+## §9.4 SuggestedRoute
 
 A **SuggestedRoute** is a path proposed by a plan.
 
@@ -611,7 +649,7 @@ blocked
 
 ---
 
-## 9.5 Direction
+## §9.5 Direction
 
 A **Direction** is a stable vector of movement.
 
@@ -641,7 +679,7 @@ It is a compass.
 
 ---
 
-## 9.6 Artifact
+## §9.6 Artifact
 
 An **Artifact** is user-created evidence of movement.
 
@@ -690,7 +728,7 @@ reviewed
 
 ---
 
-## 9.7 Encounter
+## §9.7 Encounter
 
 An **Encounter** is contact with a material or material part.
 
@@ -727,7 +765,7 @@ It does not automatically imply concept mastery.
 
 ---
 
-## 9.8 Question
+## §9.8 Question
 
 A **Question** is an explicit pull in the map.
 
@@ -760,7 +798,7 @@ No `done`.
 
 ---
 
-## 9.9 PersonalTrail and TrailSegment
+## §9.9 PersonalTrail and TrailSegment
 
 A **PersonalTrail** is the user’s actual movement.
 
@@ -796,7 +834,7 @@ It is only a memory of actual movement.
 
 ---
 
-## 9.10 InfluenceField
+## §9.10 InfluenceField
 
 The **InfluenceField** is computed from artifacts, encounters, questions, and trail segments.
 
@@ -839,7 +877,7 @@ It means:
 
 ---
 
-## 10. Graph Model
+## §10. Graph Model
 
 Generated graph file:
 
@@ -855,7 +893,7 @@ Generated graph file:
 }
 ```
 
-## 10.1 Node Types
+## §10.1 Node Types
 
 ```text
 concept
@@ -872,7 +910,7 @@ probe
 snapshot
 ```
 
-## 10.2 Edge Types
+## §10.2 Edge Types
 
 ```text
 related_to
@@ -900,7 +938,7 @@ primary_for
 supporting_for
 ```
 
-## 10.3 Edge Metadata
+## §10.3 Edge Metadata
 
 Edges should support metadata:
 
@@ -919,11 +957,11 @@ Edges should support metadata:
 
 ---
 
-## 11. Primary and Supporting Materials
+## §11. Primary and Supporting Materials
 
 `primary` and `supporting` are contextual edge roles.
 
-## 11.1 Route Context
+## §11.1 Route Context
 
 ```yaml
 context: suggested-route:learn-basics-swe-default
@@ -935,7 +973,7 @@ supporting_materials:
   - material:openapi-spec
 ```
 
-## 11.2 Question Context
+## §11.2 Question Context
 
 ```yaml
 context: question:201-vs-202
@@ -946,7 +984,7 @@ supporting_materials:
 reason: Needed to resolve async creation response semantics.
 ```
 
-## 11.3 Trail Context
+## §11.3 Trail Context
 
 ```yaml
 context: trail-segment:2026-06-05-001
@@ -965,9 +1003,9 @@ The graph must never store global primary/supporting flags on Material itself.
 
 ---
 
-## 12. Plan Import Flow
+## §12. Plan Import Flow
 
-## 12.1 Input
+## §12.1 Input
 
 Supported initial input:
 
@@ -986,7 +1024,7 @@ repo README
 chat transcript
 ```
 
-## 12.2 Import Steps
+## §12.2 Import Steps
 
 ```text
 1. Store original plan under plans/imported/.
@@ -1002,7 +1040,7 @@ chat transcript
 11. Generate import report.
 ```
 
-## 12.3 Example from Uploaded Plan
+## §12.3 Example from Uploaded Plan
 
 The uploaded plan would create a direction like:
 
@@ -1067,9 +1105,9 @@ The plan describes these ideas around a single integrated Python lab using FastA
 
 ---
 
-## 13. Artifact Observation Flow
+## §13. Artifact Observation Flow
 
-## 13.1 Inputs
+## §13.1 Inputs
 
 The observer scans:
 
@@ -1087,7 +1125,7 @@ diagrams
 manual declarations
 ```
 
-## 13.2 Observation Steps
+## §13.2 Observation Steps
 
 ```text
 1. Detect changed or new user artifacts.
@@ -1101,7 +1139,7 @@ manual declarations
 9. Ask for review only when update is ambiguous or high-impact.
 ```
 
-## 13.3 Example
+## §13.3 Example
 
 If user creates:
 
@@ -1144,9 +1182,9 @@ Kafka next required.
 
 ---
 
-## 14. State Update Rules
+## §14. State Update Rules
 
-## 14.1 Concept Exposure
+## §14.1 Concept Exposure
 
 ```text
 unseen      = exists in graph, no user contact
@@ -1157,7 +1195,7 @@ applied     = user created artifact applying concept
 taught      = user explained concept and survived review
 ```
 
-## 14.2 Confidence
+## §14.2 Confidence
 
 ```text
 unknown = no signal
@@ -1166,7 +1204,7 @@ medium  = can use with some support
 high    = can explain/apply reliably across contexts
 ```
 
-## 14.3 Clarity
+## §14.3 Clarity
 
 ```text
 vague    = term exists but boundaries unclear
@@ -1175,7 +1213,7 @@ stable   = model is coherent
 disputed = conflicting sources or unresolved definition
 ```
 
-## 14.4 Coverage
+## §14.4 Coverage
 
 ```text
 none
@@ -1194,13 +1232,13 @@ but offsets and consumer groups may remain partial.
 
 ---
 
-## 15. Frontier Computation
+## §15. Frontier Computation
 
 The **Frontier** is not a TODO list.
 
 It is the visible edge of the current influence field.
 
-## 15.1 Inputs
+## §15.1 Inputs
 
 ```text
 current position
@@ -1213,7 +1251,7 @@ stale nodes
 weak confidence nodes
 ```
 
-## 15.2 Output
+## §15.2 Output
 
 Example:
 
@@ -1261,9 +1299,9 @@ possible
 
 ---
 
-## 16. Viewer Design
+## §16. Viewer Design
 
-## 16.1 Viewer Modes
+## §16.1 Viewer Modes
 
 The viewer should support at least:
 
@@ -1278,7 +1316,7 @@ Frontier View
 Question View
 ```
 
-## 16.2 Visual Semantics
+## §16.2 Visual Semantics
 
 Suggested routes:
 
@@ -1317,7 +1355,7 @@ pulsing or highlighted nodes
 pulling nearby concepts
 ```
 
-## 16.3 Required UI Behavior
+## §16.3 Required UI Behavior
 
 The viewer should let the user answer:
 
@@ -1334,9 +1372,9 @@ What is nearby but not obligatory?
 
 ---
 
-## 17. Agent Architecture
+## §17. Agent Architecture
 
-## 17.1 Core Agents
+## §17.1 Core Agents
 
 ```text
 atlas-architect
@@ -1370,7 +1408,7 @@ codex-coordinator
   Uses Codex only for checkpoint review/rescue.
 ```
 
-## 17.2 Agent Rules
+## §17.2 Agent Rules
 
 Agents may:
 
@@ -1397,7 +1435,7 @@ upgrade confidence without reason
 
 ---
 
-## 18. Codex Role
+## §18. Codex Role
 
 Codex is not a permanent teammate.
 
@@ -1432,7 +1470,7 @@ Is the graph too complex to maintain?
 
 ---
 
-## 19. Boundary Checker
+## §19. Boundary Checker
 
 `scripts/check_atlas_boundaries.py` should fail on forbidden project/task-manager language outside explicit forbidden-term sections.
 
@@ -1469,7 +1507,7 @@ graph/
 
 ---
 
-## 20. Graph Builder
+## §20. Graph Builder
 
 `scripts/build_atlas_graph.py` should:
 
@@ -1509,11 +1547,11 @@ MVP should prefer minimal dependencies.
 
 ---
 
-## 21. Importer Design
+## §21. Importer Design
 
 `scripts/import_plan.py` should initially support Markdown.
 
-## 21.1 MVP Strategy
+## §21.1 MVP Strategy
 
 Because fully automatic plan understanding is hard, use a hybrid approach:
 
@@ -1524,7 +1562,7 @@ Because fully automatic plan understanding is hard, use a hybrid approach:
 4. Graph builder consumes reviewed YAML.
 ```
 
-## 21.2 Output
+## §21.2 Output
 
 ```yaml
 id: plan:learn-basics-swe
@@ -1540,7 +1578,7 @@ notes: []
 
 ---
 
-## 22. Example: Uploaded Plan as Atlas Data
+## §22. Example: Uploaded Plan as Atlas Data
 
 The uploaded plan becomes:
 
@@ -1596,11 +1634,11 @@ Nothing becomes understood just because the plan was imported.
 
 ---
 
-## 23. Progression Model
+## §23. Progression Model
 
 The user progresses by movement, not by completion.
 
-## 23.1 Normal Loop
+## §23.1 Normal Loop
 
 ```text
 1. Import a plan.
@@ -1614,7 +1652,7 @@ The user progresses by movement, not by completion.
 9. Atlas shows Frontier.
 ```
 
-## 23.2 Example
+## §23.2 Example
 
 Plan suggests:
 
@@ -1657,7 +1695,7 @@ They are nearby territory.
 
 ---
 
-## 24. Security and Privacy
+## §24. Security and Privacy
 
 Atlas is local-first.
 
@@ -1687,13 +1725,13 @@ build/
 
 ---
 
-## 25. Non-Functional Requirements
+## §25. Non-Functional Requirements
 
-## 25.1 Local-First
+## §25.1 Local-First
 
 All primary data lives in the repo.
 
-## 25.2 Versionable
+## §25.2 Versionable
 
 All graph state should be plain text or JSON:
 
@@ -1703,7 +1741,7 @@ YAML
 JSON
 ```
 
-## 25.3 Auditable
+## §25.3 Auditable
 
 Every state update should be traceable to:
 
@@ -1715,11 +1753,11 @@ manual note
 agent review
 ```
 
-## 25.4 Low Pressure
+## §25.4 Low Pressure
 
 No dashboards should imply lateness, failure, or incompletion.
 
-## 25.5 Extensible
+## §25.5 Extensible
 
 The system should later support:
 
@@ -1735,9 +1773,9 @@ external connectors
 
 ---
 
-## 26. MVP Scope
+## §26. MVP Scope
 
-## 26.1 MVP Must Have
+## §26.1 MVP Must Have
 
 ```text
 manual/assisted plan import
@@ -1755,7 +1793,7 @@ boundary checker
 one imported example plan
 ```
 
-## 26.2 MVP Can Skip
+## §26.2 MVP Can Skip
 
 ```text
 full automatic material scraping
@@ -1771,7 +1809,7 @@ automatic confidence upgrades
 
 ---
 
-## 27. Acceptance Criteria
+## §27. Acceptance Criteria
 
 The MVP is acceptable when:
 
@@ -1792,9 +1830,9 @@ suggested route ≠ personal trail ≠ understanding state
 
 ---
 
-## 28. Risks and Mitigations
+## §28. Risks and Mitigations
 
-## 28.1 Risk: Atlas Becomes a Task Manager
+## §28.1 Risk: Atlas Becomes a Task Manager
 
 Mitigation:
 
@@ -1806,7 +1844,7 @@ boundary checker
 red-team reviewer
 ```
 
-## 28.2 Risk: Agents Overclaim Understanding
+## §28.2 Risk: Agents Overclaim Understanding
 
 Mitigation:
 
@@ -1816,7 +1854,7 @@ confidence upgrades require explanation/review
 state-auditor agent checks claims
 ```
 
-## 28.3 Risk: Graph Becomes Unmaintainable
+## §28.3 Risk: Graph Becomes Unmaintainable
 
 Mitigation:
 
@@ -1827,7 +1865,7 @@ avoid exhaustive linking
 generated views from simple files
 ```
 
-## 28.4 Risk: Suggested Routes Dominate Personal Trail
+## §28.4 Risk: Suggested Routes Dominate Personal Trail
 
 Mitigation:
 
@@ -1837,7 +1875,7 @@ suggested routes hideable
 personal trail rendered as primary memory
 ```
 
-## 28.5 Risk: Primary/Supporting Becomes Global Again
+## §28.5 Risk: Primary/Supporting Becomes Global Again
 
 Mitigation:
 
@@ -1848,7 +1886,7 @@ validate no global primary/supporting on material node
 
 ---
 
-## 29. Implementation Phases
+## §29. Implementation Phases
 
 ## Phase 0 — Repo Skeleton
 
@@ -1920,7 +1958,7 @@ state-auditor gate
 
 ---
 
-## 30. Final Design Statement
+## §30. Final Design Statement
 
 Atlas should preserve three layers that must never collapse into one:
 
@@ -1949,4 +1987,10 @@ I do not feel judged by the map.
 Core sentence:
 
 > **Atlas does not tell the user what they failed to complete. Atlas shows where the user is, how they got there, and what nearby parts of the field are now visible.**
+
+---
+
+## Decision Log
+
+Format: `YYYY-MM-DD — decision in one phrase; rejected alternative and why.`
 
