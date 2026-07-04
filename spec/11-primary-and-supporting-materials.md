@@ -39,7 +39,10 @@ Rule:
 
 ```text
 A material’s role changes by context.
-The graph must never store global primary/supporting flags on Material itself.
+The graph must never store global primary/supporting flags on Material itself —
+authored data and derived outputs (graph/) alike. Aggregates over contextual
+roles are computed at render time and shown context-labeled
+(“primary in 5 contexts”), never materialized as fields.
 ```
 
 ---
