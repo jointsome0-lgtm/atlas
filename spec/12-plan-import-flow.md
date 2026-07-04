@@ -31,8 +31,10 @@ chat transcript
 7. Extract practice probes/tests.
 8. Extract proposed sequence as SuggestedRoute.
 9. Create candidate graph.
-10. Mark all understanding state as unseen/unknown unless prior artifacts exist.
-11. Generate import report.
+10. New concepts start unseen/unknown/vague; existing state is never
+    touched — import neither downgrades (§14.5) nor raises state.
+11. Generate import report; plan self-claims ("already know X") appear
+    there as proposals only, applied on user confirmation (§14.6).
 ```
 
 ## §12.3 Example from Uploaded Plan

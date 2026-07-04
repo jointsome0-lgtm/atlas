@@ -6,7 +6,7 @@
 
 2. **The personal trail cannot fail and is never overwritten by automation.** A trail segment is a memory of actual movement, not a commitment; routes, importers, and agents may only append segments and propose corrections (applied only on user confirmation); the user's own hand-edits — including deletion — are sovereign. (§5.2, §9.9)
 
-3. **Understanding is never imported.** Plan import creates candidate graph structure with state `unseen`/`unknown` (unless prior artifacts exist); only user artifacts update understanding state. (§5.3, §12.2 step 10)
+3. **Understanding is never imported.** Plan import creates candidate graph structure and never writes understanding state: new concepts start `unseen`/`unknown`/`vague`, existing state is untouched; plan self-claims ("already know X") become import-report proposals, applied only on user confirmation. (§5.3, §12.2 steps 10–11)
 
 4. **No global primary/supporting on materials.** `primary`/`supporting` are roles on contextual edges (route step, question, trail segment); the graph must never store global primary/supporting flags on a Material node. (§5.5, §11)
 

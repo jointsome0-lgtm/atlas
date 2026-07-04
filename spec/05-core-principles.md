@@ -65,6 +65,8 @@ state:
 
 Only user artifacts can update that state.
 
+A plan’s own claim of prior knowledge (“Kafka — already know it”) is plan text, not evidence. The importer may only surface it as a proposal in the import report; nothing changes until the user confirms (§14.6).
+
 ## §5.4 Materials Are Not Concepts
 
 A material is a source.
