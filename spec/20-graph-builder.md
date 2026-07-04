@@ -9,10 +9,12 @@
 4. Read direction files.
 5. Read suggested routes.
 6. Read trail segments.
-7. Read state YAML.
-8. Read influence field YAML.
-9. Validate references.
-10. Emit graph/atlas-graph.json.
+7. Read probes.
+8. Read questions, artifacts, and encounters from state/.
+9. Read state YAML.
+10. Read influence field YAML.
+11. Validate references.
+12. Emit graph/atlas-graph.json.
 ```
 
 No external dependencies for MVP.

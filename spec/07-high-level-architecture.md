@@ -62,5 +62,7 @@ User artifacts / notes / code / tests
           └──────────┘
 ```
 
+The importer also extracts directions, probes, and the plan node (§12); the observer also records encounters and questions (§13). Evidence records live under `state/` (§8).
+
 ---
 

@@ -24,13 +24,17 @@ manual declarations
 1. Detect changed or new user artifacts.
 2. Classify artifact type.
 3. Extract touched concepts.
-4. Link artifact to materials if references exist.
-5. Link artifact to probes if matching.
-6. Propose state updates.
-7. Propose trail segments.
-8. Propose influence updates.
-9. Ask for review only when update is ambiguous or high-impact.
+4. Extract explicit questions the artifact raises.
+5. Link artifact to materials if references exist.
+6. Record an encounter when an artifact or a manual declaration shows contact with a material (part).
+7. Link artifact to probes if matching.
+8. Propose state updates.
+9. Propose trail segments.
+10. Propose influence updates.
+11. Ask for review only when update is ambiguous or high-impact.
 ```
+
+Artifact and encounter records append to `state/artifacts.yaml` / `state/encounters.yaml`, questions to `state/open-questions.yaml` (§8). These records are what §25.3 audits state updates against and what §9.10 computes influence from.
 
 ## §13.3 Example
 

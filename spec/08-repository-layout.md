@@ -75,6 +75,8 @@ atlas/
     concept-state.yaml
     material-state.yaml
     open-questions.yaml
+    artifacts.yaml
+    encounters.yaml
     influence-field.yaml
 
   graph/
