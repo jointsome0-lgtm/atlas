@@ -8,7 +8,7 @@ concept files
 material files
 material parts
 suggested routes
-state YAML
+state journals (JSONL, §8)
 trail template
 influence computation (in the builder)
 graph builder
