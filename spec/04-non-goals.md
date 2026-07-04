@@ -27,7 +27,20 @@ ticket
 sprint
 ```
 
-Atlas may show **state of understanding**, but never **task completion pressure**.
+Atlas must not present understanding as a measurement or ranking:
+
+```text
+skill levels
+scores
+ratings
+percent mastered
+progress bars
+rankings
+```
+
+Understanding state is qualitative characterization per concept (§9.1, §14); no aggregate mastery level is computed for a concept cluster, direction, or field.
+
+Atlas may show **state of understanding**, but never **task completion pressure**, and never a **mastery score**.
 
 ---
 
