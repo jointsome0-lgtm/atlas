@@ -14,5 +14,9 @@
 
 6. **Frontier wording carries no obligation.** The frontier is the visible edge of the influence field, not a TODO list: items carry `pressure: none` and use adjacency wording (nearby, adjacent, naturally connected, open, available, possible), never `next task` / `must do` / `overdue` / `blocked` / `remaining`. (§15)
 
+7. **Local-first: the user's machine is Atlas's only home.** The local repo is the sole canonical store, private by default; Atlas sends nothing anywhere on its own initiative (no telemetry, sync, auto-push); outward transit happens only inside a session the user explicitly started, with a provider the user chose; secrets never enter any agent context (§24 ignore paths). (§24, §25.1)
+
+8. **Derived is never stored.** Anything derivable from trail, state, and artifacts — current position (§15.1), freshness (§14.7), influence (§9.10) — is computed at build/view time; a stored copy of a derivable value is a second source of truth and forbidden. (§9.10, §14.7, §15.1)
+
 ---
 
