@@ -1,6 +1,6 @@
 # System Design Document: Atlas
 
-**Version:** 0.2
+**Version:** 0.3
 **Status:** Draft
 **Project:** Atlas — graph-first personal knowledge-state system
 **Primary goal:** Extract proposed learning routes from plans, but preserve and visualize the user’s real personal trail, knowledge state, and influence field over time.
@@ -21,7 +21,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §6 Core Ontology — glossary: Field, Concept, Material(Part), Encounter, Artifact, Probe, Question, Route, Trail, Influence, State, Frontier
 - §7 High-Level Architecture — plan-import and artifact-observation pipelines
 - §8 Repository Layout — placement principles + normative skeleton
-- §9 Data Model — schemas: Concept, Material, MaterialPart, SuggestedRoute, Direction, Artifact, Encounter, Question, Trail, InfluenceField
+- §9 Data Model — schemas: Concept, Material, MaterialPart, SuggestedRoute, Direction, Artifact, Encounter, Question, Trail, InfluenceField, Probe, Evidence, StateDecision
 - §10 Graph Model — node types, edge types, edge metadata
 - §11 Primary and Supporting Materials — contextual roles per route/question/trail
 - §12 Plan Import Flow — inputs, import steps, example

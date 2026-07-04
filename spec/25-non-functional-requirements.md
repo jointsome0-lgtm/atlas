@@ -11,20 +11,14 @@ All graph state should be plain text or JSON:
 ```text
 Markdown
 YAML
-JSON
+JSON / JSONL (journals, §8)
 ```
 
 ## §25.3 Auditable
 
-Every state update should be traceable to:
+Every state update must be traceable to recorded evidence (§9.12).
 
-```text
-artifact
-encounter
-question
-manual note
-agent review
-```
+This holds by construction (§20, §31.8): state is a fold over the `state/` journals — exposure via the §14.5 mapping, review-gated dimensions via recorded decisions citing evidence (§9.13) — so an untraceable update is unrepresentable.
 
 ## §25.4 Low Pressure
 

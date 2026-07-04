@@ -22,7 +22,7 @@ related_concepts:
 ---
 ```
 
-Concept files carry identity, links, and content only: understanding state lives in `state/concept-state.yaml` (§8) and changes only per §14; material roles live on contextual edges only (§11).
+Concept files carry identity, links, and content only: understanding state is derived at build time from the `state/` journals (§8, §20) and moves only per §14; material roles live on contextual edges only (§11).
 
 Body:
 
@@ -244,6 +244,7 @@ supports_state_updates:
   - concept:rest-api
   - concept:idempotency
 evidence_strength: applied
+probe: probe:duplicate-post-idempotency   # optional: the probe this artifact answers (§9.11)
 ```
 
 Artifact evidence strengths:
@@ -256,6 +257,8 @@ applied
 explained
 reviewed
 ```
+
+An artifact answering a probe (§9.11) links it via `probe:`. The response is ordinary evidence — no verdict is stored; evaluation exists only as the fate of a proposal (§14.6).
 
 ---
 
@@ -405,6 +408,74 @@ It means:
 
 ```text
 “This area has been affected by real user movement.”
+```
+
+---
+
+## §9.11 Probe
+
+A **Probe** is a curated practice check that can reveal understanding (§6). Probes live in `atlas/probes/` (§8): extracted at plan import (§12.2 step 7) or written by hand; lifecycle is editing the file, like all curated content.
+
+Example:
+
+```yaml
+---
+id: probe:duplicate-post-idempotency
+type: probe
+title: Duplicate POST with idempotency key
+concepts:
+  - concept:idempotency
+  - concept:rest-api
+source_plan: plan:learn-basics-swe
+status: active
+---
+```
+
+`source_plan` is optional (absent for hand-written probes); `status: active | archived` is lifecycle, as in §9.2. Body (Markdown): the check itself — task, scenario, “explain what happens and why”.
+
+Deliberately absent: `expected:` / answer / rubric fields. A formalized correct answer is a drift vector toward grading (§25.4). The user’s answer to a probe is an Artifact linked via `probe:` (§9.6); its evaluation exists only as the fate of a proposal (§14.6).
+
+---
+
+## §9.12 Evidence
+
+**Evidence** is a recorded trace that can justify a state update (§6). Exactly three record kinds are evidence:
+
+```text
+Artifact  (§9.6) — including notes and probe responses
+Encounter (§9.7)
+Question  (§9.8)
+```
+
+This list is canonical: §14.6, §25.3, and §31.5 cite it and must not re-enumerate it — a copy is a future fork (#8, #15).
+
+Not evidence: trail segments (memory of movement, §9.9 — their `via` already points at evidence), plans and routes (§31.3), agent output. An agent review is a mechanism (propose→confirm, §14.6), not a record kind: the user’s review responses are artifacts; the verdict is the fate of the proposal, recorded as a StateDecision (§9.13).
+
+---
+
+## §9.13 StateDecision
+
+A **StateDecision** is the resolution of a review-gated proposal (§14.6): the user confirmed or rejected it. One JSONL line appended to `state/decisions.jsonl` (§8):
+
+```json
+{"date": "2026-07-04", "target": "concept:idempotency", "dimension": "confidence", "to": "medium", "evidence": ["artifact:test-duplicate-post-idempotency", "question:where-store-idempotency-key"], "proposed_by": "state-auditor", "decision": "confirmed"}
+```
+
+Rules:
+
+```text
+dimension: confidence | clarity | coverage (§14.6);
+exposure needs no decision — it derives via §14.5.
+Only resolved proposals are recorded; a pending proposal is
+derivable from evidence + current state and is never stored (§31.8).
+evidence cites §9.12 records only and must be non-empty.
+proposed_by: an agent role (§17) or user — a manual state edit
+is a self-proposal citing a note artifact.
+from is not stored — derivable.
+A rejected decision is memory: the same proposal is not re-asked
+without new evidence (§13.2 step 10).
+decision: confirmed | rejected — the user’s judgment on a proposal,
+not a task state (§4).
 ```
 
 ---

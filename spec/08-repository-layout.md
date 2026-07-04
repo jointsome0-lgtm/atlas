@@ -5,7 +5,12 @@ Placement principles:
 ```text
 1. One directory per §6 entity kind; the § that owns a flow owns its paths.
 2. atlas/  = curated knowledge — written by hand or through review.
-3. state/  = observed records — append-only YAML (§13 writes, §20 reads).
+3. state/  = event journals — append-only JSONL (§13 writes, §20 folds).
+   A journal may rotate into per-year files under a directory of the
+   same name (state/decisions/2026.jsonl); the fold reads the
+   concatenation. Truncating compaction is forbidden: journals are
+   the audit trail (§25.3). Current understanding and material state
+   are derived by the §20 fold — no stored state files (§31.8).
 4. graph/  = derived outputs — never edited by hand (§20 emits).
 5. File names inside atlas/ are content, not structure: the spec does not
    predict them; the example import lives in §12.3.
@@ -38,11 +43,10 @@ atlas/
     extracted/
 
   state/
-    concept-state.yaml
-    material-state.yaml
-    open-questions.yaml
-    artifacts.yaml
-    encounters.yaml
+    artifacts.jsonl
+    encounters.jsonl
+    open-questions.jsonl
+    decisions.jsonl
 
   graph/
     schema.yaml

@@ -1,6 +1,6 @@
 ## §14. State Update Rules
 
-Scales (§14.1–§14.4) define the levels; §14.5–§14.8 define the only allowed transitions. Understanding state lives in `state/` YAML (§8), never in content frontmatter (§9.1).
+Scales (§14.1–§14.4) define the levels; §14.5–§14.8 define the only allowed transitions. Understanding state is derived at build time by the §20 fold over the `state/` journals (§8); it is never stored and never lives in content frontmatter (§9.1, §31.8).
 
 ## §14.1 Concept Exposure
 
@@ -68,7 +68,7 @@ Rules:
 ```text
 Exposure is monotone: it records what happened and never decreases.
 New exposure = max(current, mapped evidence).
-Encounters (§9.7) update material state and raise concept exposure to at most `read`;
+Encounters (§9.7) feed material state (§14.8) and raise concept exposure to at most `read`;
 beyond `read`, only artifacts move exposure.
 ```
 
@@ -77,10 +77,17 @@ beyond `read`, only artifacts move exposure.
 `confidence`, `clarity`, and `coverage` never change automatically in the MVP (§26.2 skips automatic confidence upgrades; §28.2 requires explanation/review).
 
 ```text
-Agents may propose a change, citing evidence: artifact, encounter, probe result, manual note (§25.3).
-The user confirms or rejects; an unconfirmed proposal changes nothing.
-clarity: disputed is proposed when linked sources or artifacts contradict each other.
-Probe results are evidence for proposals, never direct writes.
+Agents may propose a change, citing recorded evidence (§9.12).
+The user confirms or rejects; the resolved proposal is appended to
+state/decisions.jsonl (§9.13), and only a confirmed decision moves
+the derived state. An unconfirmed proposal changes nothing and is
+never stored; a rejected one is not re-proposed without new evidence.
+The user may self-propose: a manual state change cites a note
+artifact and is recorded as a decision like any other.
+clarity: disputed is proposed when linked sources or artifacts
+contradict each other.
+Probe responses are artifacts (§9.6): evidence for proposals,
+never direct writes.
 ```
 
 ## §14.7 Freshness Decay
@@ -97,9 +104,10 @@ Thresholds are config defaults, tunable per field. Staleness feeds the Frontier 
 
 ## §14.8 Material State
 
-Material state lives in `state/material-state.yaml` (§8), keyed by material or part id, and is updated by encounters (§9.7):
+Material state is derived by the §20 fold from the encounters journal (§9.7), keyed by material or part id — no stored file (§31.8):
 
 ```yaml
+# shape inside the derived graph output
 material:fastapi-tutorial:
   depth_reached: summarized   # max encounter depth so far (§9.7 scale)
   last_seen: 2026-06-05

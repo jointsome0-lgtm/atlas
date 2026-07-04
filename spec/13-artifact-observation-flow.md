@@ -28,12 +28,17 @@ manual declarations
 5. Link artifact to materials if references exist.
 6. Record an encounter when an artifact or a manual declaration shows contact with a material (part).
 7. Link artifact to probes if matching.
-8. Propose state updates.
-9. Propose trail segments.
-10. Ask for review only when update is ambiguous or high-impact.
+8. Propose review-gated changes (confidence / clarity / coverage),
+   citing evidence (§9.12); exposure follows from recorded evidence
+   (§14.5) and needs no proposal.
+9. Append trail segments; propose corrections only (§31.2, §5.2).
+10. For observation records (steps 1–7, 9): ask only when interpretation
+    is ambiguous or high-impact. Review-gated proposals (step 8) always
+    wait for the user's decision, recorded as a StateDecision (§9.13);
+    a rejected proposal is not re-asked without new evidence.
 ```
 
-Artifact and encounter records append to `state/artifacts.yaml` / `state/encounters.yaml`, questions to `state/open-questions.yaml` (§8). These records are what §25.3 audits state updates against and what §9.10 computes influence from.
+Artifact and encounter records append to `state/artifacts.jsonl` / `state/encounters.jsonl`, questions to `state/open-questions.jsonl`, resolved proposals to `state/decisions.jsonl` (§8, §9.13). These journals are what §25.3 audits state updates against and what §9.10 computes influence from.
 
 ## §13.3 Example
 

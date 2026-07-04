@@ -10,6 +10,7 @@ Encounter      = contact with a material or material part
 Artifact       = user-created trace: code, note, test, diagram, explanation
 Probe          = practice check that can reveal understanding
 Question       = explicit uncertainty or pull
+Evidence       = recorded trace that can justify a state update
 SuggestedRoute = route proposed by a plan
 PersonalTrail  = actual movement through the field
 TrailSegment   = one movement step in the personal trail
