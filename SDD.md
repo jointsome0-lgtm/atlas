@@ -21,12 +21,12 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §6 Core Ontology — glossary: Field, Concept, Material(Part), Encounter, Artifact, Probe, Question, Route, Trail, Influence, State, Frontier
 - §7 High-Level Architecture — plan-import and artifact-observation pipelines
 - §8 Repository Layout — placement principles + normative skeleton
-- §9 Data Model — schemas: Concept, Material, MaterialPart, SuggestedRoute, Direction, Artifact, Encounter, Question, Trail, InfluenceField, Probe, Evidence, StateDecision
+- §9 Data Model — schemas: Concept, Material, MaterialPart, SuggestedRoute, Direction, Artifact, Encounter, Question, Trail, InfluenceField, Probe, Evidence, StateDecision, SupportRelation
 - §10 Graph Model — node types, edge types, edge metadata
-- §11 Primary and Supporting Materials — contextual roles per route/question/trail
+- §11 Primary and Supporting Materials — contextual roles per route/question/trail; standing support boundary (§11.4)
 - §12 Plan Import Flow — inputs, import steps, example
 - §13 Artifact Observation Flow — inputs, observation steps, example
-- §14 State Update Rules — scales; evidence→exposure transitions; review-gated dimensions; freshness decay; material state
+- §14 State Update Rules — scales; evidence→exposure transitions; review-gated dimensions; freshness decay; material state; edge weight (§14.9)
 - §15 Frontier Computation — inputs, output format, allowed/forbidden wording
 - §16 Viewer Design — modes, visual semantics, required UI behavior
 - §17 Agent Architecture — four core roles and agent rules
@@ -36,7 +36,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §21 Importer Design — hybrid deterministic + agent import
 - §23 Progression Model — movement loop, no completion
 - §24 Security and Privacy — local-first, ignore paths
-- §25 Non-Functional Requirements — versionable, auditable, low pressure; domain-parameterized core (§25.5)
+- §25 Non-Functional Requirements — versionable, auditable, low pressure; domain-parameterized core (§25.5); durable (§25.6)
 - §26 MVP Scope — must have / can skip
 - §27 Acceptance Criteria — 10 MVP checks
 - §28 Risks and Mitigations — drift risks and countermeasures

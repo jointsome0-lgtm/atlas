@@ -40,5 +40,9 @@ external connectors
 
 Domain rule: the core — journals (§8), evidence and decisions (§9.12–§9.13), the fold (§14.5–§14.8, §20), influence (§9.10), frontier (§15), the no-guilt invariants (§31) — is domain-parameterized. What varies per domain: field semantics (what a region is), the state scales (§14.1–§14.4), observer interpretation (§13), probe and material meaning. A second domain arrives as its own field with its own scales through its own design pass — never as a fork of the core. Until one is real this is a design test, not a work item: between otherwise-equal candidates prefer the one that does not hardwire knowledge semantics into the core, and build no abstraction machinery in advance (§28.3).
 
+## §25.6 Durable
+
+The Atlas repository is a git repository — not optionally so: journals and curated content are committed as part of normal operation, and version history is the recovery mechanism (truncating compaction is already forbidden, §8). Durability beyond the machine is a user-initiated copy of the whole repo — a private remote or another medium; Atlas itself never syncs, pushes, or backs up on its own initiative (§24, §31.7). A stored copy of derivable values is not a backup but a second source of truth (§31.8).
+
 ---
 

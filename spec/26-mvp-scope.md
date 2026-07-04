@@ -7,6 +7,7 @@ manual/assisted plan import
 concept files
 material files
 material parts
+support links (supported_by in material files, rendered)
 suggested routes
 state journals (JSONL, §8)
 trail template
@@ -30,6 +31,7 @@ database
 auth
 complex analytics
 automatic confidence upgrades
+support-link weight proposals (links render unassessed until decided, §14.9)
 ```
 
 ---

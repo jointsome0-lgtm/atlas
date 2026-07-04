@@ -27,7 +27,9 @@ chat transcript
 3. Extract candidate directions.
 4. Extract candidate concepts.
 5. Extract materials and URLs.
-6. Detect material roles if the plan implies them.
+6. Detect material roles and declared support links ("for section X
+   use B") if the plan implies them; support links import as
+   supported_by existence only — weight is never imported (§9.14).
 7. Extract practice probes/tests.
 8. Extract proposed sequence as SuggestedRoute.
 9. Create candidate graph.

@@ -31,7 +31,7 @@ question
 probe
 ```
 
-Node ids follow `prefix:kebab-case-slug`, where the prefix is the hyphenated type name (`suggested-route:…`, `trail-segment:…`) or its short form (`part:material-slug/section-slug` for material_part). Underscores appear in type names only, never in ids.
+Node ids follow `prefix:kebab-case-slug`, where the prefix is the hyphenated type name (`suggested-route:…`, `trail-segment:…`) or its short form (`part:material-slug/part-slug` for material_part). Underscores appear in type names only, never in ids.
 
 ## §10.2 Edge Types
 
@@ -46,6 +46,7 @@ critiques
 mentions
 has_part
 overall_concept
+supports
 part_of_direction
 step_of_route
 suggested_next
@@ -77,6 +78,8 @@ Edges should support metadata:
   "created_at": "2026-06-02"
 }
 ```
+
+`weight` is evidence-updatable (§14.9): an authored value (`concept_edges`, §9.3) is the import-time hypothesis; confirmed weight decisions (§9.13) override it; the fold emits the current value. `supports` edges (§9.14) are authored with no weight at all.
 
 ---
 

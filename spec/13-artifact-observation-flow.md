@@ -28,9 +28,9 @@ manual declarations
 5. Link artifact to materials if references exist.
 6. Record an encounter when an artifact or a manual declaration shows contact with a material (part).
 7. Link artifact to probes if matching.
-8. Propose review-gated changes (confidence / clarity / coverage),
-   citing evidence (§9.12); exposure follows from recorded evidence
-   (§14.5) and needs no proposal.
+8. Propose review-gated changes (confidence / clarity / coverage —
+   and support-link weight, §14.9), citing evidence (§9.12); exposure
+   follows from recorded evidence (§14.5) and needs no proposal.
 9. Append trail segments — one per evidenced movement; an artifact
    may yield several (a star-shaped day: N from-less landings sharing
    `via`). Derive `from` per §9.9 (evidenced causal origin(s) from the

@@ -45,5 +45,11 @@ roles are computed at render time and shown context-labeled
 (“primary in 5 contexts”), never materialized as fields.
 ```
 
+## §11.4 Standing Support Is Not a Role
+
+§11 contexts are episodes of user activity — a route step, a question, a trail segment; roles live inside the episode. The standing relation “B helps understand X” is not an episode but graph structure: a directed `supports` edge authored as `supported_by:` (§9.14).
+
+The rule above stays about unary flags (§31.4): a support link is pairwise, names an explicit target, and carries no primacy. Aggregates over support links (“helps in N places”), like aggregates over roles, are computed at render time only.
+
 ---
 

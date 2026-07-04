@@ -85,6 +85,8 @@ parts: []
 ---
 ```
 
+`overall_concepts` is the material's through-line (motif): what the material argues or teaches as a whole — not the union of its parts' concepts. It moves like any concept state: through synthesis artifacts spanning parts (a whole-material summary, a cross-part comparison) per §14.5 — never automatically from finishing parts (§14.8). A material may also list standing helpers of the whole via optional `supported_by:` (§9.14).
+
 Material kinds:
 
 ```text
@@ -104,7 +106,7 @@ internal
 
 ## §9.3 MaterialPart
 
-A **MaterialPart** is created when a material has sections that map to different concepts.
+A **MaterialPart** is a named sub-unit of a material — a section, chapter, timestamp range, module, or block. It is created when sub-units map to different concepts than the whole.
 
 Example:
 
@@ -126,6 +128,8 @@ parts:
       - to: concept:openapi
         role: demonstrates
         weight: high
+    supported_by:
+      - material:openapi-spec
 ```
 
 Rule:
@@ -133,6 +137,8 @@ Rule:
 ```text
 Create MaterialPart only when whole-material mapping would be misleading.
 ```
+
+Standing helpers (`supported_by:`, shown above) are defined in §9.14.
 
 ---
 
@@ -492,8 +498,12 @@ A **StateDecision** is the resolution of a review-gated proposal (§14.6): the u
 Rules:
 
 ```text
-dimension: confidence | clarity | coverage (§14.6);
+dimension: confidence | clarity | coverage (concepts, §14.6)
+           | weight (edges, §14.9);
 exposure needs no decision — it derives via §14.5.
+target: a node id, or an edge designation
+        <type>:<source>-><target> for weight decisions (§14.9),
+        e.g. supports:part:b/y->part:a/x.
 Only resolved proposals are recorded; a pending proposal is
 derivable from evidence + current state and is never stored (§31.8).
 evidence cites §9.12 records only and must be non-empty.
@@ -504,6 +514,49 @@ A rejected decision is memory: the same proposal is not re-asked
 without new evidence (§13.2 step 10).
 decision: confirmed | rejected — the user’s judgment on a proposal,
 not a task state (§4).
+```
+
+---
+
+## §9.14 SupportRelation
+
+A **SupportRelation** is a standing, directed link between materials or parts: the source deepens understanding of the target — “B helps understand X”. It is authored graph structure, the same species as `concept_edges` (§9.3), not a §11 role (§11.4).
+
+Authored on the receiving side: `supported_by:` on a Material (§9.2) or inside a `parts[]` entry (§9.3). An entry is an id, or a map with an optional note:
+
+```yaml
+parts:
+  - id: part:a/x
+    title: X
+    supported_by:
+      - part:b/y
+      - id: material:c
+        note: Unpacks the motivation X assumes.
+```
+
+The builder derives one directed `supports` edge per entry (§10.2), help flowing source→target: `part:b/y → part:a/x`.
+
+Rules:
+
+```text
+Endpoints are materials or parts, on either side.
+Direction is real: a→b and b→a coexist as two independent records
+in two files, each with its own weight — help(A→B) ≠ help(B→A).
+A symmetric “mutual support” relation is forbidden; cycles are
+normal.
+Weight is never authored: a new link is unassessed until weight
+decisions pass the review gate (§14.6, §14.9). Import creates
+existence only (§12.2 step 6) — help depth is learned from
+evidence, never declared.
+Angle = part: when help targets a facet, author the edge from/to
+the part — the §9.3 misleading-mapping rule applies to endpoints.
+No required contact depth is ever stored: the viewer joins the
+edge with the endpoints’ own state (§14.8) at render time;
+sufficiency is the user’s judgment, never a gate.
+A support link carries no primacy: it never makes a material
+globally primary/supporting (§11.4, §31.4).
+Removal is a file edit; past weight decisions stay in the journal
+as audit (§25.3).
 ```
 
 ---

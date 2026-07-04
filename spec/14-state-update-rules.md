@@ -118,5 +118,26 @@ part:fastapi-tutorial/path-operations:
 
 `depth_reached` is monotone like exposure. The `status: active` field on the Material file (§9.2) is lifecycle (active/archived), not understanding.
 
+Material state is contact, not understanding: it records how deeply the source was engaged, never how well its ideas are understood. Understanding is read off the concepts the material maps to (§9.3); a material's through-line is read off its `overall_concepts` (§9.2), moved by cross-part synthesis artifacts. Keys are independent: an encounter moves exactly the id it targets — part contact never aggregates into the parent material, and "read every part" fabricates no whole-material depth.
+
+## §14.9 Edge Weight
+
+`weight` on authored edges (`concept_edges` §9.3, `supports` §9.14) is review-gated like the §14.6 dimensions and never changes automatically:
+
+```text
+Scale: low | medium | high.
+An authored value (concept_edges) is the import-time hypothesis;
+supports links are authored with no weight and render as unassessed.
+Agents propose weight changes citing recorded evidence (§9.12) —
+the encounters and artifacts in which the helper actually helped.
+The user confirms or rejects (§14.6); the resolved proposal is a
+StateDecision (§9.13) with an edge target:
+  {"target": "supports:part:b/y->part:a/x", "dimension": "weight"}
+The fold emits the current weight: last confirmed decision, else
+the authored hypothesis, else unassessed.
+Help is per-direction: weight(a→b) and weight(b→a) are separate
+targets and move independently (§9.14).
+```
+
 ---
 
