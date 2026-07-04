@@ -7,7 +7,7 @@ It is the visible edge of the current influence field.
 ## §15.1 Inputs
 
 ```text
-current position
+recent trail heads (derived)
 influence field
 open questions
 suggested routes
@@ -16,6 +16,8 @@ material gaps
 stale nodes
 weak confidence nodes
 ```
+
+Current position is derived, never stored: the `to` concepts of the most recent trail segments (per direction, recency-weighted). Anything derivable from the trail must not become a second source of truth beside it.
 
 ## §15.2 Output
 

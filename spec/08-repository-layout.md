@@ -71,7 +71,6 @@ atlas/
       learn-basics-swe.yaml
 
   state/
-    current-position.yaml
     concept-state.yaml
     material-state.yaml
     open-questions.yaml
