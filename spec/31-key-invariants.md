@@ -1,6 +1,6 @@
-## §31. Key Invariants (candidates)
+## §31. Key Invariants
 
-**Status: candidates, pending grill/approval — not yet approved invariants.** Distilled from existing sections as a safety net for dedup passes: no edit may delete or weaken these statements without an explicit decision. The cited sections remain canonical.
+**Status: approved 2026-07-04 — grill-session verdict APPROVED_WITH_NOTES (notes: #11 and #15 flow in via the sync rule).** Distilled from existing sections as a safety net for dedup passes: no edit may delete or weaken these statements without an explicit Decision Log entry. The cited sections remain canonical; when a cited § changes by explicit decision, the mirroring invariant is updated in the same commit.
 
 1. **Never a TODO system or guilt machine.** `todo`, `in_progress`, `done`, `blocked`, `deadline`, `ticket`, `sprint` are forbidden as core states; the boundary checker fails on task-manager language in Atlas's own voice (schema keys, enum values, docs, UI wording — §19), never in user-authored free text. Atlas may show state of understanding, never task-completion pressure. (§1, §4, §19)
 
