@@ -30,8 +30,7 @@ manual declarations
 7. Link artifact to probes if matching.
 8. Propose state updates.
 9. Propose trail segments.
-10. Propose influence updates.
-11. Ask for review only when update is ambiguous or high-impact.
+10. Ask for review only when update is ambiguous or high-impact.
 ```
 
 Artifact and encounter records append to `state/artifacts.yaml` / `state/encounters.yaml`, questions to `state/open-questions.yaml` (§8). These records are what §25.3 audits state updates against and what §9.10 computes influence from.

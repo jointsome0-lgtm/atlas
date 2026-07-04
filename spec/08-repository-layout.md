@@ -43,7 +43,6 @@ atlas/
     open-questions.yaml
     artifacts.yaml
     encounters.yaml
-    influence-field.yaml
 
   graph/
     schema.yaml

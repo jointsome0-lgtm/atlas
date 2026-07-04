@@ -12,7 +12,7 @@
 7. Read probes.
 8. Read questions, artifacts, and encounters from state/.
 9. Read state YAML.
-10. Read influence field YAML.
+10. Compute influence field from artifacts, encounters, questions, and trail segments (§9.10).
 11. Validate references.
 12. Emit graph/atlas-graph.json.
 ```

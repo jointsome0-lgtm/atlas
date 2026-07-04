@@ -369,9 +369,9 @@ Automation appends and proposes; only the user edits or deletes (§5.2).
 
 ## §9.10 InfluenceField
 
-The **InfluenceField** is computed from artifacts, encounters, questions, and trail segments.
+The **InfluenceField** is computed from artifacts, encounters, questions, and trail segments — at build time, by the graph builder (§20). It exists only inside `graph/atlas-graph.json`; no `state/` file stores it (§31.8: derived is never stored).
 
-Example:
+Example (shape inside the derived graph output):
 
 ```yaml
 concept:idempotency:

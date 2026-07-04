@@ -10,7 +10,7 @@ material parts
 suggested routes
 state YAML
 trail template
-influence field YAML
+influence computation (in the builder)
 graph builder
 graph JSON
 static viewer
