@@ -12,7 +12,7 @@
 
 5. **State and confidence upgrades require evidence.** Exposure is defined by user actions (§14.1) and moves only via the monotone evidence mapping (§14.5); `confidence`/`clarity`/`coverage` change only through propose→confirm (§14.6); every state update must be traceable to recorded evidence — the canonical evidence-kind list lives in §14.6/§25.3, not here; agents must not claim understanding without artifacts or upgrade confidence without reason. (§14, §17.2, §25.3)
 
-6. **Frontier wording carries no obligation.** The frontier is the visible edge of the influence field, not a TODO list: items carry `pressure: none` and use adjacency wording (nearby, adjacent, naturally connected, open, available, possible), never `next task` / `must do` / `overdue` / `blocked` / `remaining`. (§15)
+6. **Frontier wording carries no obligation.** The frontier is the visible edge of the influence field, not a TODO list: no schema carries a `pressure` field — the key itself is checker-banned (§19) — and items use adjacency wording (nearby, adjacent, naturally connected, open, available, possible), never `next task` / `must do` / `overdue` / `blocked` / `remaining`. (§15, §19)
 
 7. **Local-first: the user's machine is Atlas's only home.** The local repo is the sole canonical store, private by default; Atlas sends nothing anywhere on its own initiative (no telemetry, sync, auto-push); outward transit happens only inside a session the user explicitly started, with a provider the user chose; secrets never enter any agent context (§24 ignore paths). (§24, §25.1)
 

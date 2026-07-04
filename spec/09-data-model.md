@@ -148,7 +148,6 @@ id: suggested-route:learn-basics-swe-default
 type: suggested_route
 source_plan: plan:learn-basics-swe
 title: REST → Redis → Kafka → RabbitMQ → gRPC → E2E
-pressure: none
 status: available
 steps:
   - concept:rest-api

@@ -14,6 +14,8 @@ target_repo
 
 Allowed only when documented as forbidden.
 
+`pressure` is forbidden as a schema key or enum value in the structure scan (#11): the pressure dimension must not exist as data anywhere in Atlas. Prose remains free to describe the no-pressure law (§4, §15, §25.4).
+
 Scan modes:
 
 ```text
