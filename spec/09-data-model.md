@@ -362,6 +362,7 @@ Rule:
 A trail segment cannot fail.
 It is not a commitment.
 It is only a memory of actual movement.
+Automation appends and proposes; only the user edits or deletes (§5.2).
 ```
 
 ---

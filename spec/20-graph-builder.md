@@ -17,6 +17,8 @@
 12. Emit graph/atlas-graph.json.
 ```
 
+Step 11 distinguishes broken curated links (errors) from references to records the user deleted: a missing trail segment, artifact, or encounter is skipped with a warning, never a build failure — deletion is the owner’s right (§5.2).
+
 No external dependencies for MVP.
 
 Allowed standard library:
