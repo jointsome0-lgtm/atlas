@@ -17,6 +17,7 @@ Generated graph file:
 ## §10.1 Node Types
 
 ```text
+plan
 concept
 material
 material_part
@@ -28,8 +29,9 @@ artifact
 encounter
 question
 probe
-snapshot
 ```
+
+Node ids follow `prefix:kebab-case-slug`, where the prefix is the hyphenated type name (`suggested-route:…`, `trail-segment:…`) or its short form (`part:material-slug/section-slug` for material_part). Underscores appear in type names only, never in ids.
 
 ## §10.2 Edge Types
 

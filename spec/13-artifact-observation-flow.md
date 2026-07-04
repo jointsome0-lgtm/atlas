@@ -62,7 +62,7 @@ trail_segment:
   from: concept:rest-api
   to: concept:idempotency
   via:
-    - artifact:test_duplicate_idempotency_key
+    - artifact:test-duplicate-idempotency-key
 ```
 
 It should not infer:
