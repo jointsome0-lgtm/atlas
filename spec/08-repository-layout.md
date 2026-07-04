@@ -1,5 +1,18 @@
 ## §8. Repository Layout
 
+Placement principles:
+
+```text
+1. One directory per §6 entity kind; the § that owns a flow owns its paths.
+2. atlas/  = curated knowledge — written by hand or through review.
+3. state/  = observed records — append-only YAML (§13 writes, §20 reads).
+4. graph/  = derived outputs — never edited by hand (§20 emits).
+5. File names inside atlas/ are content, not structure: the spec does not
+   predict them; the example import lives in §12.3.
+```
+
+Normative skeleton — the paths other sections rely on:
+
 ```text
 atlas/
   README.md
@@ -8,67 +21,21 @@ atlas/
 
   docs/
     SDD.md
-    ATLAS_SYSTEM.md
-    GRAPH_MODEL.md
-    STATE_MODEL.md
-    TRAIL_MODEL.md
-    PLAN_IMPORT_MODEL.md
-    MATERIAL_MODEL.md
-    INFLUENCE_MODEL.md
-    FRONTIER_MODEL.md
-    TEAM_OPERATING_SYSTEM.md
-    CODEX_PROTOCOL.md
+    spec/
+    DECISION-LOG.md
     adr/
-      0001-atlas-ontology.md
-      0002-graph-first-atlas.md
-      0003-suggested-routes-vs-personal-trail.md
-      0004-contextual-primary-supporting.md
 
   atlas/
     concepts/
-      rest-api.md
-      redis.md
-      kafka.md
-      rabbitmq.md
-      grpc.md
-      idempotency.md
-      observability.md
-      evals.md
-
     materials/
-      _template.md
-      mdn-http-methods.md
-      fastapi-tutorial.md
-      redis-py-guide.md
-      apache-kafka-quickstart.md
-      rabbitmq-python-tutorial.md
-      grpc-python-quickstart.md
-
     directions/
-      backend-distributed-systems-python.md
-      harness-engineering.md
-      agent-reliability.md
-
     suggested-routes/
-      learn-basics-swe-default.md
-      learn-basics-swe-roi.md
-
     trails/
-      _template.md
-      2026-06-02-seed.md
-
     probes/
-      duplicate-post-idempotency.md
-      kafka-offset-commit-safety.md
-      grpc-timeout-failure.md
-      rabbitmq-dlq.md
-      redis-rate-limit.md
 
   plans/
     imported/
-      learn-basics-swe.md
     extracted/
-      learn-basics-swe.yaml
 
   state/
     concept-state.yaml
@@ -81,7 +48,6 @@ atlas/
   graph/
     schema.yaml
     atlas-graph.json
-    build_graph.py
 
   viewer/
     index.html
@@ -96,5 +62,6 @@ atlas/
     validate_atlas.py
 ```
 
----
+ADRs are created when a decision needs one — none are pre-named. Templates (`_template.md`) live inside their entity directory.
 
+---
