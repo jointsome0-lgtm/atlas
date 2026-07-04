@@ -10,7 +10,7 @@
 
 4. **No global primary/supporting on materials.** `primary`/`supporting` are roles on contextual edges (route step, question, trail segment); no global primary/supporting flags on a Material node — in authored data or derived outputs alike; aggregates over contextual roles are render-time only. (§5.5, §11)
 
-5. **State and confidence upgrades require evidence.** Exposure levels are defined by user actions (read, summarized, applied, taught); every state update must be traceable to an artifact, encounter, question, manual note, or agent review; agents must not claim understanding without artifacts or upgrade confidence without reason. (§14, §17.2, §25.3)
+5. **State and confidence upgrades require evidence.** Exposure is defined by user actions (§14.1) and moves only via the monotone evidence mapping (§14.5); `confidence`/`clarity`/`coverage` change only through propose→confirm (§14.6); every state update must be traceable to recorded evidence — the canonical evidence-kind list lives in §14.6/§25.3, not here; agents must not claim understanding without artifacts or upgrade confidence without reason. (§14, §17.2, §25.3)
 
 6. **Frontier wording carries no obligation.** The frontier is the visible edge of the influence field, not a TODO list: items carry `pressure: none` and use adjacency wording (nearby, adjacent, naturally connected, open, available, possible), never `next task` / `must do` / `overdue` / `blocked` / `remaining`. (§15)
 
