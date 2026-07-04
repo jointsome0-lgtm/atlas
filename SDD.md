@@ -1,6 +1,6 @@
 # System Design Document: Atlas
 
-**Version:** 0.1
+**Version:** 0.2
 **Status:** Draft
 **Project:** Atlas — graph-first personal knowledge-state system
 **Primary goal:** Extract proposed learning routes from plans, but preserve and visualize the user’s real personal trail, knowledge state, and influence field over time.
@@ -26,7 +26,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §11 Primary and Supporting Materials — contextual roles per route/question/trail
 - §12 Plan Import Flow — inputs, import steps, example
 - §13 Artifact Observation Flow — inputs, observation steps, example
-- §14 State Update Rules — exposure, confidence, clarity, coverage scales
+- §14 State Update Rules — scales; evidence→exposure transitions; review-gated dimensions; freshness decay; material state
 - §15 Frontier Computation — inputs, output format, allowed/forbidden wording
 - §16 Viewer Design — modes, visual semantics, required UI behavior
 - §17 Agent Architecture — core agents and agent rules
