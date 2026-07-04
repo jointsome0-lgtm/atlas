@@ -17,7 +17,7 @@ Because fully automatic plan understanding is hard, use a hybrid approach:
 
 ```yaml
 id: plan:learn-basics-swe
-title: Learn Basics SWE
+title: Backend distributed systems practice in Python
 directions: []
 concepts: []
 materials: []
@@ -26,6 +26,8 @@ suggested_routes: []
 probes: []
 notes: []
 ```
+
+`id` is a stable slug; `title` is taken from the plan's own heading and must match the plan node (§12.3).
 
 ---
 
