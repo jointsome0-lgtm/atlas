@@ -11,8 +11,6 @@ Example:
 id: concept:idempotency
 type: concept
 title: Idempotency
-status: rough
-stability: medium
 updated: 2026-06-02
 aliases:
   - idempotent operations
@@ -21,9 +19,10 @@ related_concepts:
   - concept:redis
   - concept:kafka-idempotent-consumer
   - concept:duplicate-side-effects
-material_roles: []
 ---
 ```
+
+Concept files carry identity, links, and content only: understanding state lives in `state/concept-state.yaml` (§8) and changes only per §14; material roles live on contextual edges only (§11).
 
 Body:
 
