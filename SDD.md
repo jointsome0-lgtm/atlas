@@ -42,7 +42,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §28 Risks and Mitigations — drift risks and countermeasures
 - §29 Implementation Phases — Phase 0–5
 - §30 Final Design Statement — three layers that must never collapse
-- §31 Key Invariants (candidates) — distilled hard rules; pending grill/approval
+- §31 Key Invariants — eight hard rules; approved 2026-07-04
 - Decision Log — dated one-line decisions with rejected alternatives
 
 ---
