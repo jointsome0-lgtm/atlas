@@ -2,21 +2,14 @@
 
 `scripts/check_atlas_boundaries.py` should fail on forbidden project/task-manager language outside explicit forbidden-term sections.
 
-Forbidden terms:
+Forbidden terms: every §4 forbidden core state (§4's list is canonical — the checker must not fork it), plus:
 
 ```text
-todo
-in_progress
-done
-blocked
-deadline
-sprint
-ticket
-target_repo
 must finish
 overdue
 task board
 productivity ledger
+target_repo
 ```
 
 Allowed only when documented as forbidden.
