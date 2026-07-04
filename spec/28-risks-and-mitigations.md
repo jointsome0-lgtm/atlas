@@ -9,7 +9,7 @@ ban todo/done states
 use optional suggested routes
 use frontier language
 boundary checker
-red-team reviewer
+state-auditor (red-team duty, §17.1)
 ```
 
 ## §28.2 Risk: Agents Overclaim Understanding
