@@ -29,7 +29,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §14 State Update Rules — scales; evidence→exposure transitions; review-gated dimensions; freshness decay; material state
 - §15 Frontier Computation — inputs, output format, allowed/forbidden wording
 - §16 Viewer Design — modes, visual semantics, required UI behavior
-- §17 Agent Architecture — core agents and agent rules
+- §17 Agent Architecture — four core roles and agent rules
 - §18 Codex Role — checkpoints and challenge questions
 - §19 Boundary Checker — forbidden terms, scanned paths
 - §20 Graph Builder — build steps, stdlib-only MVP

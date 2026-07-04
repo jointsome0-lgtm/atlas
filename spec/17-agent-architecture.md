@@ -2,37 +2,26 @@
 
 ## §17.1 Core Agents
 
+Four roles. Further specialization only when a role demonstrably overloads — split it then, citing the overload.
+
 ```text
-atlas-architect
-  Owns ontology and conceptual consistency.
-
 plan-importer
-  Extracts directions, routes, concepts, materials, probes.
-
-field-cartographer
-  Maintains concept graph and area boundaries.
-
-material-analyst
-  Maps materials and material parts to concepts.
+  Extracts directions, routes, concepts, materials, probes from plans (§12, §21).
 
 artifact-observer
-  Scans user artifacts and proposes state/trail updates.
+  Scans user artifacts; records encounters and questions; proposes state,
+  trail, and influence updates (§13).
+
+field-cartographer
+  Owns the ontology (§6), concept graph and area boundaries, and
+  material/part→concept mapping (absorbs atlas-architect, material-analyst).
 
 state-auditor
-  Prevents overclaiming understanding.
-
-graph-engineer
-  Owns graph schema, builder, validation.
-
-viewer-engineer
-  Owns static viewer and graph interaction.
-
-red-team-reviewer
-  Attacks task-manager drift, pressure leakage, overengineering.
-
-codex-coordinator
-  Uses Codex only for checkpoint review/rescue.
+  Guards the invariants: rejects overclaimed understanding and task-manager /
+  pressure drift (absorbs red-team-reviewer; enforces the §14.6 review gate).
 ```
+
+Not agent roles: the graph builder and viewer are code, owned like any code (§20, §16); Codex involvement is fully defined by §18 — no coordinator role needed.
 
 ## §17.2 Agent Rules
 
