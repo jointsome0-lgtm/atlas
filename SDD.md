@@ -36,7 +36,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §21 Importer Design — hybrid deterministic + agent import
 - §23 Progression Model — movement loop, no completion
 - §24 Security and Privacy — local-first, ignore paths
-- §25 Non-Functional Requirements — versionable, auditable, low pressure
+- §25 Non-Functional Requirements — versionable, auditable, low pressure; domain-parameterized core (§25.5)
 - §26 MVP Scope — must have / can skip
 - §27 Acceptance Criteria — 10 MVP checks
 - §28 Risks and Mitigations — drift risks and countermeasures
