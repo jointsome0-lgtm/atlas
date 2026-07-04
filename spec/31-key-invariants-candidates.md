@@ -2,7 +2,7 @@
 
 **Status: candidates, pending grill/approval — not yet approved invariants.** Distilled from existing sections as a safety net for dedup passes: no edit may delete or weaken these statements without an explicit decision. The cited sections remain canonical.
 
-1. **Never a TODO system or guilt machine.** `todo`, `in_progress`, `done`, `blocked`, `deadline`, `ticket`, `sprint` are forbidden as core states; the boundary checker fails on task-manager language. Atlas may show state of understanding, never task-completion pressure. (§1, §4, §19)
+1. **Never a TODO system or guilt machine.** `todo`, `in_progress`, `done`, `blocked`, `deadline`, `ticket`, `sprint` are forbidden as core states; the boundary checker fails on task-manager language in Atlas's own voice (schema keys, enum values, docs, UI wording — §19), never in user-authored free text. Atlas may show state of understanding, never task-completion pressure. (§1, §4, §19)
 
 2. **The personal trail cannot fail and is never overwritten.** A trail segment is a memory of actual movement, not a commitment; proposed routes must not overwrite the user's actual trail. (§5.2, §9.9)
 
