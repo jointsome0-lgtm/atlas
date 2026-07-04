@@ -31,7 +31,11 @@ manual declarations
 8. Propose review-gated changes (confidence / clarity / coverage),
    citing evidence (§9.12); exposure follows from recorded evidence
    (§14.5) and needs no proposal.
-9. Append trail segments; propose corrections only (§31.2, §5.2).
+9. Append trail segments — one per evidenced movement; an artifact
+   may yield several (a star-shaped day: N from-less landings sharing
+   `via`). Derive `from` per §9.9 (evidenced causal origin(s) from the
+   artifact's own context — never the latest trail head, never a copy
+   of `touches`). Propose corrections only (§31.2, §5.2).
 10. For observation records (steps 1–7, 9): ask only when interpretation
     is ambiguous or high-impact. Review-gated proposals (step 8) always
     wait for the user's decision, recorded as a StateDecision (§9.13);

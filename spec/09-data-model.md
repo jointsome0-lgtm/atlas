@@ -358,6 +358,30 @@ resulting_questions:
   - question:201-vs-202
 ```
 
+`from` is the step's causal origin(s): a list of 0..n concepts, written as a scalar when there is one (the common case). Every listed origin must be evidenced by the segment's own context — co-touched in a `via` artifact as the work the movement grew out of, or the concept whose question the artifact answers (§13.2 step 9):
+
+```text
+absent  → a landing: movement into a concept with no evidenced origin
+          (first contact, a side jump, a star-shaped day).
+one     → a step that grew out of work on `from`.
+several → a synthesis step (comparison note, design doc) that grew
+          out of each listed origin.
+```
+
+Landing example:
+
+```yaml
+id: trail-segment:2026-06-07-002
+type: trail_segment
+date: 2026-06-07
+direction: direction:backend-distributed-systems-python
+to: concept:kafka
+via:
+  - artifact:note-kafka-conference-talk
+reason: >
+  Conference talk pulled attention to Kafka; no prior context.
+```
+
 Rule:
 
 ```text
@@ -365,6 +389,10 @@ A trail segment cannot fail.
 It is not a commitment.
 It is only a memory of actual movement.
 Automation appends and proposes; only the user edits or deletes (§5.2).
+`from` is never stitched to the latest trail head and never padded
+with co-touched concepts: a fabricated edge is a false memory in the
+sacred layer — worse than no `from` at all.
+Topology is emergent: chains, forks, and stars are all normal shapes.
 ```
 
 ---

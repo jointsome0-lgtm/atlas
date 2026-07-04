@@ -19,7 +19,7 @@ stale nodes
 weak confidence nodes
 ```
 
-Current position is derived, never stored: the `to` concepts of the most recent trail segments (per direction, recency-weighted). Anything derivable from the trail must not become a second source of truth beside it.
+Current position is derived, never stored: the `to` concepts of the most recent trail segments (per direction, recency-weighted). A direction may have several simultaneous heads (forks, star-shaped days; a landing counts like any segment) — no head is "main"; recency, not topology, fades old ones. Anything derivable from the trail must not become a second source of truth beside it.
 
 ## §15.2 Output
 
