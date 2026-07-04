@@ -7,7 +7,7 @@ Generated graph file:
   "generated_at": "2026-06-02T00:00:00Z",
   "nodes": [],
   "edges": [],
-  "trajectories": [],
+  "trails": [],
   "state": {},
   "influence": {},
   "frontier": []

@@ -11,7 +11,7 @@ atlas/
     ATLAS_SYSTEM.md
     GRAPH_MODEL.md
     STATE_MODEL.md
-    TRAJECTORY_MODEL.md
+    TRAIL_MODEL.md
     PLAN_IMPORT_MODEL.md
     MATERIAL_MODEL.md
     INFLUENCE_MODEL.md
@@ -53,7 +53,7 @@ atlas/
       learn-basics-swe-default.md
       learn-basics-swe-roi.md
 
-    trajectories/
+    trails/
       _template.md
       2026-06-02-seed.md
 

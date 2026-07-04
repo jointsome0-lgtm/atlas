@@ -8,7 +8,7 @@
 3. Expand MaterialPart nodes.
 4. Read direction files.
 5. Read suggested routes.
-6. Read trajectories.
+6. Read trail segments.
 7. Read state YAML.
 8. Read influence field YAML.
 9. Validate references.

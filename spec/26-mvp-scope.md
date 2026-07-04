@@ -9,7 +9,7 @@ material files
 material parts
 suggested routes
 state YAML
-trajectory template
+trail template
 influence field YAML
 graph builder
 graph JSON
