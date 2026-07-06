@@ -34,6 +34,8 @@ atlas/
 
   atlas/
     concepts/
+    zones/        # body field regions (§32.1)
+    patterns/     # body field skills (§32.1)
     materials/
     directions/
     suggested-routes/

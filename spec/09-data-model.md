@@ -262,7 +262,11 @@ summarized
 applied
 explained
 reviewed
+performed
+drilled
 ```
+
+`performed` and `drilled` are the body sessions' strengths (§32.3–§32.4): a session line evidences doing, a drill log deliberate practice. Every exposure/contact ladder maps this one list; each mapping lives beside its ladder (§14.5 knowledge, §32.2 zone contact, §32.3 motor).
 
 An artifact answering a probe (§9.11) links it via `probe:`. The response is ordinary evidence — no verdict is stored; evaluation exists only as the fate of a proposal (§14.6).
 
@@ -449,7 +453,7 @@ It means:
 
 ## §9.11 Probe
 
-A **Probe** is a curated practice check that can reveal understanding (§6). Probes live in `atlas/probes/` (§8): extracted at plan import (§12.2 step 7) or written by hand; lifecycle is editing the file, like all curated content.
+A **Probe** is a curated practice check that can reveal state (§6): understanding for knowledge, capacity for the body (§32.2). Probes live in `atlas/probes/` (§8): extracted at plan import (§12.2 step 7) or written by hand; lifecycle is editing the file, like all curated content.
 
 Example:
 

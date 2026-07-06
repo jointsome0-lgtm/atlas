@@ -29,9 +29,13 @@ artifact
 encounter
 question
 probe
+zone
+pattern
 ```
 
 Node ids follow `prefix:kebab-case-slug`, where the prefix is the hyphenated type name (`suggested-route:…`, `trail-segment:…`) or its short form (`part:material-slug/part-slug` for material_part). Underscores appear in type names only, never in ids.
+
+`zone` and `pattern` are the body field's region kinds (§32.1). The list is canonical and closed — §19 scans node types as a closed set, §20 step 11 validates against it; the extension rule is §6's: a domain pass registers its kinds here in the same commit.
 
 ## §10.2 Edge Types
 
@@ -42,8 +46,10 @@ extends
 implements
 contradicts
 explains
+demonstrates
 critiques
 mentions
+loads
 has_part
 overall_concept
 supports
@@ -61,6 +67,8 @@ probed_by
 primary_for
 supporting_for
 ```
+
+`demonstrates` is a `concept_edges` role already in use (§9.3); `loads` is the body field's pattern→zone role (§32.1) — the same authored species, weight-gated (§14.9). This list is closed like §10.1's, under the same §6 rule.
 
 ## §10.3 Edge Metadata
 

@@ -3,7 +3,7 @@
 `scripts/build_atlas_graph.py` should:
 
 ```text
-1. Read concept frontmatter.
+1. Read concept, pattern, and zone frontmatter (§32.1).
 2. Read material frontmatter.
 3. Expand MaterialPart nodes.
 4. Read direction files.
@@ -11,7 +11,7 @@
 6. Read trail segments.
 7. Read probes.
 8. Read questions, artifacts, encounters, and decisions from state/ (JSONL journals).
-9. Fold current understanding, material, and question state from the journals (§14.5–§14.8, §9.8, §9.13): exposure = monotone max over evidence; confidence/clarity/coverage = last confirmed decision; question status = last confirmed decision, else open; depth_reached/last_seen from encounters.
+9. Fold current understanding, material, question, and body state from the journals (§14.5–§14.8, §9.8, §9.13; body mappings §32.2–§32.3): exposure and zone contact = monotone max over mapped evidence; confidence/clarity/coverage and the gated body dimensions (§32.2) = last confirmed decision; question status = last confirmed decision, else open; depth_reached/last_seen from encounters.
 10. Compute influence field from artifacts, encounters, questions, and trail segments (§9.10).
 11. Validate references.
 12. Emit graph/atlas-graph.json.

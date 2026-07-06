@@ -18,7 +18,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §3 Goals — product goals; cognitive goals (no guilt)
 - §4 Non-Goals — forbidden framings and states (todo/done/deadline…)
 - §5 Core Principles — routes optional; trail sacred; understanding not imported; materials ≠ concepts; primary/supporting contextual
-- §6 Core Ontology — glossary: Field, Concept, Material(Part), Encounter, Artifact, Probe, Question, Route, Trail, Influence, State, Frontier
+- §6 Core Ontology — glossary: Field, Concept, Zone, Pattern, Material(Part), Encounter, Artifact, Probe, Question, Route, Trail, Influence, State, Frontier; canonical kind list
 - §7 High-Level Architecture — plan-import and artifact-observation pipelines
 - §8 Repository Layout — placement principles + normative skeleton
 - §9 Data Model — schemas: Concept, Material, MaterialPart, SuggestedRoute, Direction, Artifact, Encounter, Question, Trail, InfluenceField, Probe, Evidence, StateDecision, SupportRelation

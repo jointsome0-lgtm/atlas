@@ -1,6 +1,6 @@
 ## §14. State Update Rules
 
-Scales (§14.1–§14.4) define the levels; §14.5–§14.9 define the only allowed transitions (question status: §9.8). Understanding state is derived at build time by the §20 fold over the `state/` journals (§8); it is never stored and never lives in content frontmatter (§9.1, §31.8).
+Scales (§14.1–§14.4) define the levels; §14.5–§14.9 define the only allowed transitions (question status: §9.8; the body ladders and their mappings: §32.2–§32.3). Understanding state is derived at build time by the §20 fold over the `state/` journals (§8); it is never stored and never lives in content frontmatter (§9.1, §31.8).
 
 ## §14.1 Concept Exposure
 
@@ -60,8 +60,11 @@ read                 → read
 summarized           → summarized
 explained            → summarized   (explanation alone; see taught rule)
 applied              → applied
+performed / drilled  → applied      (body strengths §32.3; doing applies the concept)
 explained + reviewed → taught       (explained and survived review, §14.1)
 ```
+
+This table is the knowledge ladder's own. Each ladder keeps its mapping beside itself — motor exposure in §32.3, zone contact in §32.2 — all over the one §9.6 strength list, folded by the same monotone-max machinery.
 
 Rules:
 

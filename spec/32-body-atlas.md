@@ -17,7 +17,7 @@ pattern = movement skill (freestyle stroke, freestyle catch,
           questions, clarity; node-link geometry, like concepts
 ```
 
-Patterns are concept-kind nodes, not materials: technique is understanding of a movement, and material state is contact only (§14.8). The pattern→zone link is the same species as `concept_edges` (§9.3): an authored edge with `role: loads` and a gated weight (§14.9).
+Patterns are concept-kind nodes, not materials: technique is understanding of a movement, and material state is contact only (§14.8). The pattern→zone link is the same species as `concept_edges` (§9.3): an authored edge with `role: loads` and a gated weight (§14.9), authored in the pattern's frontmatter as a part authors its `concept_edges`.
 
 Materials stay materials — programs, technique videos, methodology articles. A program part maps to patterns like a chapter maps to concepts:
 
@@ -41,6 +41,20 @@ zone:
   freshness: fresh | aging | stale                # derived from last load (§14.7)
 ```
 
+Contact moves by the §14.5 machinery over the §9.6 strengths, mapped structurally — by what the evidence did to the zone, not what it says:
+
+```text
+touched = in a session artifact's touches, or behind a weaker
+          (medium/low/unassessed) loads edge from a performed or
+          drilled pattern — incidental load
+loaded  = named in the artifact's supports_state_updates
+          (targeted work), or behind a loads: high edge from a
+          performed/drilled pattern (§32.1, §14.9)
+probed  = an artifact answering a probe on the zone (§9.11)
+```
+
+Encounters and study artifacts never move contact: reading about a zone is not loading it — they feed material state (§14.8) and pattern study (§32.3).
+
 **Down through a probe, never through a curve.** Freshness shows the fact of no contact — always, honestly. Capacity and condition move down only through the gate, on measurement evidence: a probe artifact, a diary line, a medical record. A time-based auto-decay write ("−15% after 60 days") asserts a population curve as a personal measurement — and has nothing to cite, since absence of records is not a §9.12 record — so it is unrepresentable by construction (§25.3). The honest route down is the chain: staleness (visible fact) → probe invitation (frontier) → measurement (artifact) → evidenced proposal → user decision.
 
 **`chronic` lives in shadow.** A permanent condition (old injury, standing precaution) renders as a subtle shading on the silhouette, visible on focus — never an alarm badge or a permanent red flag (§25.4). But it is always on the table at suggestion time (§32.5). Care notes ("overhead pressing — cautious") are curated markdown in the zone file, like §9.1 concept-file sections — no schema. Leaving `chronic` (or `restricted`) is proposed only on medical evidence, through the gate.
@@ -59,6 +73,19 @@ reviewed = technique survived external review (coach, video analysis)
 ```
 
 `tried` ranks above `studied`: doing is deeper contact than reading — a motor skill is not a text. The ladder is monotone via max; §14.5 machinery unchanged. Years of swimming with no technique work reads as `tried` + `clarity: vague` — much done, little understood; the scales are built to say this without judgment.
+
+The §9.6 strengths map to the ladder — the mapping lives here, beside it (§14.5):
+
+```text
+noticed                       → touched
+read / summarized / explained → studied
+applied                       → studied
+performed                     → tried
+drilled                       → drilled
+performed|drilled + reviewed  → reviewed
+```
+
+Paper work is study for a motor skill: a program note applying squat theory moves `studied`, never `tried` — only `performed`/`drilled` session evidence (§32.4) means doing. `reviewed` requires the performance reviewed (coach's eye, video analysis), not an explanation of it. Encounters raise motor exposure to at most `studied` — §14.5's read-cap, domain-worded.
 
 ## §32.4 Capture: the Diary Is the Only Evidence Source
 
