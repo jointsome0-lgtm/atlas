@@ -19,6 +19,21 @@ Allowed only when documented as forbidden.
 
 `pressure` is forbidden as a schema key or enum value in the structure scan (#11): the pressure dimension must not exist as data anywhere in Atlas. Prose remains free to describe the no-pressure law (§4, §15, §25.4).
 
+The §4 measurement ban enters the structure scan the same way (#20): the following stems are forbidden as schema keys or closed-enum values —
+
+```text
+score
+rating
+percent
+rank
+level
+progress
+completion
+mastery
+```
+
+— an aggregate or mastery measure must not exist as data anywhere in Atlas; `graph/` emissions, the §33.4 snapshot included, are scanned like the rest. §4 stays the canonical ban; these stems are its checker translation (§4's UI phrasings — "progress bars", "percent mastered" — don't name keys). Prose remains free to name them, as §4 itself does.
+
 Scan modes:
 
 ```text

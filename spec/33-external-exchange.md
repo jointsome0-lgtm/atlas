@@ -75,9 +75,15 @@ segments derived (§13.2 step 9), review-gated proposals through
 §14.6. A batch claiming broad deep exposure (dozens of applied)
 is §13.2 step 10's high-impact ask, never a silent write.
 Provenance: every journal record created from a batch carries
-intake: "<source>/<batch>" — the §25.3 audit line from record
-back to delivery. Re-delivering an already-recorded batch
-appends nothing (idempotent by that key).
+intake: "<source>/<batch>#<n>" — n the record's position in
+records — the §25.3 audit line from journal entry back to the
+delivered line. A batch id names one immutable delivery: the
+same id arriving with different content is refused in the batch
+report; a corrected batch is a new id. Idempotency is per
+record: processing appends only records whose intake key no
+journal holds yet, so re-delivering a batch appends nothing and
+a run that stopped mid-batch resumes at the first unrecorded
+record.
 Nothing is silently dropped: the batch report lists every record
 that could not be resolved or placed (§12.2 step 11 discipline).
 Device and health telemetry inherits the §32.6 sensitivity class;
@@ -145,14 +151,18 @@ Excluded:
 ```text
 by construction — aggregates, scores, percentages, ranks,
 completion measures: the format has no field for them (§4,
-§31.1), and graph/ structure scanning (§19) bans the keys;
+§31.1), and graph/ structure scanning (§19) bans the key stems;
 always — pending proposals (derivable, never stored — §31.8);
 frontier items and route suggestions: suggestions address the
 user in the viewer (§15, §16.4) — re-presented downstream they
 are a todo list (§31.6);
-by default — the §32.6 sensitivity class: medical evidence refs
-and state derived from them (zone condition) enter a snapshot
-only by explicit per-export choice.
+by default — the §32.6 sensitivity class, applied by provenance,
+not by section: the class travels from an evidence record to
+everything derived from it — state and decisions resting on it
+(zone condition), the evidence refs themselves, trail segments
+citing it in via, questions extracted from it, contact state of
+medical materials — so no snapshot section leaks it; any of it
+enters a snapshot only by explicit per-export choice.
 ```
 
 Stability: node ids are stable slugs (§10.1) and persist across snapshots; a consumer must tolerate an id that vanishes — deletion is the owner's right (§5.2), the same tolerance §20 requires of the builder.
