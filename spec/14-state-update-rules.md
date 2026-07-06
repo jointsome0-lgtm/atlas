@@ -1,6 +1,6 @@
 ## §14. State Update Rules
 
-Scales (§14.1–§14.4) define the levels; §14.5–§14.8 define the only allowed transitions. Understanding state is derived at build time by the §20 fold over the `state/` journals (§8); it is never stored and never lives in content frontmatter (§9.1, §31.8).
+Scales (§14.1–§14.4) define the levels; §14.5–§14.9 define the only allowed transitions (question status: §9.8). Understanding state is derived at build time by the §20 fold over the `state/` journals (§8); it is never stored and never lives in content frontmatter (§9.1, §31.8).
 
 ## §14.1 Concept Exposure
 

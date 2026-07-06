@@ -29,9 +29,11 @@ intake batches (§33.2)
 5. Link artifact to materials if references exist.
 6. Record an encounter when an artifact or a manual declaration shows contact with a material (part).
 7. Link artifact to probes if matching.
-8. Propose review-gated changes (confidence / clarity / coverage —
-   and support-link weight, §14.9), citing evidence (§9.12); exposure
-   follows from recorded evidence (§14.5) and needs no proposal.
+8. Propose review-gated changes (confidence / clarity / coverage,
+   support-link weight (§14.9), question status (§9.8) — e.g.
+   resolved when an artifact answers an open question), citing
+   evidence (§9.12); exposure follows from recorded evidence (§14.5)
+   and needs no proposal.
 9. Append trail segments — one per evidenced movement; an artifact
    may yield several (a star-shaped day: N from-less landings sharing
    `via`). Derive `from` per §9.9 (evidenced causal origin(s) from the
@@ -43,7 +45,7 @@ intake batches (§33.2)
     a rejected proposal is not re-asked without new evidence.
 ```
 
-Artifact and encounter records append to `state/artifacts.jsonl` / `state/encounters.jsonl`, questions to `state/open-questions.jsonl`, resolved proposals to `state/decisions.jsonl` (§8, §9.13). These journals are what §25.3 audits state updates against and what §9.10 computes influence from.
+Artifact and encounter records append to `state/artifacts.jsonl` / `state/encounters.jsonl`, questions to `state/questions.jsonl`, resolved proposals to `state/decisions.jsonl` (§8, §9.13). These journals are what §25.3 audits state updates against and what §9.10 computes influence from.
 
 ## §13.3 Example
 

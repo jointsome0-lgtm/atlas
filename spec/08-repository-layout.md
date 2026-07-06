@@ -49,7 +49,7 @@ atlas/
   state/
     artifacts.jsonl
     encounters.jsonl
-    open-questions.jsonl
+    questions.jsonl
     decisions.jsonl
     intake.jsonl
 

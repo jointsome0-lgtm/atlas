@@ -320,7 +320,6 @@ pulls:
   - concept:http-status-codes
   - concept:async-job-processing
   - concept:rest-api
-status: open
 source:
   artifact: artifact:create-job-endpoint
 ```
@@ -335,6 +334,8 @@ stale
 ```
 
 No `done`.
+
+A question is born `open`; the creation record — one line appended to `state/questions.jsonl` (§8) — never mutates. Status transitions are review-gated like the §14.6 dimensions: a StateDecision with `dimension: status` (§9.13), citing the evidence that makes the transition true — the artifact or encounter that resolved or clarified it; `stale` is a judgment too, citing the user's own note (nothing declines automatically, §31.5). The §20 fold derives current status: last confirmed decision, else `open`. Any transition can be proposed, `resolved → open` included — reopening is movement, not failure (§4).
 
 ---
 
@@ -499,7 +500,7 @@ Rules:
 
 ```text
 dimension: confidence | clarity | coverage (concepts, §14.6)
-           | weight (edges, §14.9);
+           | weight (edges, §14.9) | status (questions, §9.8);
 exposure needs no decision — it derives via §14.5.
 target: a node id, or an edge designation
         <type>:<source>-><target> for weight decisions (§14.9),

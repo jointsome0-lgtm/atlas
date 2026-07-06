@@ -11,7 +11,7 @@
 6. Read trail segments.
 7. Read probes.
 8. Read questions, artifacts, encounters, and decisions from state/ (JSONL journals).
-9. Fold current understanding and material state from the journals (§14.5–§14.8, §9.13): exposure = monotone max over evidence; confidence/clarity/coverage = last confirmed decision; depth_reached/last_seen from encounters.
+9. Fold current understanding, material, and question state from the journals (§14.5–§14.8, §9.8, §9.13): exposure = monotone max over evidence; confidence/clarity/coverage = last confirmed decision; question status = last confirmed decision, else open; depth_reached/last_seen from encounters.
 10. Compute influence field from artifacts, encounters, questions, and trail segments (§9.10).
 11. Validate references.
 12. Emit graph/atlas-graph.json.
