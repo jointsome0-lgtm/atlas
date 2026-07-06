@@ -86,21 +86,24 @@ records — the §25.3 audit line from journal entry back to the
 delivered line. A batch id names one immutable delivery: the
 same id arriving with different content is refused in the batch
 report; a corrected batch is a new id.
-Receipts: processing a record ends by appending {intake, date,
-disposition — what was appended, what went to the report} to
-state/intake.jsonl (§8) — outputs first, receipt last. The
-receipt is provenance, not evidence: §9.12 is untouched and the
-§20 fold never reads it. It is the one processed-marker, so it
-also covers records whose outputs are not journal rows — a plan
-record's outputs are files and report lines (§33.3).
-Idempotency is per receipt: a record is processed iff its
-receipt exists — re-delivering a batch appends nothing, a run
-that stopped mid-batch resumes at the first unreceipted record.
-A receiptless record that already left rows (intake key present,
-no receipt — an interrupted run) is never silently reprocessed:
-the observer is an interpreter (§21), a second pass may read the
-record differently, so the partial surfaces in the batch report
-for the user to resolve (§13.2 step 10 discipline).
+Receipts: state/intake.jsonl (§8) holds a pair per record —
+opened {intake, date} appended before any output, done {intake,
+date, disposition — what was appended, what went to the report}
+appended after the last one. Receipt rows are provenance, not
+evidence: §9.12 is untouched and the §20 fold never reads them.
+done is the one processed-marker, so it also covers records
+whose outputs are not journal rows — a plan record's outputs
+are files and report lines (§33.3).
+Idempotency is per receipt: a record is processed iff its done
+row exists — re-delivering a batch appends nothing, a run that
+stopped mid-batch resumes at the first record without one. An
+opened row without done is an interrupted record, whatever its
+outputs — journal rows, an original under plans/imported/,
+candidate files (§12) — and is never silently reprocessed or
+overwritten: the observer is an interpreter (§21), a second
+pass may read the record differently, so the partial surfaces
+in the batch report for the user to resolve (§13.2 step 10
+discipline).
 Nothing is silently dropped: the batch report lists every record
 that could not be resolved or placed (§12.2 step 11 discipline).
 Device and health telemetry inherits the §32.6 sensitivity class;
@@ -142,7 +145,7 @@ An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-s
       "decisions": [{"dimension": "confidence", "date": "2026-07-04", "evidence": ["artifact:test-duplicate-post-idempotency"]}]
     }
   },
-  "materials": {"material:fastapi-tutorial": {"depth_reached": "summarized", "last_seen": "2026-06-05"}},
+  "materials": {"material:fastapi-tutorial": {"depth_reached": "summarized", "last_seen": "2026-06-05", "evidence": [{"id": "encounter:2026-06-05-fastapi-ch3", "kind": "encounter", "date": "2026-06-05"}]}},
   "trail": [{"id": "trail-segment:2026-06-05-001", "date": "2026-06-05", "from": "concept:rest-api", "to": "concept:idempotency", "via": ["artifact:test-duplicate-post-idempotency"]}],
   "questions": [{"id": "question:201-vs-202", "text": "When should POST /jobs return 201 vs 202?", "status": "open", "pulls": ["concept:http-status-codes"]}]
 }
@@ -153,7 +156,8 @@ The included set is closed — extending it is a Decision Log entry, made when a
 ```text
 per-node derived state on the node's own scales — freshness and
 last_seen included, honest derived facts (§14.5–§14.7);
-material contact state (§14.8);
+material contact state (§14.8), with its evidence refs like any
+state entry — §33.1's provenance rule has no exceptions;
 trail segments as recorded (§9.9);
 open questions;
 evidence refs (id, kind, date — content stays home) and the
