@@ -92,23 +92,26 @@ delivered line. A batch id names one immutable delivery: the
 same id arriving with different content is refused in the batch
 report; a corrected batch is a new id.
 Receipts: state/intake.jsonl (§8) holds a pair per record —
-opened {intake, date} appended before any output, done {intake,
-date, disposition — what was appended, what went to the report}
-appended after the last one. Receipt rows are provenance, not
-evidence: §9.12 is untouched and the §20 fold never reads them.
-done is the one processed-marker, so it also covers records
-whose outputs are not journal rows — a plan record's outputs
-are files and report lines (§33.3).
-Idempotency is per receipt: a record is processed iff its done
-row exists — re-delivering a batch appends nothing, a run that
-stopped mid-batch resumes at the first record without one. An
-opened row without done is an interrupted record, whatever its
-outputs — journal rows, an original under plans/imported/,
-candidate files (§12) — and is never silently reprocessed or
-overwritten: the observer is an interpreter (§21), a second
-pass may read the record differently, so the partial surfaces
-in the batch report for the user to resolve (§13.2 step 10
-discipline).
+opened {intake, date} appended before any output, processed
+{intake, date, disposition — what was appended, what went to
+the report} appended after the last one. The marker is not
+named done: state/ is atlas's own voice, structure-scanned by
+§19, where §4 bans the term as data — the boundary's
+bookkeeping obeys the law it enforces. Receipt rows are
+provenance, not evidence: §9.12 is untouched and the §20 fold
+never reads them. processed also covers records whose outputs
+are not journal rows — a plan record's outputs are files and
+report lines (§33.3).
+Idempotency is per receipt: a record is handled iff its
+processed row exists — re-delivering a batch appends nothing, a
+run that stopped mid-batch resumes at the first record without
+one. An opened row without processed is an interrupted record,
+whatever its outputs — journal rows, an original under
+plans/imported/, candidate files (§12) — and is never silently
+reprocessed or overwritten: the observer is an interpreter
+(§21), a second pass may read the record differently, so the
+partial surfaces in the batch report for the user to resolve
+(§13.2 step 10 discipline).
 Nothing is silently dropped: the batch report lists every record
 that could not be resolved or placed (§12.2 step 11 discipline).
 Device and health telemetry inherits the §32.6 sensitivity class;
@@ -136,6 +139,7 @@ An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-s
       "coverage": ["none", "partial", "broad"],
       "freshness": ["fresh", "aging", "stale"]
     },
+    "material": {"depth_reached": ["skim", "read", "summarized", "applied", "taught"]},
     "pattern": {
       "exposure": ["unseen", "touched", "studied", "tried", "drilled", "reviewed"],
       "confidence": ["unknown", "low", "medium", "high"],
@@ -184,9 +188,10 @@ confirmed decisions behind gated dimensions (§9.13);
 the scales themselves, complete per node kind: every dimension
 an exported entry carries has its ladder under scales — the
 motor exposure ladder (§32.3) beside the knowledge one, the full
-zone set (§32.2) — a snapshot emitting a value whose ladder is
-absent is malformed; a consumer never hardcodes a ladder, and
-per-domain scale evolution (§25.5) is not a breaking change.
+zone set (§32.2), the §9.7 depth ladder for material contact — a
+snapshot emitting a value whose ladder is absent is malformed; a
+consumer never hardcodes a ladder, and per-domain scale
+evolution (§25.5) is not a breaking change.
 ```
 
 Excluded:
