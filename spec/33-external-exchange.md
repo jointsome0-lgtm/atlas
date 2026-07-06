@@ -14,11 +14,13 @@ Two lanes: structured (atlas vocabulary, deterministic) and
 verbal (free text — the observer interprets: §21's hybrid at the
 boundary). An adapter that cannot map its vocabulary uses the
 verbal lane, never an approximation.
-Inward = evidence only: no state, no decisions, no trail segments
-cross in. Understanding is not imported (§31.3): an external
-claim — a diary line "I think I understood X", a foreign mastery
-score — arrives as artifact text and moves state only through
-the §14 rules.
+Inward = evidence and plans, never state: no state, no
+decisions, no trail segments cross in. Understanding is not
+imported (§31.3): an external claim — a diary line "I think I
+understood X", a foreign mastery score — arrives as artifact
+text and moves state only through the §14 rules. A plan record
+is the one non-evidence kind (§9.12 excludes plans): it enters
+§12 and creates candidate structure, never state (§33.3).
 Outward = state as evidence: qualitative characterization with
 provenance, never a verdict, score, or ranking (§4, §31.1);
 consumers apply their own semantics downstream.
@@ -131,6 +133,8 @@ follow. Tier-2 body capture arrives through this format (§32.4).
 ## §33.3 Intake: Plans
 
 A `plan` record — inline `text` or a `ref` to a delivered file — enters §12 unchanged: the original lands under `plans/imported/`, the §12.2 steps apply, structure is created and state never is (§31.3); plan self-claims surface only in the import report (§12.2 step 11). A route from an external plan is an ordinary SuggestedRoute: optional, hideable, ignorable (§5.1).
+
+A sensitive plan (§33.2's marker) keeps its class across the copy: the original lands under `plans/imported/<class>/` — placement, never an edit, an as-delivered document stays byte-identical — and the SuggestedRoute built from it carries `sensitivity: <class>` in frontmatter; the §32.6 default-context exclusion follows both (the batch original under `intake/` is already covered, §24). Candidate concept stubs stay plain — ids and links are structure — until the user curates otherwise (§5.2).
 
 ## §33.4 Export: State Snapshot
 

@@ -41,7 +41,7 @@ atlas/
     probes/
 
   plans/
-    imported/
+    imported/     # sensitive plans under imported/<class>/ (§33.3)
     extracted/
 
   intake/
