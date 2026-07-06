@@ -36,7 +36,7 @@ unknown fields; atlas never silently drops what it cannot place
 
 ## §33.2 Intake: Activity Ledger
 
-An adapter delivers a batch file under `intake/<source>/` (§8); the user runs the observer over it. Batches stay as delivered — the audit original, like `plans/imported/` (§12.2 step 1) — and are never scanned by the boundary checker (§19): a foreign system's voice may say `done` freely; what atlas makes of a batch is already structure-scanned in `state/`.
+An adapter delivers a batch file under `intake/<source>/` (§8); the user runs the observer over it. Batches stay as delivered — the audit original, like `plans/imported/` (§12.2 step 1) — and are never scanned by the boundary checker (§19): a foreign system's voice may say `done` freely; what atlas makes of a batch is already structure-scanned in `state/`. For the same reason the originals never enter default agent context (§24): a raw export may carry §32.6-class text whether or not its records were marked — the one reader is the user-initiated flow processing it (§31.7).
 
 Envelope:
 

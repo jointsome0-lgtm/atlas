@@ -27,5 +27,7 @@ build/
 .git/
 ```
 
+`intake/` never enters default agent context: a delivered original keeps a foreign system's voice and may carry §32.6-class text (a raw health export) whether or not its records were marked — the one legitimate reader is the user-initiated flow processing a batch (§31.7, §33.2). Unlike the ignore paths this is a default, not an absolute: that flow is a session the user explicitly started for it (§32.6 discipline).
+
 ---
 
