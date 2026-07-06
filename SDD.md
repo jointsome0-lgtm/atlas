@@ -28,7 +28,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §13 Artifact Observation Flow — inputs, observation steps, example
 - §14 State Update Rules — scales; evidence→exposure transitions; review-gated dimensions; freshness decay; material state; edge weight (§14.9)
 - §15 Frontier Computation — inputs, output format, allowed/forbidden wording
-- §16 Viewer Design — modes, visual semantics, required UI behavior, embedding (§16.4)
+- §16 Viewer Design — modes, per-geometry visual semantics (node-link, silhouette), required UI behavior, embedding (§16.4)
 - §17 Agent Architecture — four core roles and agent rules
 - §18 Codex Role — checkpoints and challenge questions
 - §19 Boundary Checker — forbidden terms, scanned paths

@@ -2,7 +2,7 @@
 
 The body domain instantiates the §25.5 domain rule: same core — journals (§8), evidence and decisions (§9.12–§9.13), the fold (§20), the review gate (§14.6), influence (§9.10), frontier (§15), the invariants (§31) — with its own field semantics, scales, and capture. Design pass 2026-07-06 (#17). Nothing here forks the core; where a core § needed generalizing, that § was edited in the same pass (§15.3, §19, §25.5, §31.5–§31.6).
 
-One derived graph serves both domains. The body model is a viewer projection, not a data entity: the silhouette is curated content — a `zone → figure region` mapping holding no state; indicators (influence, freshness, condition) are rendered onto it at view time from the fold output (§31.8). A domain brings its own field geometry: knowledge has none (force-directed layout), the body is anatomical.
+One derived graph serves both domains. The body model is a viewer projection, not a data entity: the silhouette is curated content — a `zone → figure region` mapping holding no state, authored as `figure_region` in each zone's frontmatter (§8: one mapping, no second registry of zones) and embedded by the builder into the emitted graph (§20 step 12, §10), so the viewer's single input stays single (§16.4); the figure artwork itself is a viewer asset, like its stylesheet. Indicators (influence, freshness, condition) are rendered onto the regions at view time from the fold output (§31.8). A domain brings its own field geometry: knowledge has none (force-directed layout), the body is anatomical.
 
 ## §32.1 Field: Zones and Patterns
 

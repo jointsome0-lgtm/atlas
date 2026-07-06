@@ -10,9 +10,12 @@ Generated graph file:
   "trails": [],
   "state": {},
   "influence": {},
-  "frontier": []
+  "frontier": [],
+  "projections": {}
 }
 ```
+
+`projections` is curated viewer-projection content the builder embeds (zone → figure region, §32; §20 step 12) so the viewer's single input stays single (§16.4) — a mapping, never state (§31.8).
 
 ## §10.1 Node Types
 
