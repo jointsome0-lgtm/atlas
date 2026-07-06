@@ -30,7 +30,7 @@ The system should later support:
 
 ```text
 multiple learning plans
-multiple domains (first candidate: body atlas — #17)
+multiple domains (first instantiated: body atlas — §32, #17)
 source annotations
 spaced revisits
 artifact embeddings
@@ -38,7 +38,7 @@ better visualization
 external connectors
 ```
 
-Domain rule: the core — journals (§8), evidence and decisions (§9.12–§9.13), the fold (§14.5–§14.8, §20), influence (§9.10), frontier (§15), the no-guilt invariants (§31) — is domain-parameterized. What varies per domain: field semantics (what a region is), the state scales (§14.1–§14.4), observer interpretation (§13), probe and material meaning. A second domain arrives as its own field with its own scales through its own design pass — never as a fork of the core. Until one is real this is a design test, not a work item: between otherwise-equal candidates prefer the one that does not hardwire knowledge semantics into the core, and build no abstraction machinery in advance (§28.3).
+Domain rule: the core — journals (§8), evidence and decisions (§9.12–§9.13), the fold (§14.5–§14.8, §20), influence (§9.10), frontier (§15), the no-guilt invariants (§31) — is domain-parameterized. What varies per domain: field semantics (what a region is), the state scales (§14.1–§14.4), observer interpretation (§13), probe and material meaning, field geometry (knowledge is force-directed; the body is anatomical — §32), suggestion-time constraints (domain state may constrain route/frontier suggestions — §32.5), and data sensitivity classes (§32.6). A second domain arrives as its own field with its own scales through its own design pass — never as a fork of the core; the first one is instantiated in §32 (body atlas, #17) and confirmed the parameterization. The design test stands for the next candidate: prefer decisions that do not hardwire domain semantics into the core, and build no abstraction machinery a real domain has not asked for (§28.3).
 
 ## §25.6 Durable
 

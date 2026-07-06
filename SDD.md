@@ -1,6 +1,6 @@
 # System Design Document: Atlas
 
-**Version:** 0.3
+**Version:** 0.4
 **Status:** Draft
 **Project:** Atlas — graph-first personal knowledge-state system
 **Primary goal:** Extract proposed learning routes from plans, but preserve and visualize the user’s real personal trail, knowledge state, and influence field over time.
@@ -43,6 +43,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §29 Implementation Phases — Phase 0–5
 - §30 Final Design Statement — three layers that must never collapse
 - §31 Key Invariants — eight hard rules; approved 2026-07-04
+- §32 Body Atlas — second domain instantiation: zones+patterns field, body scales, capture spectrum, honest frontier (§15.3), medical layer
 - Decision Log — dated one-line decisions with rejected alternatives
 
 ---

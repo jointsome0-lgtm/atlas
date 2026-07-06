@@ -10,7 +10,10 @@ overdue
 task board
 productivity ledger
 target_repo
+streak
 ```
+
+`streak` guards the retention-mechanics ban (§15.3): device telemetry enters as evidence only and must not become rings, streaks, or weekly targets (§32.4).
 
 Allowed only when documented as forbidden.
 

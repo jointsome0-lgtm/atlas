@@ -64,5 +64,24 @@ available
 possible
 ```
 
+Dependency wording is governed by §15.3.
+
+## §15.3 The Honest-Lever Rule
+
+Guilt is not negative information. Guilt is a system exploiting the feeling of an unfulfilled plan for retention. The frontier is honest, not soft: softening a true dependency into a euphemism is manipulation of the flattering kind, and manufacturing urgency is manipulation of the pressuring kind — both are banned as mechanisms, whatever the vocabulary (§19).
+
+A dependency suggestion — "to move X, Y is the real lever" — is allowed when all three hold:
+
+```text
+1. the edge is real: a structural link (loads, builds-on) from
+   curated content or evidence, not invented at render time;
+2. the anchor is the user's own: a declared direction (§9.5) or
+   an open question — never a population norm or an un-adopted
+   plan;
+3. the evidence is cited: the records that make the claim true.
+```
+
+Without an anchor the claim has no truth value ("lagging" — behind what?); with one it is a plain fact about leverage. Unconditional imperatives ("you must"), deficit against external norms, deadlines, and retention mechanics (streaks, rings, loss warnings) remain forbidden regardless of wording (§31.6).
+
 ---
 
