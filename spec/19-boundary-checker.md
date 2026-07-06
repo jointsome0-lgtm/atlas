@@ -32,7 +32,7 @@ completion
 mastery
 ```
 
-— an aggregate or mastery measure must not exist as data anywhere in Atlas; `graph/` emissions, the §33.4 snapshot included, are scanned like the rest. §4 stays the canonical ban; these stems are its checker translation (§4's UI phrasings — "progress bars", "percent mastered" — don't name keys). Prose remains free to name them, as §4 itself does.
+— an aggregate or mastery measure must not exist as data anywhere in Atlas; `graph/` emissions, the §33.4 snapshot included, are scanned like the rest — field names and closed-enum values, never identifiers (the scan-mode rule below). §4 stays the canonical ban; these stems are its checker translation (§4's UI phrasings — "progress bars", "percent mastered" — don't name keys). Prose remains free to name them, as §4 itself does.
 
 Scan modes:
 
@@ -45,6 +45,9 @@ structure only — where user text flows through:
   closed-enum values (fields whose §9 schema defines a fixed
   value set, e.g. status, kind, depth, role); skip
   natural-language values (e.g. reason, text, summary, title)
+  and identifiers — a node id (§10.1) is user vocabulary (§5.2)
+  wherever it appears, map keys included: concept:isolation-level
+  must not trip level, nor zone:blood-pressure pressure
 ```
 
 ---

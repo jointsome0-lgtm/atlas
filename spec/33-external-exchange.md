@@ -74,6 +74,11 @@ branches on it — it scopes the intake/ path, provenance, and
 idempotency, nothing else. The user may name it after a peer —
 user's voice, like a diary line naming a brand; atlas's
 blindness is that it cannot tell.
+source and batch are slugs — lowercase letters, digits, hyphens
+— so intake/<source>/ paths and <source>/<batch>#<n> receipt
+keys parse unambiguously by construction; no escaping scheme
+exists. A delivery violating this is refused in the batch
+report, like a content-mismatched batch id.
 Records carry their activity dates: backfill is normal —
 last_seen and freshness follow the record's date, not delivery.
 Processing is the §13 flow verbatim: journal appends, trail
@@ -131,7 +136,21 @@ An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-s
       "coverage": ["none", "partial", "broad"],
       "freshness": ["fresh", "aging", "stale"]
     },
-    "zone": {"contact": ["unseen", "touched", "loaded", "probed"]}
+    "pattern": {
+      "exposure": ["unseen", "touched", "studied", "tried", "drilled", "reviewed"],
+      "confidence": ["unknown", "low", "medium", "high"],
+      "clarity": ["vague", "rough", "stable", "disputed"],
+      "coverage": ["none", "partial", "broad"],
+      "freshness": ["fresh", "aging", "stale"]
+    },
+    "zone": {
+      "contact": ["unseen", "touched", "loaded", "probed"],
+      "strength": ["unknown", "low", "medium", "high"],
+      "endurance": ["unknown", "low", "medium", "high"],
+      "mobility": ["unknown", "low", "medium", "high"],
+      "condition": ["fine", "irritated", "recovering", "restricted", "chronic"],
+      "freshness": ["fresh", "aging", "stale"]
+    }
   },
   "state": {
     "concept:idempotency": {
@@ -162,9 +181,12 @@ trail segments as recorded (§9.9);
 open questions;
 evidence refs (id, kind, date — content stays home) and the
 confirmed decisions behind gated dimensions (§9.13);
-the scales themselves: the document is self-describing, a
-consumer never hardcodes a ladder, and per-domain scale
-evolution (§25.5) is not a breaking change.
+the scales themselves, complete per node kind: every dimension
+an exported entry carries has its ladder under scales — the
+motor exposure ladder (§32.3) beside the knowledge one, the full
+zone set (§32.2) — a snapshot emitting a value whose ladder is
+absent is malformed; a consumer never hardcodes a ladder, and
+per-domain scale evolution (§25.5) is not a breaking change.
 ```
 
 Excluded:
