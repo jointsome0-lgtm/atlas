@@ -1,6 +1,6 @@
 ## §33. External Exchange
 
-Atlas lives among peer systems it never learns by name: subsystems stay mutually blind, and adapters — living outside atlas, in whatever shell composes the systems — translate between a peer's world and atlas's generic boundary formats. No peer name, peer schema, or shell-specific code appears in atlas. The outward surface is exactly three: activity-ledger and plan intake (§33.2–§33.3), the state snapshot (§33.4), and the embeddable viewer (§16.4). Design pass 2026-07-06 (#19).
+Atlas lives among peer systems it never learns: subsystems stay mutually blind, and adapters — living outside atlas, in whatever shell composes the systems — translate between a peer's world and atlas's generic boundary formats. No peer schema or shell-specific code appears in atlas, and atlas never interprets peer identity: a delivery's `source` label (§33.2) is an opaque namespace atlas never branches on. The outward surface is exactly three: activity-ledger and plan intake (§33.2–§33.3), the state snapshot (§33.4), and the embeddable viewer (§16.4). Design pass 2026-07-06 (#19).
 
 ## §33.1 Exchange Model
 
@@ -68,22 +68,39 @@ observer's job: match an existing node, else a candidate node
 through §21's review step, else an open item in the batch report.
 Scale values (depth, evidence_strength) are atlas's own scales;
 anything unmappable goes down the verbal lane (§33.1).
+source is an opaque namespace, fixed when the user configures
+the adapter: atlas attaches no semantics to it and never
+branches on it — it scopes the intake/ path, provenance, and
+idempotency, nothing else. The user may name it after a peer —
+user's voice, like a diary line naming a brand; atlas's
+blindness is that it cannot tell.
 Records carry their activity dates: backfill is normal —
 last_seen and freshness follow the record's date, not delivery.
 Processing is the §13 flow verbatim: journal appends, trail
 segments derived (§13.2 step 9), review-gated proposals through
 §14.6. A batch claiming broad deep exposure (dozens of applied)
 is §13.2 step 10's high-impact ask, never a silent write.
-Provenance: every journal record created from a batch carries
+Provenance: every journal row created from a batch carries
 intake: "<source>/<batch>#<n>" — n the record's position in
 records — the §25.3 audit line from journal entry back to the
 delivered line. A batch id names one immutable delivery: the
 same id arriving with different content is refused in the batch
-report; a corrected batch is a new id. Idempotency is per
-record: processing appends only records whose intake key no
-journal holds yet, so re-delivering a batch appends nothing and
-a run that stopped mid-batch resumes at the first unrecorded
-record.
+report; a corrected batch is a new id.
+Receipts: processing a record ends by appending {intake, date,
+disposition — what was appended, what went to the report} to
+state/intake.jsonl (§8) — outputs first, receipt last. The
+receipt is provenance, not evidence: §9.12 is untouched and the
+§20 fold never reads it. It is the one processed-marker, so it
+also covers records whose outputs are not journal rows — a plan
+record's outputs are files and report lines (§33.3).
+Idempotency is per receipt: a record is processed iff its
+receipt exists — re-delivering a batch appends nothing, a run
+that stopped mid-batch resumes at the first unreceipted record.
+A receiptless record that already left rows (intake key present,
+no receipt — an interrupted run) is never silently reprocessed:
+the observer is an interpreter (§21), a second pass may read the
+record differently, so the partial surfaces in the batch report
+for the user to resolve (§13.2 step 10 discipline).
 Nothing is silently dropped: the batch report lists every record
 that could not be resolved or placed (§12.2 step 11 discipline).
 Device and health telemetry inherits the §32.6 sensitivity class;

@@ -80,7 +80,11 @@ viewer/index.html#mode=trail&focus=direction:backend-distributed-systems-python
 ```
 
 ```text
-mode = a §16.1 view name (kebab-case); focus = any node id (§10.1).
+mode ∈ {field, material, route, trail, influence, state,
+frontier, question} — the §16.1 views by canonical slug, defined
+here and only here (a URL contract is never derived from prose
+titles); a new §16.1 view adds its slug to this set. focus = any
+node id (§10.1).
 The URL is the whole input: no shell handshake, no message
 protocol, no shell-specific code in atlas (§33.1); the same URL
 renders the same view top-level or inside an iframe.

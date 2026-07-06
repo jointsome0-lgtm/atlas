@@ -51,6 +51,7 @@ atlas/
     encounters.jsonl
     open-questions.jsonl
     decisions.jsonl
+    intake.jsonl
 
   graph/
     schema.yaml
