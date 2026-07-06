@@ -56,7 +56,7 @@ Records — the §9.12 evidence kinds, plus `plan` (§33.3):
 {"kind": "encounter", "date": "2026-07-05", "target": {"url": "https://redis.io/docs/develop/"}, "depth": "read"}
 {"kind": "artifact", "date": "2026-07-05", "type": "note", "text": "I think I understood consumer groups; rebalancing still fuzzy.", "refs": [{"title": "Kafka: The Definitive Guide"}]}
 {"kind": "question", "date": "2026-07-05", "text": "when does a rebalance drop uncommitted offsets?"}
-{"kind": "artifact", "date": "2026-07-06", "type": "session-log", "text": "swim 45min: 4x50 catch drills, 1500 free; HR avg 132"}
+{"kind": "artifact", "date": "2026-07-06", "type": "session-log", "text": "swim 45min: 4x50 catch drills, 1500 free; HR avg 132", "sensitivity": "medical"}
 ```
 
 Rules:
@@ -114,8 +114,18 @@ partial surfaces in the batch report for the user to resolve
 (§13.2 step 10 discipline).
 Nothing is silently dropped: the batch report lists every record
 that could not be resolved or placed (§12.2 step 11 discipline).
-Device and health telemetry inherits the §32.6 sensitivity class;
-tier-2 body capture arrives through this format (§32.4).
+Sensitivity is declared, never inferred: source is opaque, so a
+record carrying §32.6-class content says so — sensitivity:
+"medical" on the record, or on the envelope as the batch-wide
+default (a record's own value wins). Values are the §32.6
+classes — today exactly {medical}; a new class is a Decision
+Log entry. Classifying is part of the adapter's translation
+burden (§33.1): health telemetry — HR, labs — is medical per
+§32.4; the verbal lane is classed by the observer at
+interpretation, like any diary line. The observer persists the
+class onto every journal row derived from the record — the bit
+the §33.4 default exclusion and the §32.6 agent-context rule
+follow. Tier-2 body capture arrives through this format (§32.4).
 ```
 
 ## §33.3 Intake: Plans

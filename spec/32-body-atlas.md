@@ -95,7 +95,8 @@ sharing the session's via.
 Device data: imported only on user initiative (§31.7); telemetry
 is evidence only — never goals, streaks, rings, or weekly targets
 (`streak` is checker-banned, §19). Health telemetry (HR) inherits
-the medical sensitivity class (§32.6).
+the medical sensitivity class (§32.6) — declared by the adapter
+at intake (§33.2), never inferred from source.
 No mandatory fields, ever: each required field doubles capture
 cost and kills the habit.
 ```
