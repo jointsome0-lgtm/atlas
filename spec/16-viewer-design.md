@@ -69,5 +69,28 @@ What questions are pulling me now?
 What is nearby but not obligatory?
 ```
 
+## §16.4 Embedding
+
+Views are URL-addressable — mode plus optional focus are the whole address:
+
+```text
+viewer/index.html#mode=frontier
+viewer/index.html#mode=state&focus=concept:idempotency
+viewer/index.html#mode=trail&focus=direction:backend-distributed-systems-python
+```
+
+```text
+mode = a §16.1 view name (kebab-case); focus = any node id (§10.1).
+The URL is the whole input: no shell handshake, no message
+protocol, no shell-specific code in atlas (§33.1); the same URL
+renders the same view top-level or inside an iframe.
+The scheme is stable: params are only added, never renamed or
+repurposed without a Decision Log entry; unknown params are
+ignored.
+The static viewer stays local: it reads graph/atlas-graph.json
+and nothing else; embedding grants the shell a window, not a
+channel (§24).
+```
+
 ---
 

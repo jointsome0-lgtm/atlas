@@ -16,6 +16,7 @@ diffs
 review comments
 diagrams
 manual declarations
+intake batches (§33.2)
 ```
 
 ## §13.2 Observation Steps

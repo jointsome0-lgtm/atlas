@@ -14,6 +14,8 @@ Placement principles:
 4. graph/  = derived outputs — never edited by hand (§20 emits).
 5. File names inside atlas/ are content, not structure: the spec does not
    predict them; the example import lives in §12.3.
+6. intake/ = delivered batches (§33.2) — kept as delivered (audit),
+   never edited by atlas, never checker-scanned (§19).
 ```
 
 Normative skeleton — the paths other sections rely on:
@@ -42,6 +44,8 @@ atlas/
     imported/
     extracted/
 
+  intake/
+
   state/
     artifacts.jsonl
     encounters.jsonl
@@ -51,6 +55,7 @@ atlas/
   graph/
     schema.yaml
     atlas-graph.json
+    atlas-snapshot.json
 
   viewer/
     index.html
@@ -61,6 +66,7 @@ atlas/
     import_plan.py
     observe_artifacts.py
     build_atlas_graph.py
+    export_snapshot.py
     check_atlas_boundaries.py
     validate_atlas.py
 ```

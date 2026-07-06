@@ -1,6 +1,6 @@
 # System Design Document: Atlas
 
-**Version:** 0.4
+**Version:** 0.5
 **Status:** Draft
 **Project:** Atlas — graph-first personal knowledge-state system
 **Primary goal:** Extract proposed learning routes from plans, but preserve and visualize the user’s real personal trail, knowledge state, and influence field over time.
@@ -28,7 +28,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §13 Artifact Observation Flow — inputs, observation steps, example
 - §14 State Update Rules — scales; evidence→exposure transitions; review-gated dimensions; freshness decay; material state; edge weight (§14.9)
 - §15 Frontier Computation — inputs, output format, allowed/forbidden wording
-- §16 Viewer Design — modes, visual semantics, required UI behavior
+- §16 Viewer Design — modes, visual semantics, required UI behavior, embedding (§16.4)
 - §17 Agent Architecture — four core roles and agent rules
 - §18 Codex Role — checkpoints and challenge questions
 - §19 Boundary Checker — forbidden terms, scanned paths
@@ -44,6 +44,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §30 Final Design Statement — three layers that must never collapse
 - §31 Key Invariants — eight hard rules; approved 2026-07-04
 - §32 Body Atlas — second domain instantiation: zones+patterns field, body scales, capture spectrum, honest frontier (§15.3), medical layer
+- §33 External Exchange — blind peers, adapters outside: activity/plan intake (evidence-only), state snapshot export (state-as-evidence), embeddable viewer (§16.4)
 - Decision Log — dated one-line decisions with rejected alternatives
 
 ---

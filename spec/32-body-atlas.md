@@ -73,7 +73,7 @@ tier 0 (the floor — sacred): one free line, ≤30 seconds
 tier 1: semi-structured log — exercises, weights, reps,
         sensations, session flow
 tier 2: device export (watch: HR, laps, duration) — through the
-        generic intake boundary (#19)
+        generic intake boundary (§33.2)
 ```
 
 Rules:

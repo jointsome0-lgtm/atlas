@@ -32,6 +32,7 @@ auth
 complex analytics
 automatic confidence upgrades
 support-link weight proposals (links render unassessed until decided, §14.9)
+intake / snapshot / embedding implementation (formats and URL scheme are specified — §33, §16.4)
 ```
 
 ---

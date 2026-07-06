@@ -17,6 +17,7 @@ Notion/Google Docs export
 course syllabus
 repo README
 chat transcript
+external plan record via the intake boundary (§33.3)
 ```
 
 ## §12.2 Import Steps

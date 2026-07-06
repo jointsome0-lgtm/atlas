@@ -35,7 +35,7 @@ source annotations
 spaced revisits
 artifact embeddings
 better visualization
-external connectors
+external connectors (adapters outside atlas, targeting the §33 formats)
 ```
 
 Domain rule: the core — journals (§8), evidence and decisions (§9.12–§9.13), the fold (§14.5–§14.8, §20), influence (§9.10), frontier (§15), the no-guilt invariants (§31) — is domain-parameterized. What varies per domain: field semantics (what a region is), the state scales (§14.1–§14.4), observer interpretation (§13), probe and material meaning, field geometry (knowledge is force-directed; the body is anatomical — §32), suggestion-time constraints (domain state may constrain route/frontier suggestions — §32.5), and data sensitivity classes (§32.6). A second domain arrives as its own field with its own scales through its own design pass — never as a fork of the core; the first one is instantiated in §32 (body atlas, #17) and confirmed the parameterization. The design test stands for the next candidate: prefer decisions that do not hardwire domain semantics into the core, and build no abstraction machinery a real domain has not asked for (§28.3).

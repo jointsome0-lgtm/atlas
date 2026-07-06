@@ -1,6 +1,6 @@
 ## §19. Boundary Checker
 
-`scripts/check_atlas_boundaries.py` should fail on forbidden project/task-manager language in Atlas's own voice, outside explicit forbidden-term sections. The user's voice is never checked: natural-language field values are exempt, and `plans/imported/` is never scanned — a raw plan or a trail `reason` may say `deadline` freely; the checker must never force a rewrite of user memory (§5.2).
+`scripts/check_atlas_boundaries.py` should fail on forbidden project/task-manager language in Atlas's own voice, outside explicit forbidden-term sections. The user's voice is never checked: natural-language field values are exempt, and `plans/imported/` and `intake/` are never scanned (§33.2: a delivered batch keeps a foreign system's voice) — a raw plan or a trail `reason` may say `deadline` freely; the checker must never force a rewrite of user memory (§5.2).
 
 Forbidden terms: every §4 forbidden core state (§4's list is canonical — the checker must not fork it), plus:
 
