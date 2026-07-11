@@ -298,7 +298,13 @@ def build() -> tuple[dict, list[str], list[str]]:
             # atlas-graph.json and nothing else (§16.4), so a hidden route
             # must be distinguishable from an available one in the output.
             status = meta.get("status")
-            if (status is not None and expected != "suggested_route"
+            if status is not None and expected in ("concept", "zone", "pattern"):
+                # §9.1/§32.1: concept-kind files carry identity, links, and
+                # content only — every state dimension is derived (§31.8).
+                errors.append(f"{path}: {expected} files do not author status "
+                              f"(state is derived, §9.1)")
+                status = None
+            elif (status is not None and expected != "suggested_route"
                     and status not in LIFECYCLE_STATUSES):
                 errors.append(f"{path}: status {status!r} outside the §9.2/§9.11 "
                               f"lifecycle vocabulary (active|archived)")
@@ -333,14 +339,16 @@ def build() -> tuple[dict, list[str], list[str]]:
                     add_edge(node_id, concept, "overall_concept", path)
                 add_supports(node_id, meta.get("supported_by"), path)
                 # §20 step 3: expand MaterialPart nodes.
-                material_slug = node_id.split(":", 1)[1]
+                # add_node has already recorded the shape error for a
+                # malformed id; don't let the slug derivation crash on it.
+                material_slug = node_id.split(":", 1)[1] if ":" in node_id else None
                 for part in meta.get("parts") or []:
                     part_id = part.get("id")
                     add_node(part_id, "material_part", part.get("title", ""), path,
                              {"material": node_id})
                     if part_id is None:
                         continue
-                    if not part_id.startswith(f"part:{material_slug}/"):
+                    if material_slug and not part_id.startswith(f"part:{material_slug}/"):
                         errors.append(
                             f"{path}: part id {part_id!r} does not carry its "
                             f"material's slug {material_slug!r} (§10.1)")
