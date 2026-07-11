@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-11T00:35:24Z",
+  "generated_at": "2026-07-11T00:41:34Z",
   "nodes": [
     {
       "id": "concept:http-methods",
@@ -52,10 +52,20 @@
       "material": "material:mdn-http-methods"
     },
     {
+      "id": "pattern:push-up",
+      "type": "pattern",
+      "title": "Push-up"
+    },
+    {
       "id": "suggested-route:demo-backend-default",
       "type": "suggested_route",
       "title": "REST → Idempotency → Redis",
       "status": "available"
+    },
+    {
+      "id": "zone:shoulders",
+      "type": "zone",
+      "title": "Shoulders"
     }
   ],
   "edges": [
@@ -171,11 +181,19 @@
       "target": "part:fastapi-tutorial/path-operations",
       "type": "supports",
       "note": "Unpacks the idempotency semantics path operations assume."
+    },
+    {
+      "source": "pattern:push-up",
+      "target": "zone:shoulders",
+      "type": "loads",
+      "weight": "high"
     }
   ],
   "trails": [],
   "state": {},
   "influence": {},
   "frontier": [],
-  "projections": {}
+  "projections": {
+    "zone:shoulders": "torso-front-upper"
+  }
 }

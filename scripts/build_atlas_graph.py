@@ -192,6 +192,7 @@ def build() -> tuple[dict, list[str], list[str]]:
     warnings: list[str] = []
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
+    projections: dict[str, str] = {}  # zone -> figure region (§20 step 12, §32)
 
     def add_node(node_id, node_type, title, source, extra=None):
         if node_id is None:
@@ -216,6 +217,27 @@ def build() -> tuple[dict, list[str], list[str]]:
         edge.update({k: v for k, v in meta.items() if v is not None})
         edge["_origin"] = str(origin.relative_to(ROOT))
         edges.append(edge)
+
+    def add_concept_edges(owner_id, entries, path):
+        # One authored-edge species (§9.3): material parts and body patterns
+        # (§32.1) alike; weight is the §14.9 closed scale.
+        for ce in entries or []:
+            weight = ce.get("weight")
+            if weight is not None and weight not in EDGE_WEIGHTS:
+                errors.append(f"{path}: weight {weight!r} on {owner_id} -> "
+                              f"{ce.get('to')} outside the §14.9 scale")
+            add_edge(owner_id, ce.get("to"), ce.get("role", "mentions"),
+                     path, weight=weight)
+
+    def add_supports(owner_id, entries, path):
+        # §9.14: both endpoints are materials or parts; helper -> receiver.
+        for helper in entries or []:
+            helper_id = helper["id"] if isinstance(helper, dict) else helper
+            if helper_id and id_type(helper_id) not in ("material", "material_part"):
+                errors.append(f"{path}: supports endpoint {helper_id!r} is not a "
+                              f"material or part (§9.14)")
+            add_edge(helper_id, owner_id, "supports", path,
+                     note=helper.get("note") if isinstance(helper, dict) else None)
 
     # §20 steps 1-2, 4-5: curated kinds. Zones/patterns dirs are read the same
     # way and are simply empty until the body domain lands (§32).
@@ -243,13 +265,20 @@ def build() -> tuple[dict, list[str], list[str]]:
                 for rel in meta.get("related_concepts") or []:
                     add_edge(node_id, rel, "related_to", path)
 
+            if expected == "pattern":
+                # §32.1: a pattern authors its loads/etc. edges as a part
+                # authors concept_edges — same species, same gated weight.
+                add_concept_edges(node_id, meta.get("concept_edges"), path)
+
+            if expected == "zone" and meta.get("figure_region"):
+                # §20 step 12: the silhouette mapping rides in the graph so
+                # the viewer's single input stays single (§16.4).
+                projections[node_id] = meta["figure_region"]
+
             if expected == "material":
                 for concept in meta.get("overall_concepts") or []:
                     add_edge(node_id, concept, "overall_concept", path)
-                for helper in meta.get("supported_by") or []:
-                    helper_id = helper["id"] if isinstance(helper, dict) else helper
-                    add_edge(helper_id, node_id, "supports", path,
-                             note=helper.get("note") if isinstance(helper, dict) else None)
+                add_supports(node_id, meta.get("supported_by"), path)
                 # §20 step 3: expand MaterialPart nodes.
                 for part in meta.get("parts") or []:
                     part_id = part.get("id")
@@ -258,18 +287,8 @@ def build() -> tuple[dict, list[str], list[str]]:
                     if part_id is None:
                         continue
                     add_edge(node_id, part_id, "has_part", path)
-                    for ce in part.get("concept_edges") or []:
-                        weight = ce.get("weight")
-                        if weight is not None and weight not in EDGE_WEIGHTS:
-                            errors.append(
-                                f"{path}: weight {weight!r} on {part_id} -> "
-                                f"{ce.get('to')} outside the §14.9 scale")
-                        add_edge(part_id, ce.get("to"), ce.get("role", "mentions"),
-                                 path, weight=weight)
-                    for helper in part.get("supported_by") or []:
-                        helper_id = helper["id"] if isinstance(helper, dict) else helper
-                        add_edge(helper_id, part_id, "supports", path,
-                                 note=helper.get("note") if isinstance(helper, dict) else None)
+                    add_concept_edges(part_id, part.get("concept_edges"), path)
+                    add_supports(part_id, part.get("supported_by"), path)
 
             if expected == "direction":
                 for concept in meta.get("core_concepts") or []:
@@ -326,7 +345,7 @@ def build() -> tuple[dict, list[str], list[str]]:
         "state": {},        # §29 Phase 3 (fold, §14.5-14.8)
         "influence": {},    # §29 Phase 4 (§9.10)
         "frontier": [],     # §29 Phase 4 (§15)
-        "projections": {},  # §32 body domain
+        "projections": dict(sorted(projections.items())),  # §20 step 12, §32
     }
     return graph, errors, warnings
 
