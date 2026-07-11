@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-11T00:41:34Z",
+  "generated_at": "2026-07-11T00:48:28Z",
   "nodes": [
     {
       "id": "concept:http-methods",
@@ -57,6 +57,12 @@
       "title": "Push-up"
     },
     {
+      "id": "probe:duplicate-post-idempotency",
+      "type": "probe",
+      "title": "Duplicate POST with idempotency key",
+      "status": "active"
+    },
+    {
       "id": "suggested-route:demo-backend-default",
       "type": "suggested_route",
       "title": "REST → Idempotency → Redis",
@@ -83,6 +89,11 @@
       "source": "concept:idempotency",
       "target": "concept:rest-api",
       "type": "related_to"
+    },
+    {
+      "source": "concept:idempotency",
+      "target": "probe:duplicate-post-idempotency",
+      "type": "probed_by"
     },
     {
       "source": "concept:idempotency",
@@ -120,6 +131,11 @@
       "source": "concept:rest-api",
       "target": "direction:backend-distributed-systems-python",
       "type": "part_of_direction"
+    },
+    {
+      "source": "concept:rest-api",
+      "target": "probe:duplicate-post-idempotency",
+      "type": "probed_by"
     },
     {
       "source": "concept:rest-api",

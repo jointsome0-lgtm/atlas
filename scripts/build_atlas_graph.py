@@ -55,8 +55,17 @@ EDGE_TYPES = {
     "primary_for", "supporting_for",
 }
 
+# §10.1 — id shape is part of the graph contract (§16.4 uses ids as URL focus
+# values): kebab-case slugs, underscores never, parts carry the material slug.
+_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+PART_ID_RE = re.compile(rf"^part:{_SLUG}/{_SLUG}$")
+NODE_ID_RE = re.compile(rf"^[a-z-]+:{_SLUG}$")
+
 # §14.9 — authored edge weight is a closed scale (the import-time hypothesis).
 EDGE_WEIGHTS = {"low", "medium", "high"}
+
+# §9.2/§9.11 — lifecycle vocabulary for everything that is not a route.
+LIFECYCLE_STATUSES = {"active", "archived"}
 
 # §9.4 — route lifecycle vocabulary; task-state words are §4 leakage.
 ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archived"}
@@ -207,6 +216,10 @@ def build() -> tuple[dict, list[str], list[str]]:
         if id_type(node_id) != node_type:
             errors.append(
                 f"{source}: id {node_id!r} prefix does not match type {node_type!r} (§10.1)")
+        shape = PART_ID_RE if node_type == "material_part" else NODE_ID_RE
+        if not shape.match(node_id):
+            errors.append(f"{source}: id {node_id!r} is not the canonical §10.1 shape "
+                          f"({'part:material-slug/part-slug' if node_type == 'material_part' else 'prefix:kebab-case-slug'})")
         node = {"id": node_id, "type": node_type, "title": title}
         if extra:
             node.update(extra)
@@ -255,7 +268,12 @@ def build() -> tuple[dict, list[str], list[str]]:
             # Authored lifecycle travels with the node: the viewer reads
             # atlas-graph.json and nothing else (§16.4), so a hidden route
             # must be distinguishable from an available one in the output.
-            extra = {"status": meta["status"]} if meta.get("status") else None
+            status = meta.get("status")
+            if (status is not None and expected != "suggested_route"
+                    and status not in LIFECYCLE_STATUSES):
+                errors.append(f"{path}: status {status!r} outside the §9.2/§9.11 "
+                              f"lifecycle vocabulary (active|archived)")
+            extra = {"status": status} if status else None
             add_node(meta.get("id"), expected, meta.get("title", ""), path, extra)
             node_id = meta.get("id")
             if node_id is None:
@@ -274,6 +292,12 @@ def build() -> tuple[dict, list[str], list[str]]:
                 # §20 step 12: the silhouette mapping rides in the graph so
                 # the viewer's single input stays single (§16.4).
                 projections[node_id] = meta["figure_region"]
+
+            if expected == "probe":
+                # §9.11/§20 step 7: a probe targets concepts; the reference
+                # loop validates them, the edge is the §10.2 probed_by.
+                for concept in meta.get("concepts") or []:
+                    add_edge(concept, node_id, "probed_by", path)
 
             if expected == "material":
                 for concept in meta.get("overall_concepts") or []:
