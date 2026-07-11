@@ -61,6 +61,29 @@ _SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 PART_ID_RE = re.compile(rf"^part:{_SLUG}/{_SLUG}$")
 NODE_ID_RE = re.compile(rf"^[a-z-]+:{_SLUG}$")
 
+# §9.3/§32.1 — roles an author may write in concept_edges; the structural
+# types (has_part, step_of_route, …) are created by the builder only.
+AUTHORED_ROLES = {
+    "related_to", "prerequisite_of", "extends", "implements", "contradicts",
+    "explains", "demonstrates", "critiques", "mentions", "loads",
+}
+
+# Endpoint-kind contract per emitted edge type (source kinds, target kinds).
+# Authored roles default to part/pattern -> concept; §32.1 pins loads.
+ENDPOINT_RULES = {
+    "related_to": ({"concept"}, {"concept"}),
+    "overall_concept": ({"material"}, {"concept"}),
+    "has_part": ({"material"}, {"material_part"}),
+    "supports": ({"material", "material_part"}, {"material", "material_part"}),
+    "part_of_direction": ({"concept"}, {"direction"}),
+    "step_of_route": ({"concept"}, {"suggested_route"}),
+    "probed_by": ({"concept"}, {"probe"}),
+    "loads": ({"pattern"}, {"zone"}),
+    **{role: ({"material_part", "pattern"}, {"concept"})
+       for role in ("prerequisite_of", "extends", "implements", "contradicts",
+                    "explains", "demonstrates", "critiques", "mentions")},
+}
+
 # §14.9 — authored edge weight is a closed scale (the import-time hypothesis).
 EDGE_WEIGHTS = {"low", "medium", "high"}
 
@@ -239,16 +262,17 @@ def build() -> tuple[dict, list[str], list[str]]:
             if weight is not None and weight not in EDGE_WEIGHTS:
                 errors.append(f"{path}: weight {weight!r} on {owner_id} -> "
                               f"{ce.get('to')} outside the §14.9 scale")
-            add_edge(owner_id, ce.get("to"), ce.get("role", "mentions"),
-                     path, weight=weight)
+            role = ce.get("role", "mentions")
+            if role not in AUTHORED_ROLES:
+                errors.append(f"{path}: role {role!r} on {owner_id} -> "
+                              f"{ce.get('to')} is not an authored relationship "
+                              f"role (§9.3/§32.1)")
+            add_edge(owner_id, ce.get("to"), role, path, weight=weight)
 
     def add_supports(owner_id, entries, path):
-        # §9.14: both endpoints are materials or parts; helper -> receiver.
+        # §9.14: helper -> receiver; endpoint kinds enforced by ENDPOINT_RULES.
         for helper in entries or []:
             helper_id = helper["id"] if isinstance(helper, dict) else helper
-            if helper_id and id_type(helper_id) not in ("material", "material_part"):
-                errors.append(f"{path}: supports endpoint {helper_id!r} is not a "
-                              f"material or part (§9.14)")
             add_edge(helper_id, owner_id, "supports", path,
                      note=helper.get("note") if isinstance(helper, dict) else None)
 
@@ -341,6 +365,14 @@ def build() -> tuple[dict, list[str], list[str]]:
             errors.append(
                 f"{edge['_origin']}: edge type {edge['type']!r} outside the §10.2 "
                 f"closed set ({edge['source']} -> {edge['target']})")
+        rule = ENDPOINT_RULES.get(edge["type"])
+        if rule:
+            for endpoint, allowed in zip(("source", "target"), rule):
+                kind = id_type(edge[endpoint]) if edge[endpoint] else None
+                if kind is not None and kind not in allowed:
+                    errors.append(
+                        f"{edge['_origin']}: {edge['type']} {endpoint} "
+                        f"{edge[endpoint]!r} must be {'/'.join(sorted(allowed))}")
         for endpoint in ("source", "target"):
             ref = edge[endpoint]
             if ref in nodes:
