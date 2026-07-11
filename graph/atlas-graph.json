@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-11T00:21:50Z",
+  "generated_at": "2026-07-11T00:28:38Z",
   "nodes": [
     {
       "id": "concept:http-methods",
@@ -24,17 +24,20 @@
     {
       "id": "direction:backend-distributed-systems-python",
       "type": "direction",
-      "title": "Backend Distributed Systems in Python"
+      "title": "Backend Distributed Systems in Python",
+      "status": "active"
     },
     {
       "id": "material:fastapi-tutorial",
       "type": "material",
-      "title": "FastAPI Official Tutorial"
+      "title": "FastAPI Official Tutorial",
+      "status": "active"
     },
     {
       "id": "material:mdn-http-methods",
       "type": "material",
-      "title": "MDN HTTP Methods Reference"
+      "title": "MDN HTTP Methods Reference",
+      "status": "active"
     },
     {
       "id": "part:fastapi-tutorial/path-operations",
@@ -51,7 +54,8 @@
     {
       "id": "suggested-route:demo-backend-default",
       "type": "suggested_route",
-      "title": "REST → Idempotency → Redis"
+      "title": "REST → Idempotency → Redis",
+      "status": "available"
     }
   ],
   "edges": [

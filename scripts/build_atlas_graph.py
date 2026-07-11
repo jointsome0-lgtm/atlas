@@ -45,6 +45,16 @@ ID_PREFIXES = {
     "pattern": "pattern",
 }
 
+# §10.2 — closed set; extended only by a domain pass in the same commit.
+EDGE_TYPES = {
+    "related_to", "prerequisite_of", "extends", "implements", "contradicts",
+    "explains", "demonstrates", "critiques", "mentions", "loads", "has_part",
+    "overall_concept", "supports", "part_of_direction", "step_of_route",
+    "suggested_next", "visited", "moved_to", "via", "pulled_by",
+    "produced_artifact", "updates_state", "influences", "probed_by",
+    "primary_for", "supporting_for",
+}
+
 # §9.4 — route lifecycle vocabulary; task-state words are §4 leakage.
 ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archived"}
 FORBIDDEN_ROUTE_STATUSES = {"done", "failed", "late", "blocked"}
@@ -217,7 +227,11 @@ def build() -> tuple[dict, list[str], list[str]]:
                                              and declared == "suggested_route"):
                 errors.append(f"{path}: type {declared!r}, expected {expected!r}")
                 continue
-            add_node(meta.get("id"), expected, meta.get("title", ""), path)
+            # Authored lifecycle travels with the node: the viewer reads
+            # atlas-graph.json and nothing else (§16.4), so a hidden route
+            # must be distinguishable from an available one in the output.
+            extra = {"status": meta["status"]} if meta.get("status") else None
+            add_node(meta.get("id"), expected, meta.get("title", ""), path, extra)
             node_id = meta.get("id")
             if node_id is None:
                 continue
@@ -272,6 +286,10 @@ def build() -> tuple[dict, list[str], list[str]]:
     # may downgrade to warnings — none of those kinds is curated in Phase 1.
     DELETABLE = {"trail_segment", "artifact", "encounter"}
     for edge in edges:
+        if edge["type"] not in EDGE_TYPES:
+            errors.append(
+                f"{edge['_origin']}: edge type {edge['type']!r} outside the §10.2 "
+                f"closed set ({edge['source']} -> {edge['target']})")
         for endpoint in ("source", "target"):
             ref = edge[endpoint]
             if ref in nodes:
