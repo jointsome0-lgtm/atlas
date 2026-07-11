@@ -1,7 +1,7 @@
 # atlas — agent instructions
 
 Design-stage project: no code yet; the primary artifact is the specification — `SDD.md` (map) + `spec/` (body, one file per §).
-The current task is refining the SDD: sharpening requirements, finding contradictions and gaps, proposing alternatives. No code until the SDD is agreed.
+Implementation started 2026-07-11 (§29 Phase 1, the graph-builder spike): code changes must cite the § they implement, and SDD refinement continues alongside — a spec finding is still an issue/§ edit, never a silent code workaround.
 
 ## SDD refinement rules
 
