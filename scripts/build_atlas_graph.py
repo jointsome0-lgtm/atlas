@@ -55,6 +55,9 @@ EDGE_TYPES = {
     "primary_for", "supporting_for",
 }
 
+# §14.9 — authored edge weight is a closed scale (the import-time hypothesis).
+EDGE_WEIGHTS = {"low", "medium", "high"}
+
 # §9.4 — route lifecycle vocabulary; task-state words are §4 leakage.
 ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archived"}
 FORBIDDEN_ROUTE_STATUSES = {"done", "failed", "late", "blocked"}
@@ -256,8 +259,13 @@ def build() -> tuple[dict, list[str], list[str]]:
                         continue
                     add_edge(node_id, part_id, "has_part", path)
                     for ce in part.get("concept_edges") or []:
+                        weight = ce.get("weight")
+                        if weight is not None and weight not in EDGE_WEIGHTS:
+                            errors.append(
+                                f"{path}: weight {weight!r} on {part_id} -> "
+                                f"{ce.get('to')} outside the §14.9 scale")
                         add_edge(part_id, ce.get("to"), ce.get("role", "mentions"),
-                                 path, weight=ce.get("weight"))
+                                 path, weight=weight)
                     for helper in part.get("supported_by") or []:
                         helper_id = helper["id"] if isinstance(helper, dict) else helper
                         add_edge(helper_id, part_id, "supports", path,
