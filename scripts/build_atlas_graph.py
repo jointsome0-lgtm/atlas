@@ -68,18 +68,23 @@ AUTHORED_ROLES = {
     "explains", "demonstrates", "critiques", "mentions", "loads",
 }
 
+# §32.1: patterns are concept-kind nodes — a program part maps to patterns
+# exactly as a chapter maps to concepts.
+CONCEPT_KIND = {"concept", "pattern"}
+
 # Endpoint-kind contract per emitted edge type (source kinds, target kinds).
-# Authored roles default to part/pattern -> concept; §32.1 pins loads.
+# Authored roles default to part/pattern -> concept-kind; §32.1 pins loads;
+# probes reveal understanding (concept-kind) or capacity (zones, §32.2).
 ENDPOINT_RULES = {
-    "related_to": ({"concept"}, {"concept"}),
-    "overall_concept": ({"material"}, {"concept"}),
+    "related_to": (CONCEPT_KIND, CONCEPT_KIND),
+    "overall_concept": ({"material"}, CONCEPT_KIND),
     "has_part": ({"material"}, {"material_part"}),
     "supports": ({"material", "material_part"}, {"material", "material_part"}),
-    "part_of_direction": ({"concept"}, {"direction"}),
-    "step_of_route": ({"concept"}, {"suggested_route"}),
-    "probed_by": ({"concept"}, {"probe"}),
+    "part_of_direction": (CONCEPT_KIND, {"direction"}),
+    "step_of_route": (CONCEPT_KIND, {"suggested_route"}),
+    "probed_by": (CONCEPT_KIND | {"zone"}, {"probe"}),
     "loads": ({"pattern"}, {"zone"}),
-    **{role: ({"material_part", "pattern"}, {"concept"})
+    **{role: ({"material_part", "pattern"}, CONCEPT_KIND)
        for role in ("prerequisite_of", "extends", "implements", "contradicts",
                     "explains", "demonstrates", "critiques", "mentions")},
 }
