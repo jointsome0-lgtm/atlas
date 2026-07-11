@@ -333,12 +333,17 @@ def build() -> tuple[dict, list[str], list[str]]:
                     add_edge(node_id, concept, "overall_concept", path)
                 add_supports(node_id, meta.get("supported_by"), path)
                 # §20 step 3: expand MaterialPart nodes.
+                material_slug = node_id.split(":", 1)[1]
                 for part in meta.get("parts") or []:
                     part_id = part.get("id")
                     add_node(part_id, "material_part", part.get("title", ""), path,
                              {"material": node_id})
                     if part_id is None:
                         continue
+                    if not part_id.startswith(f"part:{material_slug}/"):
+                        errors.append(
+                            f"{path}: part id {part_id!r} does not carry its "
+                            f"material's slug {material_slug!r} (§10.1)")
                     add_edge(node_id, part_id, "has_part", path)
                     add_concept_edges(part_id, part.get("concept_edges"), path)
                     add_supports(part_id, part.get("supported_by"), path)
