@@ -53,24 +53,35 @@ in the set: the record's originals (intake/<source>/ lines,
     (intake:<source>/<batch>#<n>), source/probe links, and evidence
     refs — whose only §9.12 basis it is: a trail segment with
     via: [it] alone, a question extracted from it, a decision citing
-    only it. In current state and in historical blobs.
+    only it. Plus every generated file whose only provenance is the
+    record: the SuggestedRoute and candidate stubs a classed input
+    created (§33.3) — they carry its class until the user re-authors
+    them. In current state and in historical blobs.
 survives whole, refs dangling (§20 warns and skips): any row with
     other live bases — a segment or decision citing the record among
     others, a decision targeting a purged node on live evidence. Row
     content is never edited: an automation-rewritten via or evidence
     list would claim the user recorded it that way — falsified
     memory (§31.2, §25.3). Rows are removed whole or kept whole.
+    The row's persisted §32.6 class (§33.2) survives with it — a
+    named residual, never described as only a dangling id: "classed
+    provenance existed at this row" remains readable instance-side,
+    while the class itself keeps the row inside the §33.4 default
+    exclusion, so the bit never leaves by default. The deletion
+    page's residual inventory names this class.
 survives deliberately: intake receipts (§33.2) — provenance without
     content, keeping purge idempotent against a stale batch
     redelivery — and the per-event purge note (§34.3).
 ```
 
 The closure is reviewed before the rewrite runs: the runbook presents
-the computed set and the owner extends it by declaration — a
-surviving row whose free text (a segment's `reason`, a question's
-text) paraphrases the purged content; a question that outgrew its
-purged source is re-authored as the user's own instead of dying with
-it.
+the computed set and the owner adjusts it by declaration — extending:
+a surviving row whose free text (a segment's `reason`, a question's
+text) paraphrases the purged content, or a class-carrying survivor
+whose retained association is itself telling (pulled in whole, never
+edited); rescuing: a question that outgrew its purged source, or a
+since-curated candidate stub (§33.3), is re-authored as the user's
+own instead of dying with the source.
 
 Derived outputs are in no rewrite set: the emitted graph and
 snapshots are untracked in the instance (§25.6, §31.8) — post-purge
@@ -89,20 +100,34 @@ noise actually hurting on a live instance.
 content-free by construction:
 
 ```json
-{"date": "2026-07-14", "classes": ["medical"]}
-{"date": "2026-09-02"}
+{"date": "2026-07-14", "classes": ["medical"], "gen": 1}
+{"date": "2026-09-02", "gen": 2}
 ```
 
 `classes` lists the §32.6 classes involved, omitted for a purely
-owner-declared purge. Nothing else — no ids, no counts, no reasons:
-the note must survive every future rewrite untouched. Like intake
-receipts it is provenance, not evidence: §9.12 is untouched, the §20
-fold never reads it. Roles: explains that era's dangling refs to a
-later reader; anchors export invalidation by date — deliveries before
-`date` are superseded (the delivery registry lives on the composing
+owner-declared purge. `gen` is a monotone per-instance counter —
+content-free by construction, it names the operation: two same-day
+purges stay distinguishable, and the composing shell's completion
+marks (the manifest and delivery-registry ack columns on its
+deletion page) cite it, so an interrupted revocation walk resumes
+against exactly this purge. Nothing else — no ids, no counts, no
+reasons: the note must survive every future rewrite untouched. Like
+intake receipts it is provenance, not evidence: §9.12 is untouched,
+the §20 fold never reads it. Roles: explains that era's dangling
+refs to a later reader; anchors export invalidation — every
+registered delivery either carries this `gen` as its supersession
+ack or is walked (the delivery registry lives on the composing
 shell's deletion page). Per-event notes never enter this engine's
 Decision Log: purge metadata stays instance-side — the standing
 carve-out entry records the operation, never the events.
+
+What survives still correlates, and the correlation is named, not
+denied: a dangling date-serial id (type/date/ordinal), this note's
+date and classes, and the §20 build report's grouped dangles
+together bound "a classed record existed that day, at least N of
+them". By design — none of the three is exported, so the surface is
+instance-side only; the deletion page's residual inventory carries
+it (§34.6).
 
 ## §34.4 Rename and Merge: `formerly`
 
@@ -136,6 +161,14 @@ Validation: a retired id that is also living, or present in two
     formerly lists, is a build error — a 1→n redirect is
     unrepresentable. Stale curated refs resolve but are listed in
     the build report: curation converges, journals never have to.
+Purge overrides retirement: an owner-declared purge of a retired
+    id removes it from the survivor's formerly list as part of the
+    rewrite set — its surviving journal refs are already in the
+    extended set (§34.6), so post-purge there is nothing left to
+    resolve. Reuse protection for a purged id falls back to the
+    §34.6 discipline clause: no list of purged ids exists anywhere,
+    by construction — keeping one, hashed or not, would keep the
+    content.
 Scope: curated nodes only. Journal record ids (artifact:,
     encounter:, question:, trail-segment:) get no redirect
     machinery — hand-editing the row is the owner's mechanism
@@ -163,7 +196,8 @@ re-attributing old evidence to a finer node is the owner's own
 ## §34.6 Id Hygiene and Retirement
 
 Refs to purged records deliberately survive (§34.2), so the id is
-what remains — it must say nothing:
+what remains — it says nothing beyond type, date, and ordinal
+(what remains still correlates: §34.3 names the surface):
 
 ```text
 §32.6-classed records and classed curated files take
@@ -184,7 +218,10 @@ Sensitive adapters take neutral source/batch slugs (source: feed-1;
 A retired id — renamed, merged, deleted, or purged — is never
     reused: a new node under an old id silently inherits the old
     id's surviving refs — fabricated history. Machine-checked where
-    possible (§34.4 validation); discipline elsewhere.
+    possible (§34.4 validation); discipline elsewhere — a purged id
+    entirely so: purge overrides retirement (§34.4), the id leaves
+    formerly with the rewrite, so no machine-readable trace of it
+    remains to check against.
 ```
 
 ---

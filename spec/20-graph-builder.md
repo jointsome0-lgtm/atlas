@@ -20,7 +20,7 @@
 12. Emit graph/atlas-graph.json, embedding the silhouette projection collected from zone frontmatter (`figure_region`, §32) under `projections` (§10) — the viewer's single input stays single (§16.4).
 ```
 
-Step 11 distinguishes broken curated links (errors) from references to records the user deleted: a missing trail segment, artifact, or encounter is skipped with a warning, never a build failure — deletion is the owner’s right (§5.2). The report groups such dangling refs apart from curated-link errors; purge notes explain purge-era dangles (§34.2–§34.3).
+Step 11 classifies a broken reference by the ref's origin, never the target's kind: a ref in a retained journal row — whatever it targets: a trail segment, artifact, encounter, question, or a curated node (zone, material, concept, pattern) — is skipped with a warning, never a build failure — deletion is the owner’s right (§5.2), and §34.2 promises exactly such survivors; a ref authored in a living curated file is an error — curation converges (§34.4), journals never have to. The report groups dangling journal refs apart from curated-link errors; purge notes explain purge-era dangles (§34.2–§34.3).
 
 No external dependencies for MVP.
 

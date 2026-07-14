@@ -82,9 +82,12 @@ keys parse unambiguously by construction; no escaping scheme
 exists. A delivery violating this is refused in the batch
 report, like a content-mismatched batch id. A source expected
 to deliver §32.6-classed records takes a neutral slug (feed-1,
-not a provider or subject name): provenance refs and receipts
-survive purge by design (§34.2, §34.6) — an adapter-contract
-convention atlas cannot enforce, source being opaque.
+not a provider or subject name) and date-serial batch ids
+(2026-07-14-001 — the §34.6 pattern, mirrored here): both
+survive purge by design in provenance refs and receipts
+(§34.2, §34.6), so a telling slug would put the class in
+every one of them — an adapter-contract convention atlas
+cannot enforce, source being opaque.
 Records carry their activity dates: backfill is normal —
 last_seen and freshness follow the record's date, not delivery.
 Processing is the §13 flow verbatim: journal appends, trail
@@ -99,15 +102,20 @@ same id arriving with different content is refused in the batch
 report; a corrected batch is a new id.
 Receipts: state/intake.jsonl (§8) holds a pair per record —
 opened {intake, date} appended before any output, processed
-{intake, date, disposition — what was appended, what went to
-the report} appended after the last one. The marker is not
-named done: state/ is atlas's own voice, structure-scanned by
-§19, where §4 bans the term as data — the boundary's
-bookkeeping obeys the law it enforces. Receipt rows are
-provenance, not evidence: §9.12 is untouched and the §20 fold
-never reads them. processed also covers records whose outputs
-are not journal rows — a plan record's outputs are files and
-report lines (§33.3).
+{intake, date} appended after the last one. The schema is
+closed — the idempotency key, the marker, the date, nothing
+else: receipts survive every rewrite deliberately (§34.2), so
+the row is content-free by construction, never by care. What
+a record appended is recoverable from the journal rows' own
+intake: keys; what went to the report lives in the batch
+report — a derived, purgeable artifact, never the receipt.
+The marker is not named done: state/ is atlas's own voice,
+structure-scanned by §19, where §4 bans the term as data —
+the boundary's bookkeeping obeys the law it enforces. Receipt
+rows are provenance, not evidence: §9.12 is untouched and the
+§20 fold never reads them. processed also covers records
+whose outputs are not journal rows — a plan record's outputs
+are files and report lines (§33.3).
 Idempotency is per receipt: a record is handled iff its
 processed row exists — re-delivering a batch appends nothing, a
 run that stopped mid-batch resumes at the first record without
@@ -138,7 +146,7 @@ follow. Tier-2 body capture arrives through this format (§32.4).
 
 A `plan` record — inline `text` or a `ref` to a delivered file — enters §12 unchanged: the original lands under `plans/imported/`, the §12.2 steps apply, structure is created and state never is (§31.3); plan self-claims surface only in the import report (§12.2 step 11). A route from an external plan is an ordinary SuggestedRoute: optional, hideable, ignorable (§5.1).
 
-A sensitive plan (§33.2's marker) keeps its class across the copy: the original lands under `plans/imported/<class>/` — placement, never an edit, an as-delivered document stays byte-identical — and the SuggestedRoute built from it carries `sensitivity: <class>` in frontmatter; the §32.6 default-context exclusion follows both (the batch original under `intake/` is already covered, §24). Candidate concept stubs stay plain — ids and links are structure — until the user curates otherwise (§5.2).
+A sensitive plan (§33.2's marker) keeps its class across the copy: the original lands under `plans/imported/<class>/` — placement, never an edit, an as-delivered document stays byte-identical — and the SuggestedRoute built from it carries `sensitivity: <class>` in frontmatter; the §32.6 default-context exclusion follows both (the batch original under `intake/` is already covered, §24). Candidate concept stubs from a classed input carry the class like the route — `sensitivity: <class>` in frontmatter — so everything already keyed to the class follows without a new mechanism: §34.6 gives the stub a date-serial id at creation (the title stays in the body — content, purged with it), the §33.4 default exclusion keeps it out of snapshots, and §34.2 keeps it in the input's purge closure while the input is its only provenance. The user adopts a stub by re-authoring it as their own (§5.2) — that curation deliberately removes the class and takes the stub out of the closure. Stubs from unclassed inputs stay plain — there, ids and links are structure; when the source is classed, a slug derived from its text is content (the 2026-07-06 rule, scoped — Decision Log 2026-07-15).
 
 ## §33.4 Export: State Snapshot
 
