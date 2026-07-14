@@ -22,7 +22,7 @@ Importing a route does not imply commitment.
 
 ## §5.2 Personal Trail Is Sacred
 
-The user’s actual trail must not be overwritten by proposed routes — or by any other automation. The importer, agents, and builders may only append trail segments and propose corrections; a proposal changes nothing until the user confirms it (§14.6 pattern). The user’s own hand-edits are sovereign: correcting or deleting one’s own memory is always allowed; derived consumers tolerate vanished sources (§20).
+The user’s actual trail must not be overwritten by proposed routes — or by any other automation. The importer, agents, and builders may only append trail segments and propose corrections; a proposal changes nothing until the user confirms it (§14.6 pattern). The user’s own hand-edits are sovereign: correcting or deleting one’s own memory is always allowed; derived consumers tolerate vanished sources (§20). Deletion tiers and the purge carve-out: §34.
 
 A trail is generated from:
 

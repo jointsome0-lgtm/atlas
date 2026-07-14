@@ -167,6 +167,6 @@ individual development map
 
 Freshness applies to medical evidence for free: a two-year-old diagnosis ages, and the frontier may invite a re-probe — adjacency wording, never obligation (§31.6).
 
-**Sensitivity class**: medical journals and files are excluded from agent context by default; they enter only in a session the user explicitly started for them (§24, §31.7 discipline). Today the layer is light — diary lines and thrown-in PDFs; individual development maps arrive when the layer matures, through this same design, not a new one.
+**Sensitivity class**: medical journals and files are excluded from agent context by default; they enter only in a session the user explicitly started for them (§24, §31.7 discipline). The class also sets the deletion default — a classed record is purged when deleted (§34.1) — and the id convention: classed records take non-descriptive date-serial ids at creation (§34.6). Today the layer is light — diary lines and thrown-in PDFs; individual development maps arrive when the layer matures, through this same design, not a new one.
 
 ---

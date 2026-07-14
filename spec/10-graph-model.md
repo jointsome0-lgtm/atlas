@@ -36,7 +36,7 @@ zone
 pattern
 ```
 
-Node ids follow `prefix:kebab-case-slug`, where the prefix is the hyphenated type name (`suggested-route:…`, `trail-segment:…`) or its short form (`part:material-slug/part-slug` for material_part). Underscores appear in type names only, never in ids.
+Node ids follow `prefix:kebab-case-slug`, where the prefix is the hyphenated type name (`suggested-route:…`, `trail-segment:…`) or its short form (`part:material-slug/part-slug` for material_part). Underscores appear in type names only, never in ids. Id lifecycle — retirement into `formerly:` (§34.4), the reuse ban, and non-descriptive date-serial ids for §32.6-classed records (§34.6) — is §34's.
 
 `zone` and `pattern` are the body field's region kinds (§32.1). The list is canonical and closed — §19 scans node types as a closed set, §20 step 11 validates against it; the extension rule is §6's: a domain pass registers its kinds here in the same commit.
 

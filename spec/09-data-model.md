@@ -22,7 +22,7 @@ related_concepts:
 ---
 ```
 
-Concept files carry identity, links, and content only: understanding state is derived at build time from the `state/` journals (§8, §20) and moves only per §14; material roles live on contextual edges only (§11).
+Concept files carry identity, links, and content only: understanding state is derived at build time from the `state/` journals (§8, §20) and moves only per §14; material roles live on contextual edges only (§11). `aliases` is search vocabulary; a retired id lives in `formerly:` (§34.4), never in `aliases`.
 
 Body:
 

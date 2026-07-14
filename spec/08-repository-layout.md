@@ -9,13 +9,19 @@ Placement principles:
    A journal may rotate into per-year files under a directory of the
    same name (state/decisions/2026.jsonl); the fold reads the
    concatenation. Truncating compaction is forbidden: journals are
-   the audit trail (§25.3). Current understanding and material state
-   are derived by the §20 fold — no stored state files (§31.8).
+   the audit trail (§25.3); the one carve-out is a purge (§34), by
+   standing Decision Log entry. Current understanding and material
+   state are derived by the §20 fold — no stored state files (§31.8).
 4. graph/  = derived outputs — never edited by hand (§20 emits).
 5. File names inside atlas/ are content, not structure: the spec does not
    predict them; the example import lives in §12.3.
 6. intake/ = delivered batches (§33.2) — kept as delivered (audit),
    never edited by atlas, never checker-scanned (§19).
+7. Two repositories realize this tree: the public engine (docs/,
+   scripts/, viewer/) and the private instance holding the data
+   dirs (atlas/, plans/, intake/, state/; graph/ is derived and
+   untracked — §25.6). The instance pins an engine revision; the
+   layout table is the composing shell's (§25.1, §34).
 ```
 
 Normative skeleton — the paths other sections rely on:
@@ -54,6 +60,7 @@ atlas/
     questions.jsonl
     decisions.jsonl
     intake.jsonl
+    purges.jsonl    # §34.3 purge notes — runbook-written
 
   graph/
     schema.yaml

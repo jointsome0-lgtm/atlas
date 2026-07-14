@@ -2,7 +2,8 @@
 
 ## §25.1 Local-First
 
-All primary data lives in the repo.
+All primary data lives in the instance repository (§25.6; the
+engine/instance topology is the composing shell's decision).
 
 ## §25.2 Versionable
 
@@ -42,7 +43,7 @@ Domain rule: the core — journals (§8), evidence and decisions (§9.12–§9.1
 
 ## §25.6 Durable
 
-The Atlas repository is a git repository — not optionally so: journals and curated content are committed as part of normal operation, and version history is the recovery mechanism (truncating compaction is already forbidden, §8). Durability beyond the machine is a user-initiated copy of the whole repo — a private remote or another medium; Atlas itself never syncs, pushes, or backs up on its own initiative (§24, §31.7). A stored copy of derivable values is not a backup but a second source of truth (§31.8).
+The Atlas instance repository is a git repository — not optionally so: journals and curated content are committed as part of normal operation, and version history is the recovery mechanism (truncating compaction is already forbidden, §8; the one carve-out is a purge — §34, by standing Decision Log entry — and it restarts the history-as-recovery clock at the rewrite point). Derived outputs are the exception to committing: the emitted graph and snapshots are untracked in the instance — recovery of a derivable file is a rebuild, not a checkout (§31.8), and tracked builds would drag every historical blob into every rewrite set (§34.2). Durability beyond the machine is a user-initiated copy of the whole repo — a private remote or another medium; Atlas itself never syncs, pushes, or backs up on its own initiative (§24, §31.7). A stored copy of derivable values is not a backup but a second source of truth (§31.8).
 
 ---
 

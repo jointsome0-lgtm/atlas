@@ -80,7 +80,11 @@ source and batch are slugs — lowercase letters, digits, hyphens
 — so intake/<source>/ paths and <source>/<batch>#<n> receipt
 keys parse unambiguously by construction; no escaping scheme
 exists. A delivery violating this is refused in the batch
-report, like a content-mismatched batch id.
+report, like a content-mismatched batch id. A source expected
+to deliver §32.6-classed records takes a neutral slug (feed-1,
+not a provider or subject name): provenance refs and receipts
+survive purge by design (§34.2, §34.6) — an adapter-contract
+convention atlas cannot enforce, source being opaque.
 Records carry their activity dates: backfill is normal —
 last_seen and freshness follow the record's date, not delivery.
 Processing is the §13 flow verbatim: journal appends, trail
@@ -227,6 +231,6 @@ medical materials — so no snapshot section leaks it; any of it
 enters a snapshot only by explicit per-export choice.
 ```
 
-Stability: node ids are stable slugs (§10.1) and persist across snapshots; a consumer must tolerate an id that vanishes — deletion is the owner's right (§5.2), the same tolerance §20 requires of the builder.
+Stability: node ids are stable slugs (§10.1) and persist across snapshots; a consumer must tolerate an id that vanishes — deletion is the owner's right (§5.2, §34), the same tolerance §20 requires of the builder. Id retirement resolves inside atlas (§34.4): a snapshot exports living ids only; no redirect map is exported until a real adapter asks (§28.3).
 
 ---
