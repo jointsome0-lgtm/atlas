@@ -53,15 +53,14 @@ For example:
 Plan mentions Kafka offsets.
 ```
 
-This creates:
+This creates only the concept file:
 
-```yaml
+```text
 concept:kafka-offsets
-state:
-  exposure: unseen
-  confidence: unknown
-  clarity: vague
 ```
+
+Nothing state-shaped is stored (§9.1, §31.8): the §20 fold derives its
+starting state — unseen / unknown / vague (§12.2 step 10).
 
 Only user artifacts can update that state.
 

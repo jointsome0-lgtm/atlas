@@ -60,6 +60,7 @@ read                 → read
 summarized           → summarized
 explained            → summarized   (explanation alone; see taught rule)
 applied              → applied
+reviewed             → applied      (reviewing applies judgment to the work)
 performed / drilled  → applied      (body strengths §32.3; doing applies the concept)
 explained + reviewed → taught       (explained and survived review, §14.1)
 ```

@@ -50,16 +50,17 @@ Body:
 ## Open questions
 ```
 
-Allowed concept states:
+Allowed concept states — dimension names only; the value scales are
+canonical in §14 and are not copied here (the §19→§4 pattern: a
+hand-synced copy forks silently):
 
-```yaml
-state:
-  exposure: unseen | touched | read | summarized | applied | taught
-  confidence: unknown | low | medium | high
-  clarity: vague | rough | stable | disputed
-  coverage: none | partial | broad
-  freshness: fresh | aging | stale
-  last_seen: YYYY-MM-DD | null
+```text
+exposure    — values §14.1
+confidence  — values §14.2
+clarity     — values §14.3
+coverage    — values §14.4
+freshness   — derived, values §14.7
+last_seen: YYYY-MM-DD | null   # data, not a scale; freshness derives from it (§14.7)
 ```
 
 ---
