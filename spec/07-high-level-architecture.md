@@ -1,65 +1,33 @@
 ## §7. High-Level Architecture
 
 ```text
-                   ┌────────────────────┐
-                   │ Learning Plan Input │
-                   └─────────┬──────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │ Plan Importer   │
-                    └───────┬─────────┘
-                            │
-       ┌────────────────────┼────────────────────┐
-       ▼                    ▼                    ▼
-┌──────────────┐    ┌────────────────┐    ┌────────────────┐
-│ Concepts     │    │ Materials      │    │ SuggestedRoutes │
-└──────┬───────┘    └───────┬────────┘    └───────┬────────┘
-       │                    │                     │
-       └────────────┬───────┴─────────────┬───────┘
-                    ▼                     ▼
-             ┌──────────────┐      ┌───────────────┐
-             │ FieldGraph   │      │ MaterialGraph │
-             └──────┬───────┘      └───────┬───────┘
-                    │                      │
-                    ▼                      ▼
-              ┌─────────────────────────────────┐
-              │ Graph Builder                   │
-              └───────────────┬─────────────────┘
-                              │
-                              ▼
-                     ┌─────────────────┐
-                     │ atlas-graph.json │
-                     └────────┬────────┘
-                              │
-                              ▼
-                         ┌────────┐
-                         │ Viewer │
-                         └────────┘
-
-
-User artifacts / notes / code / tests
-                │
-                ▼
-       ┌───────────────────┐
-       │ Artifact Observer │
-       └─────────┬─────────┘
-                 ▼
-       ┌───────────────────┐
-       │ State Updater     │
-       └───────┬───────────┘
-               ▼
-   ┌─────────────────────────────┐
-   │ StateGraph + PersonalTrail  │
-   └────────────┬────────────────┘
-                ▼
-        ┌───────────────┐
-        │ InfluenceField │
-        └───────┬───────┘
-                ▼
-          ┌──────────┐
-          │ Frontier │
-          └──────────┘
+Learning Plan Input                User artifacts / notes / code / tests
+        │                                          │
+        ▼                                          ▼
+┌───────────────┐                      ┌───────────────────┐
+│ Plan Importer │                      │ Artifact Observer │
+└───────┬───────┘                      └─────────┬─────────┘
+        │ writes curated files                   │ appends journal records
+        ▼                                        ▼ and trail segments
+atlas/ — concepts, materials         state/ journals — artifacts,
+(+parts), directions,                encounters, questions, decisions
+suggested routes, probes             + trail segments (atlas/trails/)
+        │                                        │
+        └──────────────────┬─────────────────────┘
+                           ▼
+                   ┌───────────────┐
+                   │ Graph Builder │  reads everything; folds state
+                   └───────┬───────┘  (§14, §9.8, §9.13); computes
+                           │          influence (§9.10) and frontier (§15)
+                           ▼
+                 ┌──────────────────┐
+                 │ atlas-graph.json │  FieldGraph · MaterialGraph ·
+                 └────────┬─────────┘  StateGraph · PersonalTrail ·
+                          │            InfluenceField · Frontier
+                          ▼
+                      ┌────────┐
+                      │ Viewer │
+                      └────────┘
 ```
 
 The importer also extracts directions, probes, and the plan node (§12); the observer also records encounters and questions (§13). Evidence records live under `state/` (§8).

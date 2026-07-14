@@ -85,7 +85,7 @@ Edges should support metadata:
   "weight": "high",
   "context": "suggested-route:learn-basics-swe-default",
   "confidence": "medium",
-  "created_by": "plan_importer",
+  "created_by": "plan-importer",
   "created_at": "2026-06-02"
 }
 ```

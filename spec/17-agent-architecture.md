@@ -9,9 +9,11 @@ plan-importer
   Extracts directions, routes, concepts, materials, probes from plans (§12, §21).
 
 artifact-observer
-  Scans user artifacts; records encounters and questions; proposes state,
-  trail, and support-link weight updates (§13, §14.9); influence is never
-  proposed — the builder computes it (§9.10).
+  Scans user artifacts; records artifacts, encounters, and questions
+  (journal appends, §13.2); appends trail segments, proposing only
+  corrections (§31.2); proposes review-gated changes — confidence /
+  clarity / coverage, support-link weight (§14.9), question status
+  (§9.8); influence is never proposed — the builder computes it (§9.10).
 
 field-cartographer
   Owns the ontology (§6), concept graph and area boundaries,
