@@ -10,7 +10,9 @@ Placement principles:
    same name (state/decisions/2026.jsonl); the fold reads the
    concatenation. Truncating compaction is forbidden: journals are
    the audit trail (§25.3); the one carve-out is a purge (§34), by
-   standing Decision Log entry. Current understanding and material
+   standing Decision Log entry. Appends are one record = one write,
+   fsynced before the record's receipt (§33.2); every writer takes
+   the instance lock (§25.6). Current understanding and material
    state are derived by the §20 fold — no stored state files (§31.8).
 4. graph/  = derived outputs — never edited by hand (§20 emits).
 5. File names inside atlas/ are content, not structure: the spec does not
@@ -31,6 +33,7 @@ atlas/
   README.md
   CLAUDE.md
   AGENTS.md
+  .atlas-lock     # single-writer lock (§25.6) — untracked, instance-side
 
   docs/
     SDD.md
@@ -59,7 +62,8 @@ atlas/
     encounters.jsonl
     questions.jsonl
     decisions.jsonl
-    intake.jsonl
+    mapping-decisions.jsonl  # §21.3 identity decisions — the fold never reads
+    receipts.jsonl  # §33.2 — every lane's receipts (intake, import, observe)
     purges.jsonl    # §34.3 purge notes — runbook-written
 
   graph/

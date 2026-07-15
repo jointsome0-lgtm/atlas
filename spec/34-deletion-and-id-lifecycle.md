@@ -69,9 +69,9 @@ survives whole, refs dangling (§20 warns and skips): any row with
     while the class itself keeps the row inside the §33.4 default
     exclusion, so the bit never leaves by default. The deletion
     page's residual inventory names this class.
-survives deliberately: intake receipts (§33.2) — provenance without
-    content, keeping purge idempotent against a stale batch
-    redelivery — and the per-event purge note (§34.3).
+survives deliberately: receipts (§33.2, every lane's) — provenance
+    without content, keeping purge idempotent against a stale batch
+    redelivery or re-import — and the per-event purge note (§34.3).
 ```
 
 The closure is reviewed before the rewrite runs: the runbook presents
@@ -112,7 +112,7 @@ marks (the manifest and delivery-registry ack columns on its
 deletion page) cite it, so an interrupted revocation walk resumes
 against exactly this purge. Nothing else — no ids, no counts, no
 reasons: the note must survive every future rewrite untouched. Like
-intake receipts it is provenance, not evidence: §9.12 is untouched,
+receipts it is provenance, not evidence: §9.12 is untouched,
 the §20 fold never reads it. Roles: explains that era's dangling
 refs to a later reader; anchors export invalidation — every
 registered delivery either carries this `gen` as its supersession

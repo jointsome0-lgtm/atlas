@@ -137,5 +137,33 @@ All extracted understanding state starts as `unseen` / `unknown` / `vague`; unde
 
 The plan describes these ideas around a single integrated Python lab (`distributed-systems-python-lab` repo) using FastAPI, Redis, Kafka, RabbitMQ, gRPC, pytest/Testcontainers, and E2E job-flow tests.
 
+## §12.4 Re-Run Semantics
+
+A direct import is a batch of one — §33.2's discipline reused, never a third semantics (#40):
+
+```text
+The batch-id analogue is the source's content hash: receipts
+in state/receipts.jsonl (§33.2) under import/<sha256>#0 —
+opened before any output, processed after the last.
+Re-importing byte-identical content is a receipt-level no-op.
+A changed plan is a new id: nothing is overwritten — the
+importer diffs against the stored original and extracted YAML
+and proposes updates in the import report.
+Curated hand edits win: the importer never clobbers a file
+under atlas/ — §8's "written by hand or through review" is a
+rule, not a hope; a conflict surfaces in the import report.
+A candidate that matches an existing node (import proposes
+concept:redis, the file exists) surfaces as a merge / link /
+skip proposal — the user decides; the resolution appends to
+state/mapping-decisions.jsonl (§21.3) and is not re-asked
+without new evidence.
+A partially reviewed import surfaces like an interrupted
+intake record (§33.2): opened without processed goes to the
+report, never silently reprocessed or overwritten.
+Import is dry-run by default (§21.1): a dry run writes
+nothing; only an explicit commit run takes the lock, writes,
+and receipts.
+```
+
 ---
 

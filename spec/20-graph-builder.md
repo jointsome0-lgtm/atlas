@@ -13,7 +13,7 @@
 8. Read questions, artifacts, encounters, and decisions from state/ (JSONL journals);
    build the retired→living id map from formerly: frontmatter and resolve
    journal and curated refs through it (§34.4).
-9. Fold current understanding, material, question, and body state from the journals (§14.5–§14.8, §9.8, §9.13; body mappings §32.2–§32.3): exposure and zone contact = monotone max over mapped evidence; confidence/clarity/coverage and the gated body dimensions (§32.2) = last confirmed decision; question status = last confirmed decision, else open; depth_reached/last_seen from encounters.
+9. Fold current understanding, material, question, and body state from the journals (§14.5–§14.8, §9.8, §9.13; body mappings §32.2–§32.3): exposure and zone contact = monotone max over mapped evidence; confidence/clarity/coverage and the gated body dimensions (§32.2) = last confirmed decision; question status = last confirmed decision, else open; depth_reached/last_seen from encounters. Ordering and the as-of bound: §20.1.
 10. Compute the influence field and the frontier from artifacts, encounters, questions, and trail segments (§9.10 baseline, §15.4).
 11. Validate references — §34.4 included: a retired id that is living,
     or present in two formerly lists, is an error.
@@ -21,6 +21,49 @@
 ```
 
 Step 11 classifies a broken reference by the ref's origin, never the target's kind: a ref in a retained journal row — whatever it targets: a trail segment, artifact, encounter, question, or a curated node (zone, material, concept, pattern) — is skipped with a warning, never a build failure — deletion is the owner’s right (§5.2), and §34.2 promises exactly such survivors; a ref authored in a living curated file is an error — curation converges (§34.4), journals never have to. The report groups dangling journal refs apart from curated-link errors; purge notes explain purge-era dangles (§34.2–§34.3).
+
+## §20.1 Fold Ordering and As-Of
+
+The fold is totally ordered and anchored (#34):
+
+```text
+Order: (activity date, then journal position). A journal's
+rotated per-year files (§8) concatenate lexicographically; the
+concatenation is the journal, and position counts through it.
+Backfill is ordinary (§33.2): an earlier-dated record never
+beats a later-dated one, whenever it was appended; a same-day
+tie on the same target and dimension resolves by journal
+position. No ordering across journals exists or is needed —
+every §14.5–§14.8/§9.8 rule reads exactly one journal
+(monotone max is order-free; "last confirmed decision" reads
+decisions.jsonl alone). A global merge-sort must not be
+invented.
+Duplicates: a byte-identical row repeated within a journal —
+the rotation concatenation included — folds once, with a
+WARNING in the build report (the crash-double-append story;
+§33.2 receipts stay the intake lane's stronger guarantee).
+As-of: the builder takes --as-of <date>; default = the max
+activity date across the journal inputs. As-of is anchor and
+upper bound: the fold reads rows with date ≤ as-of only — rows
+dated later are skipped and counted in the build report, never
+silently. At the default the filter is a no-op; an explicit
+earlier as-of is §25.3's "state at date X", executable.
+Freshness derives against as-of (§14.7), never the wall clock;
+the emitted graph carries generated_at = as-of. Empty journals
+still build: with no dated record and no flag, generated_at
+and the freshness fields are absent, not invented.
+Determinism: same inputs + same as-of ⇒ byte-identical output.
+```
+
+## §20.2 Write Discipline
+
+```text
+Every graph/ emission writes a temp file inside graph/ and
+atomically renames it into place — a crash never leaves a torn
+atlas-graph.json (§16.4 reads exactly one file).
+The builder is a writer like any other: it takes the instance
+lock and a second concurrent run refuses with exit 1 (§25.6).
+```
 
 No external dependencies for MVP.
 

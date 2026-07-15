@@ -45,5 +45,7 @@ Domain rule: the core — journals (§8), evidence and decisions (§9.12–§9.1
 
 The Atlas instance repository is a git repository — not optionally so: journals and curated content are committed as part of normal operation, and version history is the recovery mechanism (truncating compaction is already forbidden, §8; the one carve-out is a purge — §34, by standing Decision Log entry — and it restarts the history-as-recovery clock at the rewrite point). Derived outputs are the exception to committing: the emitted graph and snapshots are untracked in the instance — recovery of a derivable file is a rebuild, not a checkout (§31.8), and tracked builds would drag every historical blob into every rewrite set (§34.2). Durability beyond the machine is a user-initiated copy of the whole repo — a private remote or another medium; Atlas itself never syncs, pushes, or backs up on its own initiative (§24, §31.7). A stored copy of derivable values is not a backup but a second source of truth (§31.8).
 
+The instance is single-writer (#36). Every writing flow (§12, §13, §20, §21) takes `.atlas-lock` at the instance root — untracked, holding `{pid, started_at}` — and a second concurrent run detects it and refuses (exit 1); no merge semantics exist. A stale lock after a crash is removed by hand on the refusal message's evidence — there is no automatic reclaim (§28.3). Git is the durability layer, not a concurrency model: merging two branches' JSONL journals is out of scope — single-writer covers the model.
+
 ---
 

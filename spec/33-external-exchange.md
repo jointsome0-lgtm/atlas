@@ -80,7 +80,10 @@ source and batch are slugs — lowercase letters, digits, hyphens
 — so intake/<source>/ paths and <source>/<batch>#<n> receipt
 keys parse unambiguously by construction; no escaping scheme
 exists. A delivery violating this is refused in the batch
-report, like a content-mismatched batch id. A source expected
+report, like a content-mismatched batch id. import and observe
+are reserved — the direct lanes' receipt namespaces (§12.4,
+§13.2) — and a delivery claiming either source is refused the
+same way. A source expected
 to deliver §32.6-classed records takes a neutral slug (feed-1,
 not a provider or subject name) and date-serial batch ids
 (2026-07-14-001 — the §34.6 pattern, mirrored here): both
@@ -100,9 +103,14 @@ records — the §25.3 audit line from journal entry back to the
 delivered line. A batch id names one immutable delivery: the
 same id arriving with different content is refused in the batch
 report; a corrected batch is a new id.
-Receipts: state/intake.jsonl (§8) holds a pair per record —
+Receipts: state/receipts.jsonl (§8) holds a pair per record —
 opened {intake, date} appended before any output, processed
-{intake, date} appended after the last one. The schema is
+{intake, date} appended after the last one. The journal is
+named for the record kind, not the lane: every flow running
+this receipt discipline shares it — intake batches under
+<source>/<batch>#<n>, direct plan import under
+import/<sha256>#0 (§12.4), observation runs under
+observe/<sha256>#0 (§13.2). The schema is
 closed — the idempotency key, the marker, the date, nothing
 else: receipts survive every rewrite deliberately (§34.2), so
 the row is content-free by construction, never by care. What

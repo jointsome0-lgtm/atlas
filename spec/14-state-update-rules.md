@@ -96,7 +96,7 @@ never direct writes.
 
 ## §14.7 Freshness Decay
 
-Freshness is derived from `last_seen`, computed at build/view time, never stored by hand:
+Freshness is derived from `last_seen`, computed at build/view time against the fold's as-of date (§20.1) — never the wall clock, so rebuilding unchanged inputs on a later day changes nothing; the viewer may compute against its own as-of for honest aging. Never stored by hand:
 
 ```text
 fresh  ≤ 30 days
