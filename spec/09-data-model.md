@@ -427,10 +427,17 @@ concept:idempotency:
 
 concept:redis-idempotency-key:
   influence:
-    strength: weak
+    strength: medium
     freshness: fresh
     sources:
       - question:where-store-idempotency-key
+
+concept:kafka-idempotent-consumer:
+  influence:
+    strength: weak
+    freshness: fresh
+    sources:
+      - artifact:test-duplicate-post-idempotency
 ```
 
 Influence strength:
@@ -441,6 +448,24 @@ weak
 medium
 strong
 ```
+
+Baseline v1 (#39) — fully deterministic given the journals and the build as-of (#34):
+
+```text
+strong ← artifact touches ∪ supports_state_updates;
+         trail segment from ∪ to (movement is the strongest
+         trace; a landing counts through its `to`)
+medium ← open questions' pulls (a question whose derived status
+         (§9.8) left `open` stops pulling — its resolution
+         evidence already counts);
+         an encounter's target regions (the target part's or
+         material's concept_edges and overall_concepts)
+weak   ← one authored hop from any strong/medium node over
+         related_to | prerequisite_of | extends | contradicts |
+         loads — never further
+```
+
+Combining is ordinal max — no counting, no numeric scores (§4, §19). `sources` is the explicit deduplicated set of contributing records; a weak node inherits the record whose halo reached it, so the claim stays citable (§25.3). Influence `freshness` is §14.7 over the newest source date against the build as-of (#34). The mapping is a v1 floor to tune after real trail data; any change bumps through the Decision Log.
 
 Influence does not mean mastery.
 

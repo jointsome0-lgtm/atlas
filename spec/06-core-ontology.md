@@ -21,7 +21,7 @@ State          = current state on the field's scales (§14.1–§14.4; §32.2–
 Frontier       = nearby territory naturally suggested by current state
 ```
 
-This glossary is the canonical kind list. A domain design pass (§25.5) that adds kinds extends it and the §10.1/§10.2 registries in the same commit — an unregistered kind leaves §20 step 11 and §19 nothing to validate against.
+This glossary is the canonical kind list. A domain design pass (§25.5) that adds kinds extends it, the §10.1/§10.2 registries, the §10.1 field column, and the §10.4 node contract in the same commit — an unregistered kind leaves §20 step 11 and §19 nothing to validate against.
 
 ---
 

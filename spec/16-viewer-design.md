@@ -94,6 +94,7 @@ Views are URL-addressable — mode plus optional focus are the whole address:
 viewer/index.html#mode=frontier
 viewer/index.html#mode=state&focus=concept:idempotency
 viewer/index.html#mode=trail&focus=direction:backend-distributed-systems-python
+viewer/index.html#mode=field&field=body
 ```
 
 ```text
@@ -106,6 +107,15 @@ Geometry is a property of the field, never a mode: the focused
 node selects the field, the field selects the geometry (§16.2,
 §32) — a silhouette field view is mode=field with a body focus,
 not a new slug.
+Field resolution (#33): a region-kind focus selects its own
+field; any other focus selects the first of its fields (§10.4)
+in §10.1 column order, the rest reachable in the UI; fields: []
+renders the default field with a visible "field undefined" flag.
+With mode=field and no focus, the additive field= param selects
+the field by its §10.1 slug; absent, the default is the
+first-registered field (knowledge). An unknown field= value
+behaves like an unknown focus: visibly flagged, deterministic,
+never silently remapped.
 The URL is the whole input: no shell handshake, no message
 protocol, no shell-specific code in atlas (§33.1); the same URL
 renders the same view top-level or inside an iframe.
