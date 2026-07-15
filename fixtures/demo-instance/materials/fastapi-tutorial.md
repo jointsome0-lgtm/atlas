@@ -25,3 +25,5 @@ parts:
 ---
 
 # FastAPI Official Tutorial
+
+Demo fixture authored by Vera Example.

@@ -15,3 +15,5 @@ related_concepts:
 ## Current belief
 
 ## Open questions
+
+Demo fixture authored by Vera Example.

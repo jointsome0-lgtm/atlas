@@ -8,3 +8,5 @@ related_concepts:
 ---
 
 # Redis
+
+Demo fixture authored by Vera Example.

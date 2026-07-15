@@ -10,3 +10,5 @@ concepts:
 
 Send the same POST twice with one idempotency key; explain what the
 server must return the second time and why.
+
+Demo fixture authored by Vera Example.

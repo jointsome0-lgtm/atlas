@@ -10,3 +10,5 @@ steps:
 ---
 
 Proposed by the invented demo plan; following it is optional by design.
+
+Demo fixture authored by Vera Example.

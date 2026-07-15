@@ -8,3 +8,5 @@ related_concepts:
 ---
 
 # HTTP Methods
+
+Demo fixture authored by Vera Example.
