@@ -20,6 +20,8 @@ Generated graph file:
 
 `version` is the graph-file contract version: an integer the viewer checks before rendering (an unsupported version fails visibly, #44); it bumps only through a Decision Log entry.
 
+`generated_at` is the fold's as-of date rendered at UTC midnight (§20.1) — the same shape as the snapshot's (§33.4); it is absent in a build with no dated input, and a consumer must tolerate its absence.
+
 ## §10.1 Node Types
 
 ```text

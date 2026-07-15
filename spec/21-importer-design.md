@@ -53,6 +53,11 @@ intake-record resolution (§33.2) asks the same question
 through the same review step and shares the file.
 The §20 fold never reads it — mapping decisions are import
 machinery, not understanding state (§31.8 untouched).
+A row derived from a classed source carries the class like
+any journal row (§33.2), and its candidate side is the §34.6
+date-serial id the classed stub already has (#50); the source
+hash in evidence keeps the row inside the source's purge
+closure (§34.2) — mapping memory dies with what it mapped.
 ```
 
 ---

@@ -34,22 +34,31 @@ Backfill is ordinary (§33.2): an earlier-dated record never
 beats a later-dated one, whenever it was appended; a same-day
 tie on the same target and dimension resolves by journal
 position. No ordering across journals exists or is needed —
-every §14.5–§14.8/§9.8 rule reads exactly one journal
-(monotone max is order-free; "last confirmed decision" reads
-decisions.jsonl alone). A global merge-sort must not be
-invented.
+every order-sensitive reduction has exactly one ordering
+stream ("last confirmed decision" reads decisions.jsonl
+alone); a fold joining several journals (§14.5 exposure over
+artifacts and encounters) is monotone max, order-free. A
+global merge-sort must not be invented.
 Duplicates: a byte-identical row repeated within a journal —
 the rotation concatenation included — folds once, with a
 WARNING in the build report (the crash-double-append story;
 §33.2 receipts stay the intake lane's stronger guarantee).
 As-of: the builder takes --as-of <date>; default = the max
-activity date across the journal inputs. As-of is anchor and
-upper bound: the fold reads rows with date ≤ as-of only — rows
-dated later are skipped and counted in the build report, never
-silently. At the default the filter is a no-op; an explicit
-earlier as-of is §25.3's "state at date X", executable.
+activity date across the dated inputs — journal rows and
+trail segments alike (segments are dated curated files and
+feed step 10; an input universe that ignored them would leak
+future influence and heads into a dated graph). As-of is
+anchor and upper bound over that whole universe: steps 9–10
+read records and segments with date ≤ as-of only — anything
+dated later is skipped and counted in the build report, never
+silently. A decision inside the cut citing evidence outside
+it applies with a step-11 dangling-ref warning — exactly what
+the build on that date showed. At the default the filter is a
+no-op; an explicit earlier as-of is §25.3's "state at date X",
+executable.
 Freshness derives against as-of (§14.7), never the wall clock;
-the emitted graph carries generated_at = as-of. Empty journals
+the emitted graph carries generated_at = as-of at UTC midnight
+(2026-07-15T00:00:00Z — the §10/§33.4 shape). Empty inputs
 still build: with no dated record and no flag, generated_at
 and the freshness fields are absent, not invented.
 Determinism: same inputs + same as-of ⇒ byte-identical output.

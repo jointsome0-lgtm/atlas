@@ -142,13 +142,23 @@ The plan describes these ideas around a single integrated Python lab (`distribut
 A direct import is a batch of one — §33.2's discipline reused, never a third semantics (#40):
 
 ```text
-The batch-id analogue is the source's content hash: receipts
-in state/receipts.jsonl (§33.2) under import/<sha256>#0 —
-opened before any output, processed after the last.
-Re-importing byte-identical content is a receipt-level no-op.
-A changed plan is a new id: nothing is overwritten — the
-importer diffs against the stored original and extracted YAML
-and proposes updates in the import report.
+Each committing run is one batch, receipted in
+state/receipts.jsonl (§33.2) under import/<date-serial>#0
+(2026-07-15-001 — the §34.6 pattern; a receipt key never
+derives from content: receipts survive purge, and a hash is
+content) — opened before any output, processed after the last.
+Re-importing byte-identical content is a no-op: the importer
+hashes the source against the stored originals under
+plans/imported/ — the purgeable audit layer, so after a purge
+the check finds nothing and the import runs fresh: the content
+is gone, and bringing it back is the user's explicit act
+(§31.7).
+A changed plan is a new version, never an overwrite: the
+predecessor is the stored original with the same plan slug
+(§21.2 — the id from the plan's own heading), the new original
+lands beside it under a dated name, and the importer diffs
+against the predecessor's original and extracted YAML,
+proposing updates in the import report.
 Curated hand edits win: the importer never clobbers a file
 under atlas/ — §8's "written by hand or through review" is a
 rule, not a hope; a conflict surfaces in the import report.

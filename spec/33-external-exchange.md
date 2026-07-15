@@ -71,9 +71,10 @@ through §21's review step, else an open item in the batch report.
 Scale values (depth, evidence_strength) are atlas's own scales;
 anything unmappable goes down the verbal lane (§33.1).
 source is an opaque namespace, fixed when the user configures
-the adapter: atlas attaches no semantics to it and never
-branches on it — it scopes the intake/ path, provenance, and
-idempotency, nothing else. The user may name it after a peer —
+the adapter: beyond the syntax and reservation checks below,
+atlas attaches no semantics to it and never branches on it —
+it scopes the intake/ path, provenance, and idempotency,
+nothing else. The user may name it after a peer —
 user's voice, like a diary line naming a brand; atlas's
 blindness is that it cannot tell.
 source and batch are slugs — lowercase letters, digits, hyphens
@@ -109,8 +110,15 @@ opened {intake, date} appended before any output, processed
 named for the record kind, not the lane: every flow running
 this receipt discipline shares it — intake batches under
 <source>/<batch>#<n>, direct plan import under
-import/<sha256>#0 (§12.4), observation runs under
-observe/<sha256>#0 (§13.2). The schema is
+import/<date-serial>#0 (§12.4), observation runs under
+observe/<date-serial>#<n> (§13.2). A receipt key never
+derives from content: receipts survive purge (§34.2), and a
+content hash on a surviving row is the digest registry §34
+rejects — date-serial is the pattern (§34.6). The pair is
+durable in order: opened is fsynced before any output, every
+output — journal rows and file renames alike — is durable
+before processed is fsynced; only then may a run report
+success. The schema is
 closed — the idempotency key, the marker, the date, nothing
 else: receipts survive every rewrite deliberately (§34.2), so
 the row is content-free by construction, never by care. What

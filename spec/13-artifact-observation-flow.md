@@ -47,7 +47,7 @@ intake batches (§33.2)
 
 Artifact and encounter records append to `state/artifacts.jsonl` / `state/encounters.jsonl`, questions to `state/questions.jsonl`, resolved proposals to `state/decisions.jsonl` (§8, §9.13). These journals are what §25.3 audits state updates against and what §9.10 computes influence from.
 
-A direct observation run is a writer (§25.6) and receipts each unit it processes into `state/receipts.jsonl` (§33.2) under `observe/<sha256-of-the-artifact-version>#0` — the same opened/processed discipline as an intake batch: an interrupted run resumes at the first unreceipted unit, and a re-run over unchanged artifacts appends nothing.
+A direct observation run is a writer (§25.6) and receipts each unit it processes into `state/receipts.jsonl` (§33.2) under `observe/<date-serial>#<n>` — date-serial like every receipt key (§34.6 pattern, never content-derived), the same opened/processed discipline as an intake batch: an interrupted run resumes at its first unreceipted unit. A re-run over unchanged artifacts appends nothing — recognition reads the journals' own artifact rows (purgeable memory), never the receipts. The unit of processing per input kind (a commit, a file version, a declaration) is fixed at the observer's design pass — deliberately open here.
 
 ## §13.3 Example
 
