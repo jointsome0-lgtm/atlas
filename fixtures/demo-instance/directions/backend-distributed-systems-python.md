@@ -12,3 +12,5 @@ core_concepts:
 ---
 
 A direction is a compass, not a route.
+
+Demo fixture authored by Vera Example.

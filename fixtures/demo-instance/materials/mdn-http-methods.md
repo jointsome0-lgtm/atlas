@@ -20,3 +20,5 @@ parts:
 ---
 
 # MDN HTTP Methods Reference
+
+Demo fixture authored by Vera Example.

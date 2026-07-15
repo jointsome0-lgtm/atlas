@@ -9,3 +9,5 @@ concept_edges:
 ---
 
 # Push-up
+
+Demo fixture authored by Vera Example.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build graph/atlas-graph.json from curated atlas/ content (SDD §20, Phase 1).
+"""Build OUTPUT_JSON from CURATED_TREE content (SDD §20, Phase 1).
 
 Phase 1 scope (§29): concept / material / direction / suggested-route parsing,
 reference validation, deterministic graph JSON. Journal folding, influence and
@@ -17,8 +17,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CURATED = ROOT / "atlas"
-OUTPUT = ROOT / "graph" / "atlas-graph.json"
 
 # §10.1 — closed set; a domain pass extends it in the same commit.
 NODE_TYPES = {
@@ -207,8 +205,8 @@ def parse_frontmatter(text: str, source: Path) -> dict:
 
 # ------------------------------------------------------------------- loading
 
-def load_dir(subdir: str) -> list[tuple[dict, Path]]:
-    directory = CURATED / subdir
+def load_dir(curated: Path, subdir: str) -> list[tuple[dict, Path]]:
+    directory = curated / subdir
     docs = []
     if not directory.is_dir():
         return docs
@@ -224,7 +222,7 @@ def id_type(node_id: str) -> str | None:
     return ID_PREFIXES.get(prefix)
 
 
-def build() -> tuple[dict, list[str], list[str]]:
+def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     nodes: dict[str, dict] = {}
@@ -256,7 +254,10 @@ def build() -> tuple[dict, list[str], list[str]]:
     def add_edge(source_id, target_id, edge_type, origin, **meta):
         edge = {"source": source_id, "target": target_id, "type": edge_type}
         edge.update({k: v for k, v in meta.items() if v is not None})
-        edge["_origin"] = str(origin.relative_to(ROOT))
+        try:
+            edge["_origin"] = str(origin.relative_to(ROOT))
+        except ValueError:
+            edge["_origin"] = str(origin)
         edges.append(edge)
 
     def add_concept_edges(owner_id, entries, path):
@@ -288,7 +289,7 @@ def build() -> tuple[dict, list[str], list[str]]:
         ("materials", "material"), ("directions", "direction"),
         ("suggested-routes", "suggested_route"), ("probes", "probe"),
     ):
-        for meta, path in load_dir(subdir):
+        for meta, path in load_dir(curated, subdir):
             declared = meta.get("type", expected)
             if declared != expected and not (subdir == "suggested-routes"
                                              and declared == "suggested_route"):
@@ -425,9 +426,21 @@ def build() -> tuple[dict, list[str], list[str]]:
 
 
 def main() -> int:
-    check_only = "--check" in sys.argv[1:]
+    args = sys.argv[1:]
+    check_only = "--check" in args
+    if check_only:
+        args.remove("--check")
+    if len(args) != 2:
+        print(
+            f"usage: {Path(sys.argv[0]).name} [--check] CURATED_TREE OUTPUT_JSON",
+            file=sys.stderr,
+        )
+        return 2
+
+    curated = Path(args[0]).resolve()
+    output = Path(args[1]).resolve()
     try:
-        graph, errors, warnings = build()
+        graph, errors, warnings = build(curated)
     except BuildError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -438,12 +451,16 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
     if not check_only:
-        OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-        OUTPUT.write_text(json.dumps(graph, ensure_ascii=False, indent=2) + "\n",
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(graph, ensure_ascii=False, indent=2) + "\n",
                           encoding="utf-8")
+    try:
+        output_display = output.relative_to(ROOT)
+    except ValueError:
+        output_display = output
     print(f"{'checked' if check_only else 'built'}: "
           f"{len(graph['nodes'])} nodes, {len(graph['edges'])} edges"
-          + ("" if check_only else f" -> {OUTPUT.relative_to(ROOT)}"))
+          + ("" if check_only else f" -> {output_display}"))
     return 0
 
 

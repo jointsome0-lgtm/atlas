@@ -42,6 +42,11 @@ external plan record via the intake boundary (§33.3)
 
 ## §12.3 Example from Uploaded Plan
 
+The example plan is a demo fixture authored by the ecosystem synthetic
+persona Vera Example
+([selfos docs/persona.md](https://github.com/jointsome0-lgtm/selfos/blob/main/docs/persona.md));
+its subject is on her fact sheet.
+
 The uploaded plan becomes a plan node:
 
 ```yaml
