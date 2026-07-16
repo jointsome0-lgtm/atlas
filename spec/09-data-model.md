@@ -57,8 +57,7 @@ Body:
 ```
 
 Allowed concept states — dimension names only; the value scales are
-canonical in §14 and are not copied here (the §19→§4 pattern: a
-hand-synced copy forks silently):
+canonical in §14 and are not copied here:
 
 ```text
 exposure    — values §14.1
@@ -92,7 +91,7 @@ parts: []
 ---
 ```
 
-`overall_concepts` is the material's through-line (motif): what the material argues or teaches as a whole — not the union of its parts' concepts. It moves like any concept state: through synthesis artifacts spanning parts (a whole-material summary, a cross-part comparison) per §14.5 — never automatically from finishing parts (§14.8). A material may also list standing helpers of the whole via optional `supported_by:` (§9.14).
+`overall_concepts` is the material's through-line (motif): what the material argues or teaches as a whole — not the union of its parts' concepts. It moves per §14.8. A material may also list standing helpers of the whole via optional `supported_by:` (§9.14).
 
 Material kinds:
 
@@ -282,7 +281,7 @@ performed
 drilled
 ```
 
-`performed` and `drilled` are the body sessions' strengths (§32.3–§32.4): a session line evidences doing, a drill log deliberate practice. Every exposure/contact ladder maps this one list; each mapping lives beside its ladder (§14.5 knowledge, §32.2 zone contact, §32.3 motor).
+`performed` and `drilled` are the body sessions' strengths (§32.3–§32.4): a session line evidences doing, a drill log deliberate practice.
 
 An artifact answering a probe (§9.11) links it via `probe:`. The response is ordinary evidence — no verdict is stored; evaluation exists only as the fate of a proposal (§14.6).
 
@@ -417,8 +416,7 @@ It is not a commitment.
 It is only a memory of actual movement.
 Automation appends and proposes; only the user edits or deletes (§5.2).
 `from` is never stitched to the latest trail head and never padded
-with co-touched concepts: a fabricated edge is a false memory in the
-sacred layer — worse than no `from` at all.
+with co-touched concepts.
 Topology is emergent: chains, forks, and stars are all normal shapes.
 ```
 
@@ -513,7 +511,7 @@ status: active
 
 `source_plan` is optional (absent for hand-written probes); `status: active | archived` is lifecycle, as in §9.2. Body (Markdown): the check itself — task, scenario, “explain what happens and why”.
 
-Deliberately absent: `expected:` / answer / rubric fields. A formalized correct answer is a drift vector toward grading (§25.4). The user’s answer to a probe is an Artifact linked via `probe:` (§9.6); its evaluation exists only as the fate of a proposal (§14.6).
+Deliberately absent: `expected:` / answer / rubric fields. A formalized correct answer is a drift vector toward grading (§25.4).
 
 ---
 
@@ -617,7 +615,7 @@ type: plan
 title: Backend distributed systems practice in Python
 ```
 
-Storage is the import flow's, not a new surface: the stored original(s) under `plans/imported/` (the purgeable audit layer, §12.4) and the extracted YAML under `plans/extracted/` (§21.2, reviewed per §21.1). A changed plan is a new dated original under the same slug (§12.4): the node is the lineage, not one file — versions share it.
+Storage is the import flow's, not a new surface (§12.2 step 1, §21.2): the node is the lineage, not one file — a changed plan's versions (§12.4) share it.
 
 Rules:
 
@@ -627,9 +625,8 @@ title must match the extracted YAML's.
 No status field: a plan has no lifecycle states — visibility
 choices live on its routes (§9.4), and a plan is never done or
 failed (§4, §31.3).
-A plan is provenance, never evidence (§9.12, §31.3) and never a
-state source (§12.2 step 10): source_plan on routes (§9.4) and
-probes (§9.11) points here.
+Never evidence or a state source (§9.12, §31.3, §12.2 step 10):
+source_plan on routes (§9.4) and probes (§9.11) points here.
 A classed plan stores under plans/imported/<class>/ (§33.3), and
 its extracted YAML carries sensitivity: <class> in frontmatter —
 the §33.3 route/stub pattern, so the node embeds it (§10.4) and
