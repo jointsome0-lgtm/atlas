@@ -15,6 +15,7 @@ state/
 intake/
 graph/
 plans/
+secrets/
 
 # Local agent and tool state
 .claude/
