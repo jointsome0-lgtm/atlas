@@ -441,6 +441,50 @@ def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     return errors
 
 
+_STATE_DIMENSIONS = {
+    "concept": {"exposure", "confidence", "clarity", "coverage", "freshness"},
+    "pattern": {"exposure", "confidence", "clarity", "coverage", "freshness"},
+    "zone": {"contact", "strength", "endurance", "mobility", "condition", "freshness"},
+}
+_ALL_STATE_DIMENSIONS = set().union(*_STATE_DIMENSIONS.values())
+_EXPOSURE_VALUES = {
+    "concept": {"unseen", "touched", "read", "summarized", "applied", "taught"},
+    "pattern": {"unseen", "touched", "studied", "tried", "drilled", "reviewed"},
+}
+
+
+def _snapshot_state_kind_errors(snapshot: dict, path: Path) -> list[str]:
+    """§33.4: per-node state exports on the node's own scales — a concept
+    never carries a zone ladder. Only cross-kind dimension keys are errors;
+    unknown keys stay additive (§25.7)."""
+    errors: list[str] = []
+    for node, entry in (snapshot.get("state") or {}).items():
+        kind = node.split(":", 1)[0]
+        allowed = _STATE_DIMENSIONS.get(kind)
+        if allowed is None:
+            errors.append(
+                f"{path}: state key {node} is not a region node id (§33.4)"
+            )
+            continue
+        if not isinstance(entry, dict):
+            continue
+        for key in entry:
+            if key in _ALL_STATE_DIMENSIONS and key not in allowed:
+                errors.append(
+                    f"{path}: state.{node} carries {key!r} — not a {kind} "
+                    "dimension (§33.4: a node exports its own scales)"
+                )
+        exposure = entry.get("exposure")
+        ladder = _EXPOSURE_VALUES.get(kind)
+        if (isinstance(exposure, str) and ladder is not None
+                and exposure not in ladder):
+            errors.append(
+                f"{path}: state.{node} exposure {exposure!r} is outside the "
+                f"{kind} ladder (§14.1/§32.3)"
+            )
+    return errors
+
+
 def validate_instance(root: Path):
     schemas, errors = _load_registry()
     warnings: list[str] = []
@@ -529,7 +573,25 @@ def validate_instance(root: Path):
             # required on the redacted emission, forbidden on the full one.
             if schema_name == "atlas-snapshot" and isinstance(instance, dict):
                 errors.extend(_snapshot_dangling_refs(instance, path))
+                errors.extend(_snapshot_state_kind_errors(instance, path))
             if schema_name == "atlas-graph" and isinstance(instance, dict):
+                # §10: edge endpoints are node ids consumers resolve inside
+                # the same file — a dangling endpoint never leaves the build.
+                node_ids = {
+                    node.get("id")
+                    for node in instance.get("nodes") or []
+                    if isinstance(node, dict)
+                }
+                for index, edge in enumerate(instance.get("edges") or []):
+                    if not isinstance(edge, dict):
+                        continue
+                    for endpoint in ("source", "target"):
+                        ref = edge.get(endpoint)
+                        if isinstance(ref, str) and ref not in node_ids:
+                            errors.append(
+                                f"{path}: edges[{index}].{endpoint} {ref} "
+                                "is not an emitted node id (§10)"
+                            )
                 redacted = filename.endswith(".redacted.json")
                 if redacted and "withheld" not in instance:
                     errors.append(

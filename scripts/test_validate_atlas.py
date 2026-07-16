@@ -150,7 +150,17 @@ VALID_INSTANCE = {
     "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
         "\n", "\r\n"
     ).replace('"2026-07-16-001"', '"2026-07-16-002"'),
-    "graph/atlas-graph.json": GRAPH_WITH_NODE % "concept",
+    "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+        '"title": "Example", "fields": ["knowledge"], "aliases": []}],',
+        '"title": "Example", "fields": ["knowledge"], "aliases": []},'
+        ' {"id": "concept:other", "type": "concept", "title": "Other",'
+        ' "fields": ["knowledge"], "aliases": []}],',
+    ).replace(
+        '"edges": [],',
+        '"edges": [{"source": "concept:example", "target": "concept:other",'
+        ' "type": "related_to", "provenance": ["concept:example"],'
+        ' "weight": "low"}],',
+    ),
     "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH,
     "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH,
 }
@@ -211,6 +221,24 @@ INVALID_INSTANCES = {
             "---\nid: pattern:bad\ntype: pattern\ntitle: Bad (Vera Example)\n"
             "concept_edges:\n  - to: concept:example\n    role: loads\n---\n"
         ),
+    },
+    "bad-graph-dangling-endpoint": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "concept:b",'
+            ' "type": "related_to", "provenance": ["concept:a"],'
+            ' "weight": "low"}],',
+        ),
+    },
+    "bad-snapshot-kind-dimensions": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "condition": "chronic",
+                "evidence": ["artifact:2026-07-16-001"],
+                "decisions": [],
+            }},
+        }) + "\n",
     },
     "bad-snapshot-dangling-evidence": {
         "graph/atlas-snapshot.json": json.dumps({
