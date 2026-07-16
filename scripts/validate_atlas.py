@@ -414,6 +414,31 @@ def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     known = set(table) if isinstance(table, dict) else set()
     errors: list[str] = []
 
+    # The table maps §9.12 evidence ids to {kind, date}; the key's prefix is
+    # its kind — a mismatch corrupts the provenance table (§33.4).
+    for key, entry in (table or {}).items() if isinstance(table, dict) else ():
+        if not (isinstance(key, str) and key.startswith(_EVIDENCE_PREFIXES)):
+            errors.append(
+                f"{path}: evidence_refs key {key!r} is not a §9.12 evidence id"
+            )
+            continue
+        kind = entry.get("kind") if isinstance(entry, dict) else None
+        if isinstance(kind, str) and key.split(":", 1)[0] != kind:
+            errors.append(
+                f"{path}: evidence_refs[{key}] kind {kind!r} does not match "
+                "the id prefix (§33.4)"
+            )
+
+    # §33.4: materials is material contact state (§14.8) — keys are
+    # material(part) ids only.
+    for key in (snapshot.get("materials") or {}):
+        if not (isinstance(key, str)
+                and (key.startswith("material:") or key.startswith("part:"))):
+            errors.append(
+                f"{path}: materials key {key!r} is not a material(part) id "
+                "(§33.4, §14.8)"
+            )
+
     def check(refs, where):
         for ref in refs or []:
             if (isinstance(ref, str) and ref.startswith(_EVIDENCE_PREFIXES)

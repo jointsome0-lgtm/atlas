@@ -138,14 +138,23 @@
       "required": ["depth_reached", "last_seen", "evidence"],
       "additionalProperties": true
     },
+    "conceptKindId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "regionId": {"type": "string", "pattern": "^(?:concept|pattern|zone):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "viaId": {"type": "string", "pattern": "^(?:artifact:[a-z0-9]+(?:-[a-z0-9]+)*|material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
     "trailEntry": {
       "type": "object",
       "properties": {
         "id": {"type": "string", "pattern": "^trail-segment:[a-z0-9]+(?:-[a-z0-9]+)*$"},
         "date": {"$ref": "#/$defs/date"},
-        "from": {},
-        "to": {"$ref": "#/$defs/nodeId"},
-        "via": {"type": "array", "items": {"$ref": "#/$defs/nodeId"}}
+        "from": {
+          "oneOf": [
+            {"$ref": "#/$defs/conceptKindId"},
+            {"type": "array", "items": {"$ref": "#/$defs/conceptKindId"}}
+          ],
+          "description": "Movement origins are concept-kind ids, scalar or list (§9.9)."
+        },
+        "to": {"$ref": "#/$defs/conceptKindId"},
+        "via": {"type": "array", "items": {"$ref": "#/$defs/viaId"}}
       },
       "required": ["id", "date", "to", "via"],
       "additionalProperties": true
@@ -156,7 +165,7 @@
         "id": {"type": "string", "pattern": "^question:[a-z0-9]+(?:-[a-z0-9]+)*$"},
         "text": {"type": "string"},
         "status": {"type": "string", "enum": ["open", "clarified", "resolved", "stale"], "description": "Question states transcribed verbatim from §9.8."},
-        "pulls": {"type": "array", "items": {"$ref": "#/$defs/nodeId"}},
+        "pulls": {"type": "array", "items": {"$ref": "#/$defs/regionId"}},
         "source": {"type": "array", "items": {"$ref": "#/$defs/evidenceId"}}
       },
       "required": ["id", "text", "status", "pulls", "source"],

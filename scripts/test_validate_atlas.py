@@ -245,6 +245,38 @@ INVALID_INSTANCES = {
             "id: suggested-route:bad",
         ).replace("- step: concept:example", "- step: concept:absent"),
     },
+    "bad-snapshot-evidence-kind-mismatch": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "evidence_refs": {"artifact:2026-07-16-001":
+                              {"kind": "question", "date": "2026-07-16"}},
+        }) + "\n",
+    },
+    "bad-snapshot-materials-key": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "materials": {"concept:example": {
+                "depth_reached": "skim", "last_seen": "2026-07-16",
+                "evidence": [],
+            }},
+        }) + "\n",
+    },
+    "bad-snapshot-trail-shape": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "trail": [{"id": "trail-segment:2026-07-16-001",
+                       "date": "2026-07-16", "to": "material:m",
+                       "via": ["concept:x"]}],
+        }) + "\n",
+    },
+    "bad-snapshot-question-pulls": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "questions": [{"id": "question:example", "text": "Vera Example?",
+                           "status": "open", "pulls": ["material:m"],
+                           "source": ["artifact:2026-07-16-001"]}],
+        }) + "\n",
+    },
     "bad-snapshot-decision-dimension": {
         "graph/atlas-snapshot.json": json.dumps({
             **json.loads(VALID_SNAPSHOT),
