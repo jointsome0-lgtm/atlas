@@ -125,14 +125,31 @@ VALID_SNAPSHOT = json.dumps({
                  "freshness": ["fresh", "aging", "stale"]},
     },
     "evidence_refs": {"artifact:2026-07-16-001": {"kind": "artifact", "date": "2026-07-16"}},
-    "state": {"concept:example": {"exposure": "applied", "evidence": ["artifact:2026-07-16-001"], "decisions": []}},
+    "state": {"concept:example": {"exposure": "applied", "evidence": ["artifact:2026-07-16-001"],
+              "decisions": [{"dimension": "confidence", "date": "2026-07-16",
+                             "evidence": ["artifact:2026-07-16-001"]}]}},
     "materials": {},
     "trail": [],
     "questions": [],
 }, indent=2) + "\n"
 
+VALID_ROUTE = """---
+id: suggested-route:example-default
+type: suggested_route
+title: Example route (Vera Example)
+status: available
+steps:
+  - concept:example
+material_roles:
+  - step: concept:example
+    primary_materials:
+      - material:example-docs
+---
+"""
+
 VALID_INSTANCE = {
     "atlas/concepts/example.md": VALID_CONCEPT,
+    "atlas/suggested-routes/example-default.md": VALID_ROUTE,
     "graph/atlas-snapshot.json": VALID_SNAPSHOT,
     "atlas/materials/example-docs.md": VALID_MATERIAL,
     "state/receipts.jsonl": (
@@ -221,6 +238,22 @@ INVALID_INSTANCES = {
             "---\nid: pattern:bad\ntype: pattern\ntitle: Bad (Vera Example)\n"
             "concept_edges:\n  - to: concept:example\n    role: loads\n---\n"
         ),
+    },
+    "bad-route-material-role-step": {
+        "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
+            "id: suggested-route:example-default",
+            "id: suggested-route:bad",
+        ).replace("- step: concept:example", "- step: concept:absent"),
+    },
+    "bad-snapshot-decision-dimension": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "evidence": ["artifact:2026-07-16-001"],
+                "decisions": [{"dimension": "condition", "date": "2026-07-16",
+                               "evidence": ["artifact:2026-07-16-001"]}],
+            }},
+        }) + "\n",
     },
     "bad-graph-dangling-endpoint": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(

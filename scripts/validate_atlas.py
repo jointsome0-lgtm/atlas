@@ -451,6 +451,12 @@ _EXPOSURE_VALUES = {
     "concept": {"unseen", "touched", "read", "summarized", "applied", "taught"},
     "pattern": {"unseen", "touched", "studied", "tried", "drilled", "reviewed"},
 }
+_DECISION_DIMENSIONS = {
+    "concept": {"confidence", "clarity", "coverage"},
+    "pattern": {"confidence", "clarity", "coverage"},
+    "zone": {"strength", "endurance", "mobility", "condition"},
+}
+_ALL_DECISION_DIMENSIONS = set().union(*_DECISION_DIMENSIONS.values())
 
 
 def _snapshot_state_kind_errors(snapshot: dict, path: Path) -> list[str]:
@@ -482,6 +488,18 @@ def _snapshot_state_kind_errors(snapshot: dict, path: Path) -> list[str]:
                 f"{path}: state.{node} exposure {exposure!r} is outside the "
                 f"{kind} ladder (§14.1/§32.3)"
             )
+        gated = _DECISION_DIMENSIONS.get(kind, set())
+        for index, decision in enumerate(entry.get("decisions") or []):
+            if not isinstance(decision, dict):
+                continue
+            dimension = decision.get("dimension")
+            if (isinstance(dimension, str)
+                    and dimension in _ALL_DECISION_DIMENSIONS
+                    and dimension not in gated):
+                errors.append(
+                    f"{path}: state.{node}.decisions[{index}] gates "
+                    f"{dimension!r} — not a {kind} dimension (§33.4, §14.6)"
+                )
     return errors
 
 
@@ -503,6 +521,20 @@ def validate_instance(root: Path):
             try:
                 instance = parse_frontmatter(path.read_bytes(), path)
                 errors.extend(_schema_errors(instance, schemas[schema_name], path))
+                # §9.4: each material_roles entry names a member of steps —
+                # the step discriminator must be part of the route.
+                if schema_name == "suggested-route" and isinstance(instance, dict):
+                    steps = instance.get("steps")
+                    members = set(steps) if isinstance(steps, list) else set()
+                    for index, role in enumerate(instance.get("material_roles") or []):
+                        if not isinstance(role, dict):
+                            continue
+                        step = role.get("step")
+                        if isinstance(step, str) and step not in members:
+                            errors.append(
+                                f"{path}: material_roles[{index}].step {step} "
+                                "is not a member of steps (§9.4)"
+                            )
                 counts["frontmatter"] += 1
             except FrontmatterError as exc:
                 errors.append(str(exc))
