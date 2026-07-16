@@ -444,6 +444,20 @@ def validate_instance(root: Path):
             try:
                 instance = _read_json(path, delivered=True)
                 errors.extend(_schema_errors(instance, schemas["atlas-intake"], path))
+                # §33.2: source scopes the intake/ path and batch names the
+                # delivery — the <source>/<batch>#n provenance and receipt
+                # keys must point back at exactly this file.
+                if isinstance(instance, dict):
+                    source = instance.get("source")
+                    batch = instance.get("batch")
+                    if isinstance(source, str) and isinstance(batch, str):
+                        expected = Path(source) / f"{batch}.json"
+                        if path.relative_to(intake) != expected:
+                            errors.append(
+                                f"{path}: envelope names {source}/{batch}, "
+                                f"delivered as intake/{path.relative_to(intake)}"
+                                " (§33.2)"
+                            )
                 counts["intake"] += 1
             except JsonInputError as exc:
                 errors.append(str(exc))

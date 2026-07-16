@@ -159,6 +159,11 @@ INVALID_INSTANCES = {
             "concept_edges:\n  - to: concept:example\n    role: loads\n---\n"
         ),
     },
+    "bad-intake-path-mismatch": {
+        "intake/right/file.json": VALID_INTAKE_BATCH.replace(
+            '"watch-sync"', '"wrong"'
+        ),
+    },
     "bad-intake": {
         "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
             '"atlas-intake"', '"wrong"'

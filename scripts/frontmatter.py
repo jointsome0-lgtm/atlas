@@ -292,7 +292,11 @@ class _Parser:
         while pos < len(self.lines):
             line = self.lines[pos]
             if not line.content:
-                if line.indent > parent_indent or (parts and pos != len(self.lines) - 1):
+                # §20.4 forbids blank *continuation* lines: blank, then more
+                # deeper-indented fold text. A blank separator before the next
+                # sibling (or EOF) simply terminates the folded block.
+                nxt = self.significant(pos)
+                if nxt < len(self.lines) and self.lines[nxt].indent > parent_indent:
                     self.fail(line.number, "blank folded-text continuation is unsupported")
                 break
             if line.indent <= parent_indent:
