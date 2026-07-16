@@ -324,10 +324,40 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         f"{path}: route status {status!r} is a §9.4 forbidden task-state")
                 elif status not in ROUTE_STATUSES:
                     errors.append(f"{path}: route status {status!r} outside §9.4 vocabulary")
-                for order, step in enumerate(meta.get("steps") or [], 1):
+                steps = meta.get("steps") or []
+                for order, step in enumerate(steps, 1):
                     add_edge(step, node_id, "step_of_route", path, [node_id],
                              order=order)
-                field_refs[node_id] = list(meta.get("steps") or [])
+                # §10.2: consecutive steps of one route derive suggested_next,
+                # context = the route id (part of edge identity, §10.3).
+                for earlier, later in zip(steps, steps[1:]):
+                    add_edge(earlier, later, "suggested_next", path, [node_id],
+                             context=node_id)
+                field_refs[node_id] = list(steps)
+                # §11.1: the authored route context emits material(part) →
+                # route edges carrying step metadata; per step the two lists
+                # are disjoint (§9.4 — a §20.3 conflict otherwise).
+                for role in meta.get("material_roles") or []:
+                    if not isinstance(role, dict):
+                        continue
+                    step = role.get("step")
+                    if step not in steps:
+                        errors.append(
+                            f"{path}: material_roles step {step!r} is not a "
+                            f"member of steps (§9.4)")
+                        continue
+                    primary = role.get("primary_materials") or []
+                    supporting = role.get("supporting_materials") or []
+                    for shared in sorted(set(primary) & set(supporting)):
+                        errors.append(
+                            f"{path}: {shared} is both primary and supporting "
+                            f"for step {step} (§9.4/§20.3)")
+                    for material, role_type in (
+                        [(m, "primary_for") for m in primary]
+                        + [(m, "supporting_for") for m in supporting]
+                    ):
+                        add_edge(material, node_id, role_type, path, [node_id],
+                                 step=step)
                 if meta.get("source_plan"):
                     warnings.append(
                         f"{path}: source_plan {meta['source_plan']!r} kept as metadata "

@@ -406,6 +406,7 @@ def _read_jsonl(path: Path):
 _EVIDENCE_PREFIXES = ("artifact:", "encounter:", "question:")
 _SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _REGION_ID_RE = re.compile(rf"^(?:concept|pattern|zone):{_SLUG}$")
+_EVIDENCE_ID_RE = re.compile(rf"^(?:artifact|encounter|question):{_SLUG}$")
 _MATERIAL_ID_RE = re.compile(rf"^(?:material:{_SLUG}|part:{_SLUG}/{_SLUG})$")
 
 
@@ -428,7 +429,7 @@ def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     # The table maps §9.12 evidence ids to {kind, date}; the key's prefix is
     # its kind — a mismatch corrupts the provenance table (§33.4).
     for key, entry in (table or {}).items() if isinstance(table, dict) else ():
-        if not (isinstance(key, str) and key.startswith(_EVIDENCE_PREFIXES)):
+        if not (isinstance(key, str) and _EVIDENCE_ID_RE.fullmatch(key)):
             errors.append(
                 f"{path}: evidence_refs key {key!r} is not a §9.12 evidence id"
             )

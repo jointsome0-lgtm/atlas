@@ -264,6 +264,25 @@ INVALID_INSTANCES = {
             "id: suggested-route:bad",
         ).replace("- step: concept:example", "- step: concept:absent"),
     },
+    "bad-snapshot-evidence-key-shape": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "evidence_refs": {"artifact:bad/key":
+                              {"kind": "artifact", "date": "2026-07-16"}},
+            "state": {},
+        }) + "\n",
+    },
+    "bad-graph-trail-from-shape": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "trail-segment:2026-07-16-002",'
+            ' "type": "trail_segment", "title": "", "fields": [],'
+            ' "date": "2026-07-16", "direction": "direction:d",'
+            ' "from": "concept:bad/key", "to": "concept:a",'
+            ' "via": ["artifact:a"], "reason": "r",'
+            ' "resulting_questions": []}],',
+        ),
+    },
     "bad-graph-trail-shape": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',
