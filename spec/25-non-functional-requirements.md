@@ -19,8 +19,6 @@ JSON / JSONL (journals, §8)
 
 Every state update must be traceable to recorded evidence (§9.12).
 
-This holds by construction (§20, §31.8): state is a fold over the `state/` journals — exposure via the §14.5 mapping, review-gated dimensions via recorded decisions citing evidence (§9.13) — so an untraceable update is unrepresentable.
-
 ## §25.4 Low Pressure
 
 No dashboards should imply lateness, failure, or incompletion.
@@ -72,7 +70,7 @@ ships with the migration of the curated content — curation is
 editable where journals are not.
 ```
 
-The persisted formats and their schema files (`spec/schemas/<name>.schema.json`; the files land with #30's mechanical PR; the numeric ceilings are §20.4's and §25.8's — #23):
+The persisted formats and their schema files (`spec/schemas/<name>.schema.json`; the numeric ceilings are §20.4's and §25.8's — #23):
 
 ```text
 concept, zone, pattern, material, direction, suggested-route,
@@ -98,7 +96,7 @@ The set is closed: a new persisted format registers here in the same change that
 
 ## §25.8 Executable Floors
 
-The environment and limits §27 tests against (#23, #42). Values are 2026-07-16 measurements times a stated headroom factor, never a pretty number; the one corpus-less value is labeled; any value changes only through a Decision Log entry:
+The environment and limits §27 tests against (#23, #42); any value changes only through a Decision Log entry:
 
 ```text
 Runtime: CPython 3.12 — the CI pin and the supported floor;
@@ -109,10 +107,9 @@ intake batches and imported plan originals stay as delivered
 (§33.2, §12.2 step 1).
 Build floor: fixtures/perf/10k — 10,000 nodes at ~2.3 edges/node,
 deterministically generated, output untracked (§27) — builds in
-≤ 24 s wall time and ≤ 400 MiB peak RSS on the CI runner
-(measured median 2.37 s / 50 MiB; ×10 and ×8).
+≤ 24 s wall time and ≤ 400 MiB peak RSS on the CI runner.
 Emission budget: the emitted graph averages ≤ 4,500 bytes per
-node (measured 452; ×10).
+node.
 Journal row: ≤ 16,384 bytes per JSONL record — a policy ceiling,
 no corpus exists yet: a row that outgrows it is content in event
 clothing.
