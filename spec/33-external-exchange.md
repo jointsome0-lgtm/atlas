@@ -173,6 +173,7 @@ An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-s
   "format": "atlas-snapshot",
   "version": 1,
   "generated_at": "2026-07-06T00:00:00Z",
+  "withheld": {"state": 0, "materials": 0, "trail": 1, "questions": 0, "evidence_refs": 1},
   "scales": {
     "concept": {
       "exposure": ["unseen", "touched", "read", "summarized", "applied", "taught"],
@@ -194,9 +195,14 @@ An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-s
       "strength": ["unknown", "low", "medium", "high"],
       "endurance": ["unknown", "low", "medium", "high"],
       "mobility": ["unknown", "low", "medium", "high"],
-      "condition": ["fine", "irritated", "recovering", "restricted", "chronic"],
+      "condition": ["unknown", "fine", "irritated", "recovering", "restricted", "chronic"],
       "freshness": ["fresh", "aging", "stale"]
     }
+  },
+  "evidence_refs": {
+    "artifact:test-duplicate-post-idempotency": {"kind": "artifact", "date": "2026-06-05"},
+    "encounter:2026-06-05-fastapi-ch3": {"kind": "encounter", "date": "2026-06-05"},
+    "artifact:create-job-endpoint": {"kind": "artifact", "date": "2026-06-05"}
   },
   "state": {
     "concept:idempotency": {
@@ -206,13 +212,13 @@ An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-s
       "coverage": "partial",
       "freshness": "fresh",
       "last_seen": "2026-06-05",
-      "evidence": [{"id": "artifact:test-duplicate-post-idempotency", "kind": "artifact", "date": "2026-06-05"}],
+      "evidence": ["artifact:test-duplicate-post-idempotency"],
       "decisions": [{"dimension": "confidence", "date": "2026-07-04", "evidence": ["artifact:test-duplicate-post-idempotency"]}]
     }
   },
-  "materials": {"material:fastapi-tutorial": {"depth_reached": "summarized", "last_seen": "2026-06-05", "evidence": [{"id": "encounter:2026-06-05-fastapi-ch3", "kind": "encounter", "date": "2026-06-05"}]}},
+  "materials": {"material:fastapi-tutorial": {"depth_reached": "summarized", "last_seen": "2026-06-05", "evidence": ["encounter:2026-06-05-fastapi-ch3"]}},
   "trail": [{"id": "trail-segment:2026-06-05-001", "date": "2026-06-05", "from": "concept:rest-api", "to": "concept:idempotency", "via": ["artifact:test-duplicate-post-idempotency"]}],
-  "questions": [{"id": "question:201-vs-202", "text": "When should POST /jobs return 201 vs 202?", "status": "open", "pulls": ["concept:http-status-codes"]}]
+  "questions": [{"id": "question:201-vs-202", "text": "When should POST /jobs return 201 vs 202?", "status": "open", "pulls": ["concept:http-status-codes"], "source": ["artifact:create-job-endpoint"]}]
 }
 ```
 
@@ -222,11 +228,27 @@ The included set is closed — extending it is a Decision Log entry, made when a
 per-node derived state on the node's own scales — freshness and
 last_seen included, honest derived facts (§14.5–§14.7);
 material contact state (§14.8), with its evidence refs like any
-state entry — §33.1's provenance rule has no exceptions;
+state entry;
 trail segments as recorded (§9.9);
-open questions;
-evidence refs (id, kind, date — content stays home) and the
-confirmed decisions behind gated dimensions (§9.13);
+open questions, with their source evidence ids (§9.8);
+evidence refs — one home, no exceptions (#27): every
+evidence-bearing field (state and decision evidence, trail via,
+question source) holds ids only; each §9.12 evidence id among
+them resolves in the top-level evidence_refs table to {kind,
+date} — content stays home, and §33.1's provenance promise holds
+for every evidence ref in the file; the curated node ids via may
+also carry (§9.9 — a material part) are node refs, not evidence
+(§9.12), and are never table entries;
+the confirmed decisions behind gated dimensions (§9.13) — node
+and material targets only in v1: an edge-target decision
+(dimension: weight, §14.9) is excluded until a real adapter asks
+(§28.3) — the format has no edge section and no weight ladder,
+and this section's own rule makes a value whose ladder is absent
+malformed;
+per-section withheld counts: withheld maps every content section
+to the count of entries wholly or partly kept home by the §32.6
+default exclusion or a per-export choice — counts only, never
+ids; always present, an all-zero map is the honest "complete";
 the scales themselves, complete per node kind: every dimension
 an exported entry carries has its ladder under scales — the
 motor exposure ladder (§32.3) beside the knowledge one, the full
@@ -247,12 +269,15 @@ frontier items and route suggestions: suggestions address the
 user in the viewer (§15, §16.4) — re-presented downstream they
 are a todo list (§31.6);
 by default — the §32.6 sensitivity class, applied by provenance,
-not by section: the class travels from an evidence record to
-everything derived from it — state and decisions resting on it
-(zone condition), the evidence refs themselves, trail segments
-citing it in via, questions extracted from it, contact state of
-medical materials — so no snapshot section leaks it; any of it
-enters a snapshot only by explicit per-export choice.
+not by section (§32.6 states the taint rule once — union by
+provenance; this exclusion is its export instance): the class
+travels from an evidence record to everything derived from it —
+state and decisions resting on it (zone condition), the evidence
+refs themselves, trail segments citing it in via, questions
+extracted from it, contact state of medical materials — so no
+snapshot section leaks it; the withheld counts disclose that it
+stayed home; any of it enters a snapshot only by the user's
+explicit per-export choice (§32.6 declassification).
 ```
 
 Stability: node ids are stable slugs (§10.1) and persist across snapshots; a consumer must tolerate an id that vanishes — deletion is the owner's right (§5.2, §34), the same tolerance §20 requires of the builder. Id retirement resolves inside atlas (§34.4): a snapshot exports living ids only; no redirect map is exported until a real adapter asks (§28.3).

@@ -94,6 +94,8 @@ Probe responses are artifacts (§9.6): evidence for proposals,
 never direct writes.
 ```
 
+**No decision ⇒ no knowledge.** A review-gated dimension with no confirmed decision folds to a no-knowledge value that asserts nothing — the first value of its scale: `unknown` (confidence §14.2; the zone capacities and `condition`, §32.2), `vague` and `none` (clarity §14.3, coverage §14.4 — floors, not claims), `open` (question status §9.8). Edge weight keeps its own chain (§14.9): decision, else the authored hypothesis — a cited claim, not silence — else `unassessed`. A gated scale whose first value made a positive claim would let silence assert it — §32.2's `condition` gained `unknown` for exactly this (#38). The monotone ladders obey the same rule from the other side: no evidence reads `unseen` (§14.1, §32.2–§32.3). §20 step 9 is this rule's else-branch.
+
 ## §14.7 Freshness Decay
 
 Freshness is derived from `last_seen`, computed at build/view time against the fold's as-of date (§20.1) — never the wall clock, so rebuilding unchanged inputs on a later day changes nothing; the viewer may compute against its own as-of for honest aging. Never stored by hand:

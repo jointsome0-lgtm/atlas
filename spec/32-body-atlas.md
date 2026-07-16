@@ -37,7 +37,7 @@ zone:
   strength:  unknown | low | medium | high        # capacities — review-gated (§14.6);
   endurance: unknown | low | medium | high        # probes, diary numbers, and medical
   mobility:  unknown | low | medium | high        # records are the evidence
-  condition: fine | irritated | recovering | restricted | chronic   # gated; §32.6
+  condition: unknown | fine | irritated | recovering | restricted | chronic   # gated; §32.6
   freshness: fresh | aging | stale                # derived from last load (§14.7)
 ```
 
@@ -54,6 +54,8 @@ probed  = an artifact answering a probe on the zone (§9.11)
 ```
 
 Encounters and study artifacts never move contact: reading about a zone is not loading it — they feed material state (§14.8) and pattern study (§32.3).
+
+**No decision means no knowledge (§14.6).** With no confirmed decision the gated zone dimensions fold to `unknown` — capacities and `condition` alike. `fine` is a positive medical claim ("nothing is wrong here"), exactly as gated as `chronic`: it enters only through a confirmed decision citing measurement evidence, so an implicit `fine` is unrepresentable and an unexamined zone never renders as a healthy one (#38).
 
 **Down through a probe, never through a curve.** Freshness shows the fact of no contact — always, honestly. Capacity and condition move down only through the gate, on measurement evidence: a probe artifact, a diary line, a medical record. A time-based auto-decay write ("−15% after 60 days") asserts a population curve as a personal measurement — and has nothing to cite, since absence of records is not a §9.12 record — so it is unrepresentable by construction (§25.3). The honest route down is the chain: staleness (visible fact) → probe invitation (frontier) → measurement (artifact) → evidenced proposal → user decision.
 
@@ -167,6 +169,12 @@ individual development map
 
 Freshness applies to medical evidence for free: a two-year-old diagnosis ages, and the frontier may invite a re-probe — adjacency wording, never obligation (§31.6).
 
-**Sensitivity class**: medical journals and files are excluded from agent context by default; they enter only in a session the user explicitly started for them (§24, §31.7 discipline). The class also sets the deletion default — a classed record is purged when deleted (§34.1) — and the id convention: classed records take non-descriptive date-serial ids at creation (§34.6). Today the layer is light — diary lines and thrown-in PDFs; individual development maps arrive when the layer matures, through this same design, not a new one.
+**Atlas characterizes; it never diagnoses or prescribes.** Derived condition is a characterization of recorded evidence, never a diagnosis; suggestions stay propose-and-decide (§32.5); moving any class boundary — declassification included — is the user's explicit act, never an inference (§33.4).
+
+**Sensitivity class — taint is union by provenance.** The class is per-row, never per-journal: §33.2 persists it onto every journal row derived from a classed record, §33.3 onto imported routes and stubs, §34.6 shapes the ids. From there it travels to everything derived from a classed row: a derived value is classed iff any record in its provenance is classed — fold output (a `condition` resting on a medical row), influence sources, frontier items citing classed evidence, graph entries, snapshot sections. This is the rule's one statement (#38): §33.4's default exclusion is its export instance, §20 step 12 emits under it, §10.4 defers to it. The taint roots are exactly the persisted classes — classed journal rows (§33.2) and classed curated files (§33.3); curation is the owner's own voice, and re-authoring content as one's own deliberately removes the class (§33.3 adoption) — so a care note in a zone file (§32.2) is unclassed by construction, and content that must stay classed stays in classed records, never re-authored into curation.
+
+The class keeps classed content out of default agent context (§24, §31.7 discipline): a mixed journal or a derived file containing classed rows or values inherits the exclusion whole — it enters only a session the user explicitly started for it. An agent-facing build is therefore produced by the builder's explicit redaction flag (§20 step 12), never by hand-editing output; every redacted emission — the snapshot included — discloses per-section withheld counts: counts only, never ids (§33.4).
+
+The class also sets the deletion default — a classed record is purged when deleted (§34.1) — and the id convention: classed records take non-descriptive date-serial ids at creation (§34.6). Today the layer is light — diary lines and thrown-in PDFs; individual development maps arrive when the layer matures, through this same design, not a new one.
 
 ---
