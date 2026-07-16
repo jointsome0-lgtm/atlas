@@ -94,6 +94,25 @@ class BuilderIntegrationTests(unittest.TestCase):
             any("is not a material id" in error for error in errors), errors
         )
 
+    def test_part_formerly_reaches_the_emitted_node(self):
+        # §10.4/§34.4: a renamed part's redirects must survive into the graph.
+        with tempfile.TemporaryDirectory() as directory:
+            material = Path(directory) / "materials" / "docs.md"
+            material.parent.mkdir(parents=True)
+            material.write_text(
+                "---\nid: material:docs\ntype: material\n"
+                "title: Docs (Vera Example)\nkind: docs\nurl: \"\"\n"
+                "status: active\nparts:\n  - id: part:docs/intro\n"
+                "    title: Intro\n    formerly:\n"
+                "      - part:docs/old-intro\n---\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        part = next(n for n in graph["nodes"] if n["id"] == "part:docs/intro")
+        self.assertEqual(["part:docs/old-intro"], part["formerly"])
+
     def test_main_writes_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "atlas-graph.json"

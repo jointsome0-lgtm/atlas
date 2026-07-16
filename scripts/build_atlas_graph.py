@@ -301,10 +301,24 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 # add_node has already recorded the shape error for a
                 # malformed id; don't let the slug derivation crash on it.
                 material_slug = node_id.split(":", 1)[1] if ":" in node_id else None
-                for part in meta.get("parts") or []:
+                parts = meta.get("parts")
+                if parts is not None and not isinstance(parts, list):
+                    errors.append(f"{path}: parts must be a list (§9.3)")
+                    parts = []
+                for part in parts or []:
+                    if not isinstance(part, dict):
+                        errors.append(
+                            f"{path}: parts item {part!r} is not a "
+                            f"MaterialPart mapping (§9.3)")
+                        continue
                     part_id = part.get("id")
-                    add_node(part_id, "material_part", part.get("title", ""), path,
-                             {"material": node_id})
+                    # §10.4/§34.4: formerly travels wherever the id is
+                    # persisted — a part rename keeps its redirects.
+                    part_extra = {"material": node_id}
+                    if part.get("formerly") is not None:
+                        part_extra["formerly"] = part["formerly"]
+                    add_node(part_id, "material_part", part.get("title", ""),
+                             path, part_extra)
                     if part_id is None:
                         continue
                     if material_slug and not part_id.startswith(f"part:{material_slug}/"):
