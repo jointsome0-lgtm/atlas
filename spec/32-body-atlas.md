@@ -1,6 +1,6 @@
 ## §32. Body Atlas — Second Domain Instantiation
 
-The body domain instantiates the §25.5 domain rule: same core — journals (§8), evidence and decisions (§9.12–§9.13), the fold (§20), the review gate (§14.6), influence (§9.10), frontier (§15), the invariants (§31) — with its own field semantics, scales, and capture. Design pass 2026-07-06 (#17). Nothing here forks the core; where a core § needed generalizing, that § was edited in the same pass (§15.3, §19, §25.5, §31.5–§31.6).
+The body domain instantiates the §25.5 domain rule: same core, its own field semantics, scales, and capture — nothing here forks the core.
 
 One derived graph serves both domains. The body model is a viewer projection, not a data entity: the silhouette is curated content — a `zone → figure region` mapping holding no state, authored as `figure_region` in each zone's frontmatter (§8: one mapping, no second registry of zones) and embedded by the builder into the emitted graph (§20 step 12, §10), so the viewer's single input stays single (§16.4); the figure artwork itself is a viewer asset, like its stylesheet. Indicators (influence, freshness, condition) are rendered onto the regions at view time from the fold output (§31.8). A domain brings its own field geometry: knowledge has none (force-directed layout), the body is anatomical.
 
@@ -57,7 +57,7 @@ Encounters and study artifacts never move contact: reading about a zone is not l
 
 **No decision means no knowledge (§14.6).** With no confirmed decision the gated zone dimensions fold to `unknown` — capacities and `condition` alike. `fine` is a positive medical claim ("nothing is wrong here"), exactly as gated as `chronic`: it enters only through a confirmed decision citing measurement evidence, so an implicit `fine` is unrepresentable and an unexamined zone never renders as a healthy one (#38).
 
-**Down through a probe, never through a curve.** Freshness shows the fact of no contact — always, honestly. Capacity and condition move down only through the gate, on measurement evidence: a probe artifact, a diary line, a medical record. A time-based auto-decay write ("−15% after 60 days") asserts a population curve as a personal measurement — and has nothing to cite, since absence of records is not a §9.12 record — so it is unrepresentable by construction (§25.3). The honest route down is the chain: staleness (visible fact) → probe invitation (frontier) → measurement (artifact) → evidenced proposal → user decision.
+**Down through a probe, never through a curve.** Freshness shows the fact of no contact — always, honestly. Capacity and condition move down only through the gate, on measurement evidence: a probe artifact, a diary line, a medical record. The honest route down is the chain: staleness (visible fact) → probe invitation (frontier) → measurement (artifact) → evidenced proposal → user decision.
 
 **`chronic` lives in shadow.** A permanent condition (old injury, standing precaution) renders as a subtle shading on the silhouette, visible on focus — never an alarm badge or a permanent red flag (§25.4). But it is always on the table at suggestion time (§32.5). Care notes ("overhead pressing — cautious") are curated markdown in the zone file, like §9.1 concept-file sections — no schema. Leaving `chronic` (or `restricted`) is proposed only on medical evidence, through the gate.
 
@@ -74,7 +74,7 @@ drilled  = deliberately practiced it
 reviewed = technique survived external review (coach, video analysis)
 ```
 
-`tried` ranks above `studied`: doing is deeper contact than reading — a motor skill is not a text. The ladder is monotone via max; §14.5 machinery unchanged. Years of swimming with no technique work reads as `tried` + `clarity: vague` — much done, little understood; the scales are built to say this without judgment.
+`tried` ranks above `studied`: doing is deeper contact than reading — a motor skill is not a text. The ladder is monotone via max; §14.5 machinery unchanged. Years of swimming with no technique work reads as `tried` + `clarity: vague` — much done, little understood.
 
 The §9.6 strengths map to the ladder — the mapping lives here, beside it (§14.5):
 
@@ -90,8 +90,6 @@ performed|drilled + reviewed  → reviewed
 Paper work is study for a motor skill: a program note applying squat theory moves `studied`, never `tried` — only `performed`/`drilled` session evidence (§32.4) means doing. `reviewed` requires the performance reviewed (coach's eye, video analysis), not an explanation of it. Encounters raise motor exposure to at most `studied` — §14.5's read-cap, domain-worded.
 
 ## §32.4 Capture: the Diary Is the Only Evidence Source
-
-The one structural difference from the knowledge domain: the work leaves no trace by itself. A coding session leaves code; a swim leaves nothing. The trace is authored separately, so capture cost decides whether the field lives or stays `unseen` forever.
 
 Intake is the one observer flow (§13) over a three-tier spectrum; nothing is mandatory, richer input only sharpens proposals:
 
@@ -126,8 +124,7 @@ is evidence only — never goals, streaks, rings, or weekly targets
 (`streak` is checker-banned, §19). Health telemetry (HR) inherits
 the medical sensitivity class (§32.6) — declared by the adapter
 at intake (§33.2), never inferred from source.
-No mandatory fields, ever: each required field doubles capture
-cost and kills the habit.
+No mandatory fields, ever.
 ```
 
 ## §32.5 Frontier: Five Suggestion Kinds
@@ -167,7 +164,7 @@ individual development map
       (§32.5) — route machinery unchanged
 ```
 
-Freshness applies to medical evidence for free: a two-year-old diagnosis ages, and the frontier may invite a re-probe — adjacency wording, never obligation (§31.6).
+Medical evidence ages per §14.7; a frontier re-probe invitation stays adjacency wording, never obligation (§31.6).
 
 **Atlas characterizes; it never diagnoses or prescribes.** Derived condition is a characterization of recorded evidence, never a diagnosis; suggestions stay propose-and-decide (§32.5); moving any class boundary — declassification included — is the user's explicit act, never an inference (§33.4).
 
