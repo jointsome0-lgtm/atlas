@@ -426,6 +426,7 @@ def validate_instance(root: Path):
 
     for filename, schema_name in (
         ("atlas-graph.json", "atlas-graph"),
+        ("atlas-graph.redacted.json", "atlas-graph"),
         ("atlas-snapshot.json", "atlas-snapshot"),
     ):
         path = root / "graph" / filename
@@ -434,6 +435,19 @@ def validate_instance(root: Path):
         try:
             instance = _read_json(path)
             errors.extend(_schema_errors(instance, schemas[schema_name], path))
+            # §20/§25.7: one schema id covers both graph variants, so the
+            # variant-only withheld rule is checked here by file name —
+            # required on the redacted emission, forbidden on the full one.
+            if schema_name == "atlas-graph" and isinstance(instance, dict):
+                redacted = filename.endswith(".redacted.json")
+                if redacted and "withheld" not in instance:
+                    errors.append(
+                        f"{path}: the redacted graph must carry withheld (§20)"
+                    )
+                if not redacted and "withheld" in instance:
+                    errors.append(
+                        f"{path}: the full graph never carries withheld (§20)"
+                    )
             counts["emitted"] += 1
         except JsonInputError as exc:
             errors.append(str(exc))

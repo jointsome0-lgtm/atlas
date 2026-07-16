@@ -68,11 +68,28 @@ VALID_INTAKE_BATCH = """{
 }
 """
 
+VALID_REDACTED_GRAPH = VALID_EMPTY_GRAPH.replace(
+    '"nodes": [],', '"withheld": {"nodes": 1},\n  "nodes": [],'
+)
+
+GRAPH_WITH_NODE = VALID_EMPTY_GRAPH.replace(
+    '"nodes": [],',
+    '"nodes": [{"id": "concept:example", "type": "%s", "title": "Example",'
+    ' "fields": ["knowledge"], "aliases": []}],',
+)
+
+GRAPH_WITH_EDGE = VALID_EMPTY_GRAPH.replace(
+    '"edges": [],',
+    '"edges": [{"source": "concept:a", "target": "concept:b", "type": "loads",'
+    ' "provenance": ["pattern:p"], "weight": "unassessed"}],',
+)
+
 VALID_INSTANCE = {
     "atlas/concepts/example.md": VALID_CONCEPT,
     "plans/extracted/example.yaml": VALID_PLAN_EXTRACT,
     "state/artifacts.jsonl": VALID_ARTIFACT_ROW,
-    "graph/atlas-graph.json": VALID_EMPTY_GRAPH,
+    "graph/atlas-graph.json": GRAPH_WITH_NODE % "concept",
+    "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH,
     "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH,
 }
 
@@ -85,6 +102,18 @@ INVALID_INSTANCES = {
     },
     "unknown-curated": {
         "atlas/concepts/bad.md": "---\nid: concept:bad\ntype: concept\ntitle: Bad\nstray: rejected\n---\n",
+    },
+    "bad-graph-node-kind": {
+        "graph/atlas-graph.json": GRAPH_WITH_NODE % "material",
+    },
+    "bad-graph-edge-endpoints": {
+        "graph/atlas-graph.json": GRAPH_WITH_EDGE,
+    },
+    "bad-graph-withheld-on-full": {
+        "graph/atlas-graph.json": VALID_REDACTED_GRAPH,
+    },
+    "bad-graph-redacted-without-withheld": {
+        "graph/atlas-graph.redacted.json": VALID_EMPTY_GRAPH,
     },
     "bad-decision-status-target": {
         "state/decisions.jsonl": (

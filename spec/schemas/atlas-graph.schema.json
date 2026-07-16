@@ -199,7 +199,21 @@
         {"if": {"properties": {"type": {"const": "artifact"}}, "required": ["type"]}, "then": {"required": ["kind", "path", "observed_at", "summary", "evidence_strength"]}},
         {"if": {"properties": {"type": {"const": "encounter"}}, "required": ["type"]}, "then": {"required": ["date", "target", "depth", "mode", "context"]}},
         {"if": {"properties": {"type": {"const": "trail_segment"}}, "required": ["type"]}, "then": {"required": ["date", "direction", "to", "via", "reason", "resulting_questions"]}},
-        {"if": {"properties": {"type": {"const": "personal_trail"}}, "required": ["type"]}, "then": {"required": ["direction"]}}
+        {"if": {"properties": {"type": {"const": "personal_trail"}}, "required": ["type"]}, "then": {"required": ["direction"]}},
+        {"if": {"properties": {"type": {"const": "plan"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^plan:"}}}},
+        {"if": {"properties": {"type": {"const": "concept"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^concept:"}}}},
+        {"if": {"properties": {"type": {"const": "material"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^material:"}}}},
+        {"if": {"properties": {"type": {"const": "material_part"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^part:"}}}},
+        {"if": {"properties": {"type": {"const": "direction"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^direction:"}}}},
+        {"if": {"properties": {"type": {"const": "suggested_route"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^suggested-route:"}}}},
+        {"if": {"properties": {"type": {"const": "personal_trail"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^personal-trail:"}}}},
+        {"if": {"properties": {"type": {"const": "trail_segment"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^trail-segment:"}}}},
+        {"if": {"properties": {"type": {"const": "artifact"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^artifact:"}}}},
+        {"if": {"properties": {"type": {"const": "encounter"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^encounter:"}}}},
+        {"if": {"properties": {"type": {"const": "question"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^question:"}}}},
+        {"if": {"properties": {"type": {"const": "probe"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^probe:"}}}},
+        {"if": {"properties": {"type": {"const": "zone"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^zone:"}}}},
+        {"if": {"properties": {"type": {"const": "pattern"}}, "required": ["type"]}, "then": {"properties": {"id": {"pattern": "^pattern:"}}}}
       ]
     },
     "edge": {
@@ -224,8 +238,30 @@
         {"if": {"properties": {"type": {"enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"], "description": "Authored edge species requiring an emitted §14.9 fold weight, transcribed from §10.2–§10.3."}}, "required": ["type"]}, "then": {"required": ["weight"]}},
         {"if": {"properties": {"type": {"const": "step_of_route"}}, "required": ["type"]}, "then": {"required": ["order"]}},
         {"if": {"properties": {"type": {"const": "suggested_next"}}, "required": ["type"]}, "then": {"required": ["context"]}},
-        {"if": {"properties": {"type": {"enum": ["primary_for", "supporting_for"], "description": "Contextual material-role edge types transcribed from §10.2–§10.3."}, "target": {"pattern": "^suggested-route:"}}, "required": ["type", "target"]}, "then": {"required": ["step"]}}
+        {"if": {"properties": {"type": {"enum": ["primary_for", "supporting_for"], "description": "Contextual material-role edge types transcribed from §10.2–§10.3."}, "target": {"pattern": "^suggested-route:"}}, "required": ["type", "target"]}, "then": {"required": ["step"]}},
+        {"if": {"properties": {"type": {"const": "related_to"}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/conceptKindRef"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
+        {"if": {"properties": {"type": {"enum": ["prerequisite_of", "extends", "contradicts"], "description": "Endpoint kinds transcribed from the §10.2 matrix."}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/conceptPartRef"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
+        {"if": {"properties": {"type": {"enum": ["implements", "explains", "demonstrates", "critiques", "mentions"], "description": "Endpoint kinds transcribed from the §10.2 matrix."}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^part:"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
+        {"if": {"properties": {"type": {"const": "loads"}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^pattern:"}, "target": {"pattern": "^zone:"}}}},
+        {"if": {"properties": {"type": {"const": "supports"}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/materialPartRef"}, "target": {"$ref": "#/$defs/materialPartRef"}}}},
+        {"if": {"properties": {"type": {"const": "has_part"}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^material:"}, "target": {"pattern": "^part:"}}}},
+        {"if": {"properties": {"type": {"const": "overall_concept"}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^material:"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
+        {"if": {"properties": {"type": {"const": "part_of_direction"}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/conceptKindRef"}, "target": {"pattern": "^direction:"}}}},
+        {"if": {"properties": {"type": {"const": "step_of_route"}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/conceptKindRef"}, "target": {"pattern": "^suggested-route:"}}}},
+        {"if": {"properties": {"type": {"enum": ["suggested_next", "moved_to"], "description": "Endpoint kinds transcribed from the §10.2 matrix."}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/conceptKindRef"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
+        {"if": {"properties": {"type": {"const": "probed_by"}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/regionRef"}, "target": {"pattern": "^probe:"}}}},
+        {"if": {"properties": {"type": {"const": "pulled_by"}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/regionRef"}, "target": {"pattern": "^question:"}}}},
+        {"if": {"properties": {"type": {"const": "visited"}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^encounter:"}, "target": {"$ref": "#/$defs/materialPartRef"}}}},
+        {"if": {"properties": {"type": {"enum": ["influences", "updates_state"], "description": "Endpoint kinds transcribed from the §10.2 matrix."}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^artifact:"}, "target": {"$ref": "#/$defs/regionRef"}}}},
+        {"if": {"properties": {"type": {"const": "via"}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^trail-segment:"}, "target": {"$ref": "#/$defs/materialPartRef"}}}},
+        {"if": {"properties": {"type": {"const": "produced_artifact"}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^trail-segment:"}, "target": {"pattern": "^artifact:"}}}},
+        {"if": {"properties": {"type": {"enum": ["primary_for", "supporting_for"], "description": "Endpoint kinds transcribed from the §10.2 matrix."}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/materialPartRef"}, "target": {"$ref": "#/$defs/contextRef"}}}}
       ]
-    }
+    },
+    "conceptKindRef": {"pattern": "^(?:concept:|pattern:)"},
+    "conceptPartRef": {"pattern": "^(?:concept:|pattern:|part:)"},
+    "regionRef": {"pattern": "^(?:concept:|pattern:|zone:)"},
+    "materialPartRef": {"pattern": "^(?:material:|part:)"},
+    "contextRef": {"pattern": "^(?:suggested-route:|question:|trail-segment:)"}
   }
 }
