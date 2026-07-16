@@ -39,8 +39,6 @@ explanations
 decisions
 ```
 
-A trail cannot fail. It is historical memory. Sacred protects the trail from the system, not from its owner.
-
 ## §5.3 Understanding Is Not Imported
 
 Importing a plan creates candidate graph structure.
