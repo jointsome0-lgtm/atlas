@@ -529,6 +529,22 @@ INVALID_INSTANCES = {
             '"nodes": [],', '"nodes": 1,'
         ),
     },
+    "bad-graph-question-source-shape": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "question:q", "type": "question", "title": "Q",'
+            ' "fields": ["knowledge"], "text": "Vera Example?",'
+            ' "created_at": "2026-07-16", "source": "material:m"}],',
+        ),
+    },
+    "bad-graph-encounter-target": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "concept:c",'
+            ' "depth": "skim", "mode": "reading", "context": "solo"}],',
+        ),
+    },
     "bad-snapshot-evidence-type": {
         "graph/atlas-snapshot.json": json.dumps({
             **json.loads(VALID_SNAPSHOT),

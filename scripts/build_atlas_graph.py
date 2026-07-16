@@ -355,8 +355,30 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                             f"{path}: material_roles step {step!r} is not a "
                             f"member of steps (§9.4)")
                         continue
-                    primary = role.get("primary_materials") or []
-                    supporting = role.get("supporting_materials") or []
+                    # Fail closed on non-string items before set math and
+                    # edge emission — a schema-invalid role list must error,
+                    # never traceback or emit a malformed endpoint.
+                    def role_ids(key):
+                        items = role.get(key)
+                        if items is None:
+                            return []
+                        if not isinstance(items, list):
+                            errors.append(
+                                f"{path}: material_roles {key} must be a "
+                                f"list of material ids (§9.4)")
+                            return []
+                        ids = []
+                        for item in items:
+                            if isinstance(item, str):
+                                ids.append(item)
+                            else:
+                                errors.append(
+                                    f"{path}: material_roles {key} item "
+                                    f"{item!r} is not a material id (§9.4)")
+                        return ids
+
+                    primary = role_ids("primary_materials")
+                    supporting = role_ids("supporting_materials")
                     for shared in sorted(set(primary) & set(supporting)):
                         errors.append(
                             f"{path}: {shared} is both primary and supporting "

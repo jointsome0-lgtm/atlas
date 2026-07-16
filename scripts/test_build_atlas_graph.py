@@ -74,6 +74,26 @@ class BuilderIntegrationTests(unittest.TestCase):
                 errors,
             )
 
+    def test_non_string_role_material_fails_the_build(self):
+        # A parser-valid mapping item inside a role list must produce a
+        # build error, not a TypeError or a malformed edge endpoint.
+        with tempfile.TemporaryDirectory() as directory:
+            route = Path(directory) / "suggested-routes" / "bad.md"
+            route.parent.mkdir(parents=True)
+            route.write_text(
+                "---\nid: suggested-route:bad\ntype: suggested_route\n"
+                "title: Bad (Vera Example)\nstatus: available\n"
+                "steps:\n  - concept:a\n"
+                "material_roles:\n  - step: concept:a\n"
+                "    primary_materials:\n      - id: material:x\n---\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
+                _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a material id" in error for error in errors), errors
+        )
+
     def test_main_writes_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "atlas-graph.json"

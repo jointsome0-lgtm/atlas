@@ -179,7 +179,15 @@
         "attractor": {"type": "string"},
         "text": {"type": "string"},
         "created_at": {"$ref": "#/$defs/date"},
-        "source": {},
+        "source": {
+          "type": "object",
+          "properties": {
+            "artifact": {"type": "string", "pattern": "^artifact:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+            "encounter": {"type": "string", "pattern": "^encounter:[a-z0-9]+(?:-[a-z0-9]+)*$"}
+          },
+          "minProperties": 1,
+          "additionalProperties": false
+        },
         "body": {"type": "string"},
         "path": {"type": "string"},
         "observed_at": {"$ref": "#/$defs/date"},
@@ -187,7 +195,7 @@
         "evidence_strength": {"$ref": "#/$defs/evidenceStrength"},
         "probe": {"type": "string", "pattern": "^probe:[a-z0-9]+(?:-[a-z0-9]+)*$"},
         "date": {"$ref": "#/$defs/date"},
-        "target": {"$ref": "#/$defs/nodeId"},
+        "target": {"type": "string", "pattern": "^(?:material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$", "description": "Encounters are contact with a material(part) (§9.7); the embedded target mirrors the journal row."},
         "depth": {"$ref": "#/$defs/encounterDepth"},
         "mode": {"type": "string"},
         "context": {},
