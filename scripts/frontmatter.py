@@ -370,6 +370,17 @@ def parse_frontmatter(data: bytes, source: str | Path = "<bytes>") -> dict:
     return _Parser(lines, source).parse()
 
 
+def frontmatter_body(data: bytes) -> str:
+    """The markdown body below the closing fence — outside the grammar
+    (§20.4). Call only on input parse_frontmatter accepted: the grammar
+    forbids a bare `---` line inside the block, so the first one after the
+    opening fence is the closing fence."""
+    end = data.find(b"\n---\n", 3)
+    if end >= 0:
+        return data[end + 5:].decode("utf-8")
+    return ""
+
+
 def parse_document(data: bytes, source: str | Path = "<bytes>") -> dict:
     """Parse the fence-less top-level mapping used by §21.2 plan extracts."""
     if not isinstance(data, bytes):
@@ -396,6 +407,7 @@ __all__ = [
     "MAX_NODES",
     "MAX_SCALAR_BYTES",
     "MAX_SEQUENCE_ENTRIES",
+    "frontmatter_body",
     "parse_document",
     "parse_frontmatter",
 ]

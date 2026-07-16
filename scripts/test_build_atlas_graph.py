@@ -37,6 +37,24 @@ class BuilderIntegrationTests(unittest.TestCase):
         self.assertEqual("atlas-graph", first["format"])
         self.assertEqual(1, first["version"])
 
+    def test_built_graph_validates_against_schema(self):
+        # The builder's own emission must pass the persisted-format boundary
+        # (§25.7): schema plus the validator's graph cross-checks.
+        import validate_atlas
+
+        with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
+            graph, errors, _ = build_atlas_graph.build(DEMO)
+        self.assertEqual([], errors)
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "graph" / "atlas-graph.json"
+            out.parent.mkdir()
+            out.write_text(json.dumps(graph), encoding="utf-8")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = validate_atlas.main(["validate", directory])
+        self.assertEqual(0, code, stderr.getvalue())
+
     def test_main_writes_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "atlas-graph.json"

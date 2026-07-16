@@ -16,7 +16,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from frontmatter import FrontmatterError, parse_frontmatter
+from frontmatter import FrontmatterError, frontmatter_body, parse_frontmatter
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -122,7 +122,7 @@ FORBIDDEN_ROUTE_STATUSES = {"done", "failed", "late", "blocked"}
 
 # ------------------------------------------------------------------- loading
 
-def load_dir(curated: Path, subdir: str) -> list[tuple[dict, Path]]:
+def load_dir(curated: Path, subdir: str) -> list[tuple[dict, str, Path]]:
     directory = curated / subdir
     docs = []
     if not directory.is_dir():
@@ -130,7 +130,8 @@ def load_dir(curated: Path, subdir: str) -> list[tuple[dict, Path]]:
     for path in sorted(directory.glob("*.md")):
         if path.name.startswith("_"):
             continue
-        docs.append((parse_frontmatter(path.read_bytes(), path), path))
+        data = path.read_bytes()
+        docs.append((parse_frontmatter(data, path), frontmatter_body(data), path))
     return docs
 
 
@@ -145,6 +146,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
     projections: dict[str, str] = {}  # zone -> figure region (§20 step 12, §32)
+    field_refs: dict[str, list] = {}  # node -> refs its §10.4 fields derive from
 
     def add_node(node_id, node_type, title, source, extra=None):
         if node_id is None:
@@ -168,9 +170,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             node.update(extra)
         nodes[node_id] = node
 
-    def add_edge(source_id, target_id, edge_type, origin, **meta):
-        edge = {"source": source_id, "target": target_id, "type": edge_type}
+    def add_edge(source_id, target_id, edge_type, origin, provenance, **meta):
+        # §10.3: provenance is required on every edge — the direct derivation
+        # basis, sorted; the authored species always carry the §14.9 fold
+        # value, unassessed when nothing was authored.
+        edge = {"source": source_id, "target": target_id, "type": edge_type,
+                "provenance": sorted(provenance)}
         edge.update({k: v for k, v in meta.items() if v is not None})
+        if edge_type in AUTHORED_ROLES | {"supports"} and "weight" not in edge:
+            edge["weight"] = "unassessed"
         try:
             edge["_origin"] = str(origin.relative_to(ROOT))
         except ValueError:
@@ -190,13 +198,14 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 errors.append(f"{path}: role {role!r} on {owner_id} -> "
                               f"{ce.get('to')} is not an authored relationship "
                               f"role (§9.3/§32.1)")
-            add_edge(owner_id, ce.get("to"), role, path, weight=weight)
+            add_edge(owner_id, ce.get("to"), role, path, [owner_id], weight=weight)
 
     def add_supports(owner_id, entries, path):
         # §9.14: helper -> receiver; endpoint kinds enforced by ENDPOINT_RULES.
+        # Authored on the receiving side — the receiver is the authoring node.
         for helper in entries or []:
             helper_id = helper["id"] if isinstance(helper, dict) else helper
-            add_edge(helper_id, owner_id, "supports", path,
+            add_edge(helper_id, owner_id, "supports", path, [owner_id],
                      note=helper.get("note") if isinstance(helper, dict) else None)
 
     # §20 steps 1-2, 4-5: curated kinds. Zones/patterns dirs are read the same
@@ -206,7 +215,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         ("materials", "material"), ("directions", "direction"),
         ("suggested-routes", "suggested_route"), ("probes", "probe"),
     ):
-        for meta, path in load_dir(curated, subdir):
+        for meta, body, path in load_dir(curated, subdir):
             declared = meta.get("type", expected)
             if declared != expected and not (subdir == "suggested-routes"
                                              and declared == "suggested_route"):
@@ -226,15 +235,36 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     and status not in LIFECYCLE_STATUSES):
                 errors.append(f"{path}: status {status!r} outside the §9.2/§9.11 "
                               f"lifecycle vocabulary (active|archived)")
-            extra = {"status": status} if status else None
-            add_node(meta.get("id"), expected, meta.get("title", ""), path, extra)
+            # §10.4: the per-kind payload embedded beyond id/type/title/fields;
+            # formerly and sensitivity travel wherever persisted.
+            extra = {"status": status} if status else {}
+            if meta.get("formerly") is not None:
+                extra["formerly"] = meta["formerly"]
+            if meta.get("sensitivity") is not None:
+                extra["sensitivity"] = meta["sensitivity"]
+            if expected in ("concept", "pattern"):
+                extra["aliases"] = meta.get("aliases") or []
+            if expected == "zone":
+                extra["notes"] = body  # file body: care notes (§32.2)
+            if expected == "material":
+                extra["kind"] = meta.get("kind")
+                extra["url"] = meta.get("url")
+            if expected == "direction":
+                extra["attractor"] = meta.get("attractor")
+            if expected in ("suggested_route", "probe") and meta.get("source_plan"):
+                extra["source_plan"] = meta["source_plan"]
+            if expected == "probe":
+                extra["body"] = body  # the check itself (§9.11)
+            extra = {k: v for k, v in extra.items() if v is not None}
+            add_node(meta.get("id"), expected, meta.get("title", ""), path,
+                     extra or None)
             node_id = meta.get("id")
             if node_id is None:
                 continue
 
             if expected == "concept":
                 for rel in meta.get("related_concepts") or []:
-                    add_edge(node_id, rel, "related_to", path)
+                    add_edge(node_id, rel, "related_to", path, [node_id])
 
             if expected == "pattern":
                 # §32.1: a pattern authors its loads/etc. edges as a part
@@ -250,12 +280,14 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 # §9.11/§20 step 7: a probe targets concepts; the reference
                 # loop validates them, the edge is the §10.2 probed_by.
                 for concept in meta.get("concepts") or []:
-                    add_edge(concept, node_id, "probed_by", path)
+                    add_edge(concept, node_id, "probed_by", path, [node_id])
+                field_refs[node_id] = list(meta.get("concepts") or [])
 
             if expected == "material":
                 for concept in meta.get("overall_concepts") or []:
-                    add_edge(node_id, concept, "overall_concept", path)
+                    add_edge(node_id, concept, "overall_concept", path, [node_id])
                 add_supports(node_id, meta.get("supported_by"), path)
+                field_refs[node_id] = list(meta.get("overall_concepts") or [])
                 # §20 step 3: expand MaterialPart nodes.
                 # add_node has already recorded the shape error for a
                 # malformed id; don't let the slug derivation crash on it.
@@ -270,13 +302,20 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         errors.append(
                             f"{path}: part id {part_id!r} does not carry its "
                             f"material's slug {material_slug!r} (§10.1)")
-                    add_edge(node_id, part_id, "has_part", path)
+                    add_edge(node_id, part_id, "has_part", path, [node_id])
                     add_concept_edges(part_id, part.get("concept_edges"), path)
                     add_supports(part_id, part.get("supported_by"), path)
+                    # §10.4: a part's fields come from its concept_edges
+                    # targets; the material unions its parts' fields.
+                    field_refs[part_id] = [
+                        ce.get("to") for ce in part.get("concept_edges") or []
+                        if ce.get("to")]
+                    field_refs[node_id].append(part_id)
 
             if expected == "direction":
                 for concept in meta.get("core_concepts") or []:
-                    add_edge(concept, node_id, "part_of_direction", path)
+                    add_edge(concept, node_id, "part_of_direction", path, [node_id])
+                field_refs[node_id] = list(meta.get("core_concepts") or [])
 
             if expected == "suggested_route":
                 status = meta.get("status")
@@ -286,7 +325,9 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 elif status not in ROUTE_STATUSES:
                     errors.append(f"{path}: route status {status!r} outside §9.4 vocabulary")
                 for order, step in enumerate(meta.get("steps") or [], 1):
-                    add_edge(step, node_id, "step_of_route", path, order=order)
+                    add_edge(step, node_id, "step_of_route", path, [node_id],
+                             order=order)
+                field_refs[node_id] = list(meta.get("steps") or [])
                 if meta.get("source_plan"):
                     warnings.append(
                         f"{path}: source_plan {meta['source_plan']!r} kept as metadata "
@@ -328,6 +369,29 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
              if e["source"] in nodes and e["target"] in nodes]
     for edge in edges:
         edge.pop("_origin", None)
+
+    # §10.4: fields = union of the fields of the region nodes reachable
+    # through the kind's listed refs; chains bottom out at the §10.1
+    # registry (concept → knowledge; zone, pattern → body), so resolution
+    # is acyclic. Dangling refs contribute nothing; fields: [] is legal —
+    # the viewer flags it, the builder never substitutes.
+    REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
+                       "pattern": {"body"}}
+
+    def fields_of(node_id, seen=frozenset()):
+        node = nodes.get(node_id)
+        if node is None or node_id in seen:
+            return set()
+        registry = REGISTRY_FIELDS.get(node["type"])
+        if registry is not None:
+            return registry
+        result = set()
+        for ref in field_refs.get(node_id, []):
+            result |= fields_of(ref, seen | {node_id})
+        return result
+
+    for node_id, node in nodes.items():
+        node["fields"] = sorted(fields_of(node_id))
 
     graph = {
         "format": "atlas-graph",

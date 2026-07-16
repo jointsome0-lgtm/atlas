@@ -319,6 +319,16 @@ INVALID_INSTANCES = {
                            "source": ["artifact:2026-07-16-001"]}],
         }) + "\n",
     },
+    "bad-snapshot-status-decision": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "evidence": ["artifact:2026-07-16-001"],
+                "decisions": [{"dimension": "status", "date": "2026-07-16",
+                               "evidence": ["artifact:2026-07-16-001"]}],
+            }},
+        }) + "\n",
+    },
     "bad-snapshot-decision-dimension": {
         "graph/atlas-snapshot.json": json.dumps({
             **json.loads(VALID_SNAPSHOT),

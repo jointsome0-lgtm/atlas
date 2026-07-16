@@ -101,7 +101,7 @@
     "decisionRef": {
       "type": "object",
       "properties": {
-        "dimension": {"type": "string", "enum": ["confidence", "clarity", "coverage", "status", "strength", "endurance", "mobility", "condition"], "description": "Snapshot node decision dimensions transcribed from §9.13, the §32.2 Zone instantiation, and the §33.4 edge-weight exclusion."},
+        "dimension": {"type": "string", "enum": ["confidence", "clarity", "coverage", "strength", "endurance", "mobility", "condition"], "description": "Snapshot node decision dimensions transcribed from §9.13 and the §32.2 Zone instantiation; question status lives on question entries and edge weight is excluded (§33.4)."},
         "date": {"$ref": "#/$defs/date"},
         "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidenceId"}}
       },
