@@ -32,7 +32,13 @@
         }
       },
       "required": ["to", "role"],
-      "additionalProperties": false
-    }
+      "additionalProperties": false,
+      "allOf": [
+        {"if": {"properties": {"role": {"const": "loads"}}, "required": ["role"]}, "then": {"properties": {"to": {"$ref": "#/$defs/zoneId"}}, "description": "§32.1/§10.2: pattern loads edges target zones only."}},
+        {"if": {"properties": {"role": {"enum": ["related_to", "prerequisite_of", "extends", "contradicts"], "description": "Concept-voice roles transcribed from the §10.2 matrix."}}, "required": ["role"]}, "then": {"properties": {"to": {"$ref": "#/$defs/conceptId"}}}}
+      ]
+    },
+    "zoneId": {"type": "string", "pattern": "^zone:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "conceptId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"}
   }
 }

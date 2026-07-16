@@ -86,6 +86,19 @@ INVALID_INSTANCES = {
     "unknown-curated": {
         "atlas/concepts/bad.md": "---\nid: concept:bad\ntype: concept\ntitle: Bad\nstray: rejected\n---\n",
     },
+    "bad-decision-status-target": {
+        "state/decisions.jsonl": (
+            '{"date":"2026-07-16","target":"concept:example","dimension":"status",'
+            '"to":"open","evidence":["artifact:2026-07-16-001"],'
+            '"proposed_by":"user","decision":"confirmed"}\n'
+        ),
+    },
+    "bad-pattern-loads-target": {
+        "atlas/patterns/bad.md": (
+            "---\nid: pattern:bad\ntype: pattern\ntitle: Bad (Vera Example)\n"
+            "concept_edges:\n  - to: concept:example\n    role: loads\n---\n"
+        ),
+    },
     "bad-intake": {
         "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
             '"atlas-intake"', '"wrong"'
