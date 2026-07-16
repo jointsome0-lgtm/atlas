@@ -33,7 +33,8 @@ Versioned: each format carries format + integer version. Additive
 change is the norm; a rename, removal, or semantic change bumps
 the version through a Decision Log entry. Consumers must ignore
 unknown fields; atlas never silently drops what it cannot place
-(§33.2).
+(§33.2). The discipline is §25.7's, stated there once for every
+persisted format — the boundary formats are its instances.
 ```
 
 ## §33.2 Intake: Activity Ledger

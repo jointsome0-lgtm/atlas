@@ -125,15 +125,65 @@ datetime
 re
 ```
 
-If YAML is needed, either:
+Frontmatter parses by the §20.4 grammar — a closed stdlib parser, never PyYAML (Decision Log 2026-07-16); the §25.7 schemas validate the parsed object.
+
+## §20.4 Frontmatter Grammar
+
+The YAML-shaped persisted surfaces — curated frontmatter blocks and the extracted plan document (§21.2) — are written in one deliberately closed grammar, stated here. It is YAML-shaped, not YAML: a general YAML tool may happen to read these files, but its rewrite carries no conformance promise. This section is the canon; every reader and writer — builder, importer, observer, validator — implements it, and `validate_atlas.py` checks implementations against the conformance fixtures. Bytes in, object or diagnostic out; nothing in between is canonical (#30's de-facto-schema disease, cured the way §20.3 cures constants).
 
 ```text
-use simple frontmatter parser manually
-or vendor a tiny parser
-or require PyYAML later
+Encoding: strict UTF-8, no BOM; invalid UTF-8 is an ERROR. LF is
+the only newline, checked on raw bytes before any text-mode
+normalization can hide a CRLF. Tabs are forbidden anywhere in
+frontmatter; indentation is ASCII spaces, exactly two per level.
+NUL and C0 controls (LF aside) are ERRORs. No Unicode
+normalization: code points pass through; schemas restrict ids to
+the §10.1 ASCII shapes.
+Document: the opening and closing --- are exact lines at column
+zero; the body below the closing fence is markdown, outside the
+grammar. The extracted plan document (§21.2) is the same grammar
+as one fence-less top-level mapping.
+Structure: a container is a mapping or a sequence, never both —
+mixing is an ERROR. A value is a scalar, a nested mapping, or a
+sequence of scalars or of mappings.
+Keys: [A-Za-z_][A-Za-z0-9_-]* (ASCII). A duplicate key within one
+mapping is an ERROR — a sequence entry's inline key colliding
+with its continuation lines included. Mapping order carries no
+meaning; sequence order does.
+Scalars: every scalar is a string — no null/bool/int/date
+coercion (true, 2026-07-11, 01 stay strings); schemas constrain
+strings (enums, patterns), never coerce them. "" is the empty
+string, [] the empty sequence. Double-quoted scalars use JSON
+string escaping; single-quoted scalars are unsupported. An
+unquoted scalar is its trimmed text.
+key: with nothing after the colon announces a non-empty nested
+container; nothing following is an ERROR, never a null.
+Folded text: key: > folds the following deeper-indented non-empty
+lines into one space-joined string, no trailing newline. Blank
+continuation lines, chomping indicators, and the literal | form
+are unsupported.
+Comments: a line whose first non-space character is # is a
+comment; # anywhere else is content.
+Not YAML: anchors, aliases, merge keys, tags, flow style ({...},
+[...] beyond the empty-sequence token), directives, and multiple
+documents are unsupported.
+Ceilings: the bounded dimensions are normative — frontmatter
+bytes, file bytes, line bytes, scalar bytes, nesting depth,
+fields per mapping, entries per sequence, parsed nodes per
+document; the numeric values are set by measurement with the
+§25/§27 executable floors (#23) through a Decision Log entry.
+Byte ceilings apply before full decode or split; depth and node
+counts during the parse.
+Determinism: same bytes ⇒ same object or the same ERROR. A
+diagnostic names the file and frontmatter line, fails closed, and
+never yields a partial object.
+Conformance: fixtures/grammar/ holds accept and reject cases —
+ambiguous indentation, tabs, CRLF, BOM, duplicate keys,
+mapping/sequence mixing, deep nesting, oversized input, Unicode,
+quoting, folded text; every implementation must pass them. The
+fixtures land with #30's mechanical PR; the ceilings' cases carry
+#23's values.
 ```
-
-MVP should prefer minimal dependencies.
 
 ---
 

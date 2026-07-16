@@ -38,6 +38,7 @@ atlas/
   docs/
     SDD.md
     spec/
+      schemas/    # persisted-format schemas — authored canon (§25.7)
     DECISION-LOG.md
     adr/
 
@@ -67,7 +68,6 @@ atlas/
     purges.jsonl    # §34.3 purge notes — runbook-written
 
   graph/
-    schema.yaml
     atlas-graph.json
     atlas-snapshot.json
 

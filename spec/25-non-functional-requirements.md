@@ -47,5 +47,54 @@ The Atlas instance repository is a git repository — not optionally so: journal
 
 The instance is single-writer (#36). Every writing flow — import (§12/§21), observation (§13), the builder (§20), snapshot export (§33.4), the purge runbook (§34), and any future writer — takes `.atlas-lock` at the instance root: created atomically (acquire-if-absent — O_CREAT|O_EXCL semantics, never check-then-create), untracked, holding `{pid, started_at}`. A run that finds it already held refuses (exit 1); no merge semantics exist. A stale lock after a crash is removed by hand on the refusal message's evidence — there is no automatic reclaim (§28.3). Git is the durability layer, not a concurrency model: merging two branches' JSONL journals is out of scope — single-writer covers the model.
 
+## §25.7 Persisted Formats
+
+Every persisted format has one machine-readable schema — JSON Schema 2020-12, one file per format, authored under `spec/schemas/` (#30). Schemas are canon like the §§ they sit beside, never emitted artifacts; enum canon stays the § prose (§9, §14 — #24): a schema transcribes and cites the lists, never forks them. `scripts/validate_atlas.py` (§8) validates instance files against the schemas and checks the builder's constants against the same schemas — code constants are checked, never canonical (§20.3's discipline, format-wide). The YAML-shaped surfaces parse by the §20.4 grammar first; a schema validates the parsed object, never raw markdown.
+
+Versioning — §33.1's discipline, stated here once for every persisted format (the boundary formats are its instances):
+
+```text
+Emitted files — the graph (§10), the snapshot (§33.4), the
+redacted variant, every report — carry format + integer version.
+Additive change is the norm; a rename, removal, or semantic
+change bumps the version through a Decision Log entry; consumers
+ignore unknown fields; an unsupported version fails visibly
+(§10, #44).
+Journal rows carry no version key: journals are append-only
+history and are never migrated (§8), so a row-kind schema evolves
+additively only — a new field is optional forever, and a semantic
+change is a new field or a new row kind, never a reinterpretation
+of stored rows.
+Curated frontmatter and the extracted plan document carry no
+version key: the instance pins an engine revision (§8) whose
+schema set is the contract; a breaking curated-schema change
+ships with the migration of the curated content — curation is
+editable where journals are not.
+```
+
+The persisted formats and their schema files (`spec/schemas/<name>.schema.json`; the files land with #30's mechanical PR, their numeric ceilings with #23):
+
+```text
+concept, zone, pattern, material, direction, suggested-route,
+trail-segment, probe   — curated frontmatter, one per §6 kind
+                         (material embeds its parts, §9.3)
+plan-extract           — plans/extracted/ document (§21.2)
+journal-artifact, journal-encounter, journal-question,
+journal-decision, journal-mapping-decision, journal-receipt,
+journal-purge          — one per state/ row kind (§8)
+atlas-graph            — graph emission (§10); the redacted
+                         variant included — withheld required
+                         there, forbidden on the full graph (§20)
+atlas-snapshot         — state snapshot (§33.4)
+atlas-intake           — intake envelope + records (§33.2)
+report-import, report-batch, report-build
+                       — derived, purgeable reports (§12.2 step
+                         11, §13.2/§33.2, §20); their shapes stay
+                         their flows' to define — the ids are
+                         reserved so no report ships schema-less
+```
+
+The set is closed: a new persisted format registers here in the same change that creates it.
+
 ---
 
