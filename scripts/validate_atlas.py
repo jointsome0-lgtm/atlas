@@ -369,7 +369,7 @@ def _read_jsonl(path: Path):
 def validate_instance(root: Path):
     schemas, errors = _load_registry()
     warnings: list[str] = []
-    counts = {"frontmatter": 0, "rows": 0, "emitted": 0}
+    counts = {"frontmatter": 0, "rows": 0, "intake": 0, "emitted": 0}
     if errors:
         return errors, warnings, counts
 
@@ -396,6 +396,19 @@ def validate_instance(root: Path):
                 errors.extend(_schema_errors(instance, schemas["plan-extract"], path))
                 counts["frontmatter"] += 1
             except FrontmatterError as exc:
+                errors.append(str(exc))
+
+    intake = root / "intake"
+    if intake.is_dir():
+        # §33.2/§25.7: delivered batches are a persisted format; the JSON
+        # envelope validates structurally — batch content stays as delivered
+        # and is never term-scanned here (§19 keeps out of intake/ entirely).
+        for path in sorted(intake.rglob("*.json")):
+            try:
+                instance = _read_json(path)
+                errors.extend(_schema_errors(instance, schemas["atlas-intake"], path))
+                counts["intake"] += 1
+            except JsonInputError as exc:
                 errors.append(str(exc))
 
     state = root / "state"
@@ -629,7 +642,8 @@ def main(argv=None) -> int:
         _emit_diagnostics(errors, warnings)
         print(
             f"validated: {counts['frontmatter']} frontmatter documents, "
-            f"{counts['rows']} journal rows, {counts['emitted']} emitted files; "
+            f"{counts['rows']} journal rows, {counts['intake']} intake batches, "
+            f"{counts['emitted']} emitted files; "
             f"{len(errors)} errors, {len(warnings)} warnings"
         )
         return 1 if errors else 0

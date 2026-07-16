@@ -1,5 +1,6 @@
 import contextlib
 import io
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,97 @@ import validate_atlas
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Instance trees are materialized into temp directories instead of being
+# committed: .gitignore deliberately blocks instance-shaped paths (atlas/,
+# state/, graph/, intake/, *.jsonl) anywhere in the public git layer.
+
+VALID_CONCEPT = """---
+id: concept:example
+type: concept
+title: Example
+updated: 2026-07-16
+aliases: []
+related_concepts: []
+concept_edges: []
+---
+
+Synthetic schema fixture authored by Vera Example.
+"""
+
+VALID_PLAN_EXTRACT = """id: plan:example
+title: Example plan
+directions: []
+concepts: []
+materials: []
+material_parts: []
+suggested_routes: []
+probes: []
+notes: []
+"""
+
+VALID_ARTIFACT_ROW = (
+    '{"id":"artifact:2026-07-16-001","type":"note","path":"notes/example.md",'
+    '"observed_at":"2026-07-16","summary":"Synthetic schema fixture.",'
+    '"touches":["concept:example"],"supports_state_updates":[],'
+    '"evidence_strength":"noticed"}\n'
+)
+
+VALID_EMPTY_GRAPH = """{
+  "format": "atlas-graph",
+  "version": 1,
+  "nodes": [],
+  "edges": [],
+  "trails": [],
+  "state": {},
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}
+"""
+
+VALID_INTAKE_BATCH = """{
+  "format": "atlas-intake",
+  "version": 1,
+  "source": "watch-sync",
+  "batch": "2026-07-16-001",
+  "records": [
+    {"kind": "question", "date": "2026-07-16", "text": "synthetic Vera Example question?"}
+  ]
+}
+"""
+
+VALID_INSTANCE = {
+    "atlas/concepts/example.md": VALID_CONCEPT,
+    "plans/extracted/example.yaml": VALID_PLAN_EXTRACT,
+    "state/artifacts.jsonl": VALID_ARTIFACT_ROW,
+    "graph/atlas-graph.json": VALID_EMPTY_GRAPH,
+    "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH,
+}
+
+INVALID_INSTANCES = {
+    "bad-graph": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace('"version": 1', '"version": 2'),
+    },
+    "bad-journal": {
+        "state/artifacts.jsonl": VALID_ARTIFACT_ROW.replace('"noticed"', '"mastered"'),
+    },
+    "unknown-curated": {
+        "atlas/concepts/bad.md": "---\nid: concept:bad\ntype: concept\ntitle: Bad\nstray: rejected\n---\n",
+    },
+    "bad-intake": {
+        "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
+            '"atlas-intake"', '"wrong"'
+        ),
+    },
+}
+
+
+def materialize(tree: dict[str, str], root: Path) -> None:
+    for relative, content in tree.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
 
 
 class SchemaValidatorTests(unittest.TestCase):
@@ -27,9 +119,11 @@ class SchemaValidatorTests(unittest.TestCase):
             validate_atlas.SchemaValidator({"type": "string", "format": "date"})
 
     def test_valid_instance(self):
-        root = ROOT / "fixtures" / "schema" / "valid-instance"
-        code, stdout, stderr = self.run_cli("validate", str(root))
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(VALID_INSTANCE, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
         self.assertEqual(0, code, stderr)
+        self.assertIn("1 intake batches", stdout)
         self.assertIn("0 errors", stdout)
         self.assertEqual("", stderr)
 
@@ -40,10 +134,11 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertIn("11 frontmatter documents", stdout)
 
     def test_each_negative_instance_emits_error(self):
-        parent = ROOT / "fixtures" / "schema" / "invalid-instances"
-        for root in sorted(path for path in parent.iterdir() if path.is_dir()):
-            with self.subTest(case=root.name):
-                code, stdout, stderr = self.run_cli("validate", str(root))
+        for name, tree in sorted(INVALID_INSTANCES.items()):
+            with self.subTest(case=name):
+                with tempfile.TemporaryDirectory() as directory:
+                    materialize(tree, Path(directory))
+                    code, stdout, stderr = self.run_cli("validate", directory)
                 self.assertEqual(1, code)
                 self.assertIn("ERROR:", stderr)
                 self.assertIn("errors", stdout)
