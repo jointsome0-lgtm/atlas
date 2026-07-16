@@ -104,11 +104,19 @@ def _json_loads(text: str):
     )
 
 
-def _read_json(path: Path):
+def _read_json(path: Path, delivered: bool = False):
+    """Read one JSON file; `delivered` relaxes the Atlas-authored text rules.
+
+    §25.8 scopes UTF-8/LF/no-BOM to Atlas-authored files; delivered intake
+    batches stay as delivered (§33.2), so their reader tolerates CRLF and a
+    BOM while the structural JSON checks stay fail-closed.
+    """
     data = path.read_bytes()
     if data.startswith(b"\xef\xbb\xbf"):
-        raise JsonInputError(f"{path}: UTF-8 BOM is unsupported")
-    if b"\r" in data:
+        if not delivered:
+            raise JsonInputError(f"{path}: UTF-8 BOM is unsupported")
+        data = data[3:]
+    if not delivered and b"\r" in data:
         line = data.count(b"\n", 0, data.index(b"\r")) + 1
         raise JsonInputError(f"{path}:{line}: CR/CRLF is unsupported; use LF")
     try:
@@ -405,7 +413,7 @@ def validate_instance(root: Path):
         # and is never term-scanned here (§19 keeps out of intake/ entirely).
         for path in sorted(intake.rglob("*.json")):
             try:
-                instance = _read_json(path)
+                instance = _read_json(path, delivered=True)
                 errors.extend(_schema_errors(instance, schemas["atlas-intake"], path))
                 counts["intake"] += 1
             except JsonInputError as exc:

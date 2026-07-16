@@ -88,6 +88,15 @@ VALID_INSTANCE = {
     "atlas/concepts/example.md": VALID_CONCEPT,
     "plans/extracted/example.yaml": VALID_PLAN_EXTRACT,
     "state/artifacts.jsonl": VALID_ARTIFACT_ROW,
+    "state/decisions.jsonl": (
+        '{"date":"2026-07-16","target":"supports:part:b/y->part:a/x",'
+        '"dimension":"weight","to":"high",'
+        '"evidence":["artifact:2026-07-16-001"],'
+        '"proposed_by":"user","decision":"confirmed"}\n'
+    ),
+    "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
+        "\n", "\r\n"
+    ).replace('"2026-07-16-001"', '"2026-07-16-002"'),
     "graph/atlas-graph.json": GRAPH_WITH_NODE % "concept",
     "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH,
     "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH,
@@ -114,6 +123,14 @@ INVALID_INSTANCES = {
     },
     "bad-graph-redacted-without-withheld": {
         "graph/atlas-graph.redacted.json": VALID_EMPTY_GRAPH,
+    },
+    "bad-decision-weight-endpoints": {
+        "state/decisions.jsonl": (
+            '{"date":"2026-07-16","target":"loads:concept:a->concept:b",'
+            '"dimension":"weight","to":"high",'
+            '"evidence":["artifact:2026-07-16-001"],'
+            '"proposed_by":"user","decision":"confirmed"}\n'
+        ),
     },
     "bad-decision-weight-on-derived-edge": {
         "state/decisions.jsonl": (
@@ -173,7 +190,7 @@ class SchemaValidatorTests(unittest.TestCase):
             materialize(VALID_INSTANCE, Path(directory))
             code, stdout, stderr = self.run_cli("validate", directory)
         self.assertEqual(0, code, stderr)
-        self.assertIn("1 intake batches", stdout)
+        self.assertIn("2 intake batches", stdout)
         self.assertIn("0 errors", stdout)
         self.assertEqual("", stderr)
 
