@@ -4,7 +4,7 @@
 
 ## §21.1 MVP Strategy
 
-Because fully automatic plan understanding is hard, use a hybrid approach:
+Use a hybrid approach:
 
 ```text
 1. Deterministic parser extracts headings, links, code blocks, test names.
@@ -13,7 +13,7 @@ Because fully automatic plan understanding is hard, use a hybrid approach:
 4. Graph builder consumes reviewed YAML.
 ```
 
-The review step is an explicit dry-run/commit split (#36): a run is dry by default — parse, propose, emit the import report, write nothing. Only an explicit commit run applies the reviewed result; a committing run is a writer like any other — it takes the instance lock (§25.6) and receipts its batch of one (§12.4).
+The review step is an explicit dry-run/commit split (#36); dry-run default, locking, and receipt semantics are §12.4's.
 
 ## §21.2 Output
 
