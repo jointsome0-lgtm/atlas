@@ -239,6 +239,25 @@ INVALID_INSTANCES = {
             "concept_edges:\n  - to: concept:example\n    role: loads\n---\n"
         ),
     },
+    "bad-route-role-overlap": {
+        "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
+            "id: suggested-route:example-default",
+            "id: suggested-route:bad",
+        ).replace(
+            "    primary_materials:\n      - material:example-docs\n",
+            "    primary_materials:\n      - material:example-docs\n"
+            "    supporting_materials:\n      - material:example-docs\n",
+        ),
+    },
+    "bad-material-foreign-part-id": {
+        "atlas/materials/bad.md": VALID_MATERIAL.replace(
+            "id: material:example-docs",
+            "id: material:bad-docs",
+        ).replace(
+            "part:example-docs/old-intro",
+            "part:bad-docs/old-intro",
+        ),
+    },
     "bad-route-material-role-step": {
         "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
             "id: suggested-route:example-default",

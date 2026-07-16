@@ -560,6 +560,30 @@ def validate_instance(root: Path):
                                 f"{path}: material_roles[{index}].step {step} "
                                 "is not a member of steps (§9.4)"
                             )
+                        # §9.4: per step the two lists are disjoint — the
+                        # same material in both is an error (§20.3).
+                        primary = role.get("primary_materials") or []
+                        supporting = role.get("supporting_materials") or []
+                        for shared in sorted(set(primary) & set(supporting)):
+                            errors.append(
+                                f"{path}: material_roles[{index}] lists "
+                                f"{shared} as both primary and supporting "
+                                "(§9.4)"
+                            )
+                # §10.1: an embedded part id carries its material's slug.
+                if schema_name == "material" and isinstance(instance, dict):
+                    material_id = instance.get("id")
+                    slug = (material_id.split(":", 1)[1]
+                            if isinstance(material_id, str) and ":" in material_id
+                            else None)
+                    for index, part in enumerate(instance.get("parts") or []):
+                        part_id = part.get("id") if isinstance(part, dict) else None
+                        if (slug and isinstance(part_id, str)
+                                and not part_id.startswith(f"part:{slug}/")):
+                            errors.append(
+                                f"{path}: parts[{index}].id {part_id} does not "
+                                f"carry its material's slug {slug!r} (§10.1)"
+                            )
                 counts["frontmatter"] += 1
             except FrontmatterError as exc:
                 errors.append(str(exc))
