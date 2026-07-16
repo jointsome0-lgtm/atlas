@@ -2,12 +2,10 @@
 
 Instance-side deletion semantics and the life of a stable id: the two
 deletion tiers, what a purge removes (closure), what survives and why,
-and how ids are renamed, merged, and retired. The frame is the
-2026-07-14 ecosystem deletion decision — tiers by sensitivity,
-inventory-bounded revocation, honesty as an inventory guarantee; the
-git/backup mechanics (copies manifest, delivery registry, revocation
-runbook) live on the composing shell's deletion page. This section
-owns the data-model half. Design pass 2026-07-14 (#35).
+and how ids are renamed, merged, and retired. This section owns the
+data-model half; the git/backup mechanics (copies manifest, delivery
+registry, revocation runbook) live on the composing shell's deletion
+page.
 
 ## §34.1 Two Tiers
 
@@ -83,10 +81,8 @@ edited); rescuing: a question that outgrew its purged source, or a
 since-curated candidate stub (§33.3), is re-authored as the user's
 own instead of dying with the source.
 
-Derived outputs are in no rewrite set: the emitted graph and
-snapshots are untracked in the instance (§25.6, §31.8) — post-purge
-recovery of a derivable file is a rebuild, and the mandatory
-post-purge step is exactly that rebuild.
+Derived outputs are in no rewrite set (§25.6, §31.8); the mandatory
+post-purge step is a rebuild.
 
 No new tolerance mechanism: no tombstone kind, no acknowledged-
 dangles registry — dangling refs stay dangling, §20 tolerates them
@@ -177,9 +173,7 @@ Scope: curated nodes only. Journal record ids (artifact:,
 
 ## §34.5 Split Is Curation
 
-There is no 1→n redirect — deliberately. Old evidence fanned onto
-finer successors would fabricate exposure on nodes the work never
-touched: imported understanding, §5.3's ban. A split is ordinary
+There is no 1→n redirect — deliberately (§5.3). A split is ordinary
 curation:
 
 ```text
