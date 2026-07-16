@@ -51,7 +51,7 @@ The instance is single-writer (#36). Every writing flow — import (§12/§21), 
 
 Every persisted format has one machine-readable schema — JSON Schema 2020-12, one file per format, authored under `spec/schemas/` (#30). Schemas are canon like the §§ they sit beside, never emitted artifacts; enum canon stays the § prose (§9, §14 — #24): a schema transcribes and cites the lists, never forks them. `scripts/validate_atlas.py` (§8) validates instance files against the schemas and checks the builder's constants against the same schemas — code constants are checked, never canonical (§20.3's discipline, format-wide). The YAML-shaped surfaces parse by the §20.4 grammar first; a schema validates the parsed object, never raw markdown.
 
-Versioning — §33.1's discipline, stated here once for every persisted format (the boundary formats are its instances):
+Versioning — stated here once for every persisted format (the boundary formats, §33.1, are its instances):
 
 ```text
 Emitted files — the graph (§10), the snapshot (§33.4), the

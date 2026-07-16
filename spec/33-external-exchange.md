@@ -1,15 +1,13 @@
 ## §33. External Exchange
 
-Atlas lives among peer systems it never learns: subsystems stay mutually blind, and adapters — living outside atlas, in whatever shell composes the systems — translate between a peer's world and atlas's generic boundary formats. No peer schema or shell-specific code appears in atlas, and atlas never interprets peer identity: a delivery's `source` label (§33.2) is an opaque namespace atlas never branches on. The outward surface is exactly three: activity-ledger and plan intake (§33.2–§33.3), the state snapshot (§33.4), and the embeddable viewer (§16.4). Design pass 2026-07-06 (#19).
+Atlas lives among peer systems it never learns: subsystems stay mutually blind, and adapters — living outside atlas, in whatever shell composes the systems — translate between a peer's world and atlas's generic boundary formats. No peer schema or shell-specific code appears in atlas, and atlas never interprets peer identity: a delivery's `source` label (§33.2) is an opaque namespace atlas never branches on. The outward surface is exactly three: activity-ledger and plan intake (§33.2–§33.3), the state snapshot (§33.4), and the embeddable viewer (§16.4).
 
 ## §33.1 Exchange Model
 
 ```text
-Blind by construction: the formats speak atlas's own vocabulary —
-record kinds are the §9.12 evidence kinds plus plan documents,
-scale values are atlas's scales (§9.6, §9.7, §14, §32.2–§32.3).
-Translation burden is the adapter's; atlas never learns a peer's
-schema.
+Blind by construction: the formats speak atlas's own vocabulary
+(record kinds: §33.2; scales: §9.6, §9.7, §14, §32.2–§32.3);
+translation is the adapter's burden (§33).
 Two lanes: structured (atlas vocabulary, deterministic) and
 verbal (free text — the observer interprets: §21's hybrid at the
 boundary). An adapter that cannot map its vocabulary uses the
@@ -29,17 +27,13 @@ snapshot; an adapter delivers files, the user runs the flow (§24).
 No third pipeline: plan records enter §12, everything else enters
 §13; the snapshot is emitted from the §20 fold output. The
 boundary adds no state semantics.
-Versioned: each format carries format + integer version. Additive
-change is the norm; a rename, removal, or semantic change bumps
-the version through a Decision Log entry. Consumers must ignore
-unknown fields; atlas never silently drops what it cannot place
-(§33.2). The discipline is §25.7's, stated there once for every
-persisted format — the boundary formats are its instances.
+Versioned: per §25.7, each format carries format + integer
+version; atlas never silently drops what it cannot place (§33.2).
 ```
 
 ## §33.2 Intake: Activity Ledger
 
-An adapter delivers a batch file under `intake/<source>/` (§8); the user runs the observer over it. Batches stay as delivered — the audit original, like `plans/imported/` (§12.2 step 1) — and are never scanned by the boundary checker (§19): a foreign system's voice may say `done` freely; what atlas makes of a batch is already structure-scanned in `state/`. For the same reason the originals never enter default agent context (§24): a raw export may carry §32.6-class text whether or not its records were marked — the one reader is the user-initiated flow processing it (§31.7).
+An adapter delivers a batch file under `intake/<source>/` (§8); the user runs the observer over it. Batches stay as delivered — the audit original, like `plans/imported/` (§12.2 step 1) — and are never scanned by the boundary checker (§19): a foreign system's voice may say `done` freely; what atlas makes of a batch is already structure-scanned in `state/`. The originals never enter default agent context (§24).
 
 Envelope:
 
@@ -85,19 +79,11 @@ exists. A delivery violating this is refused in the batch
 report, like a content-mismatched batch id. import and observe
 are reserved — the direct lanes' receipt namespaces (§12.4,
 §13.2) — and a delivery claiming either source is refused the
-same way. A source expected
-to deliver §32.6-classed records takes a neutral slug (feed-1,
-not a provider or subject name) and date-serial batch ids
-(2026-07-14-001 — the §34.6 pattern, mirrored here): both
-survive purge by design in provenance refs and receipts
-(§34.2, §34.6), so a telling slug would put the class in
-every one of them — an adapter-contract convention atlas
-cannot enforce, source being opaque.
+same way. Sensitive source and batch slugs follow §34.6.
 Records carry their activity dates: backfill is normal —
 last_seen and freshness follow the record's date, not delivery.
-Processing is the §13 flow verbatim: journal appends, trail
-segments derived (§13.2 step 9), review-gated proposals through
-§14.6. A batch claiming broad deep exposure (dozens of applied)
+Processing is the §13 flow verbatim. A batch claiming
+broad deep exposure (dozens of applied)
 is §13.2 step 10's high-impact ask, never a silent write.
 Provenance: every journal row created from a batch carries
 intake: "<source>/<batch>#<n>" — n the record's position in
@@ -161,13 +147,13 @@ follow. Tier-2 body capture arrives through this format (§32.4).
 
 ## §33.3 Intake: Plans
 
-A `plan` record — inline `text` or a `ref` to a delivered file — enters §12 unchanged: the original lands under `plans/imported/`, the §12.2 steps apply, structure is created and state never is (§31.3); plan self-claims surface only in the import report (§12.2 step 11). A route from an external plan is an ordinary SuggestedRoute: optional, hideable, ignorable (§5.1).
+A `plan` record — inline `text` or a `ref` to a delivered file — enters §12 unchanged; a route from an external plan is an ordinary SuggestedRoute (§5.1).
 
 A sensitive plan (§33.2's marker) keeps its class across the copy: the original lands under `plans/imported/<class>/` — placement, never an edit, an as-delivered document stays byte-identical — and the SuggestedRoute built from it carries `sensitivity: <class>` in frontmatter; the §32.6 default-context exclusion follows both (the batch original under `intake/` is already covered, §24). Candidate concept stubs from a classed input carry the class like the route — `sensitivity: <class>` in frontmatter — so everything already keyed to the class follows without a new mechanism: §34.6 gives the stub a date-serial id at creation (the title stays in the body — content, purged with it), the §33.4 default exclusion keeps it out of snapshots, and §34.2 keeps it in the input's purge closure while the input is its only provenance. The user adopts a stub by re-authoring it as their own (§5.2) — that curation deliberately removes the class and takes the stub out of the closure. Stubs from unclassed inputs stay plain — there, ids and links are structure; when the source is classed, a slug derived from its text is content (the 2026-07-06 rule, scoped — Decision Log 2026-07-15).
 
 ## §33.4 Export: State Snapshot
 
-An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-snapshot.json` (§8) on the user's explicit run — never on a schedule, never pushed (§24, §31.7). Atlas never reads a snapshot back: the journals stay the only truth, each export is a full regeneration, and §31.8 stands — the snapshot is the same derived class `graph/` already holds.
+An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-snapshot.json` (§8) on the user's explicit run — never on a schedule, never pushed (§24, §31.7). Atlas never reads a snapshot back; each export is a full regeneration (§31.8).
 
 ```json
 {
