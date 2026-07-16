@@ -4,6 +4,7 @@ Generated graph file:
 
 ```json
 {
+  "format": "atlas-graph",
   "version": 1,
   "generated_at": "2026-06-02T00:00:00Z",
   "nodes": [],
@@ -18,7 +19,7 @@ Generated graph file:
 
 `projections` is curated viewer-projection content the builder embeds (zone → figure region, §32; §20 step 12) so the viewer's single input stays single (§16.4) — a mapping, never state (§31.8).
 
-`version` is the graph-file contract version: an integer the viewer checks before rendering (an unsupported version fails visibly, #44); versioning discipline per §25.7.
+`format` + `version` are the §25.7 emitted-file envelope: `format` names the schema (`atlas-graph`), `version` is the graph-file contract version — an integer the viewer checks before rendering (an unsupported version fails visibly, #44).
 
 `generated_at` is the fold's as-of date rendered at UTC midnight (§20.1) — the same shape as the snapshot's (§33.4); it is absent in a build with no dated input, and a consumer must tolerate its absence.
 
