@@ -1,6 +1,6 @@
 # Atlas
 
-Atlas is a specification-led knowledge-state graph under a **partial freeze**. The approved knowledge-domain vertical is active; Body Atlas remains design-only and implementation-frozen until [atlas#45's objective gate and a new explicit owner decision](https://github.com/jointsome0-lgtm/atlas/issues/45). See [§29](spec/29-implementation-phases.md) for the current implementation posture.
+Atlas is a specification-led knowledge-state graph under a **partial freeze**. The approved knowledge-domain vertical is active; Body Atlas remains design-only and implementation-frozen until the objective gates in [§29's Body Atlas freeze section](spec/29-implementation-phases.md) are satisfied and a new explicit owner decision is recorded. See [§29](spec/29-implementation-phases.md) for the current implementation posture.
 
 ## Design specification
 
