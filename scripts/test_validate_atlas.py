@@ -112,6 +112,12 @@ INVALID_INSTANCES = {
     "unknown-curated": {
         "atlas/concepts/bad.md": "---\nid: concept:bad\ntype: concept\ntitle: Bad\nstray: rejected\n---\n",
     },
+    "bad-id-trailing-newline": {
+        "atlas/concepts/bad.md": (
+            "---\nid: \"concept:bad\\n\"\ntype: concept\ntitle: Bad (Vera Example)\n"
+            "aliases: []\n---\n"
+        ),
+    },
     "bad-graph-node-kind": {
         "graph/atlas-graph.json": GRAPH_WITH_NODE % "material",
     },

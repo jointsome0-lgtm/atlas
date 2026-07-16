@@ -163,6 +163,39 @@ def _check_schema_subset(schema, path="#"):
         _check_schema_subset(child, f"{path}/{suffix}")
 
 
+_PATTERN_CACHE: dict[str, re.Pattern] = {}
+
+
+def _ecma_search(pattern: str, instance: str) -> bool:
+    """Match a schema pattern with JSON Schema's ECMA-262 `$` semantics.
+
+    Python's `$` also matches before a trailing newline, so an id like
+    "concept:bad\\n" would pass an `^...$` shape check. Every unescaped `$`
+    compiles as `\\Z` (absolute end), inside groups and lookaheads included;
+    a `$` in a character class fails to compile and so fails closed.
+    """
+    compiled = _PATTERN_CACHE.get(pattern)
+    if compiled is None:
+        parts: list[str] = []
+        escaped = False
+        for char in pattern:
+            if escaped:
+                parts.append(char)
+                escaped = False
+                continue
+            if char == "\\":
+                parts.append(char)
+                escaped = True
+                continue
+            parts.append(r"\Z" if char == "$" else char)
+        try:
+            compiled = re.compile("".join(parts))
+        except re.error as exc:
+            raise SchemaSubsetError(f"invalid schema pattern: {exc}") from None
+        _PATTERN_CACHE[pattern] = compiled
+    return compiled.search(instance) is not None
+
+
 def _json_equal(left, right):
     if type(left) is not type(right):
         return False
@@ -228,11 +261,7 @@ class SchemaValidator:
         ):
             errors.append(f"{path}: value {instance!r} is outside {schema['enum']!r}")
         if "pattern" in schema and isinstance(instance, str):
-            try:
-                matched = re.search(schema["pattern"], instance)
-            except re.error as exc:
-                raise SchemaSubsetError(f"invalid schema pattern: {exc}") from None
-            if not matched:
+            if not _ecma_search(schema["pattern"], instance):
                 errors.append(f"{path}: string {instance!r} does not match {schema['pattern']!r}")
         if "minimum" in schema and isinstance(instance, int) and not isinstance(instance, bool):
             if instance < schema["minimum"]:
