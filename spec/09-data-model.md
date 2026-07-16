@@ -19,10 +19,16 @@ related_concepts:
   - concept:redis
   - concept:kafka-idempotent-consumer
   - concept:duplicate-side-effects
+concept_edges:
+  - to: concept:exactly-once-delivery
+    role: contradicts
+    weight: medium
 ---
 ```
 
 Concept files carry identity, links, and content only: understanding state is derived at build time from the `state/` journals (§8, §20) and moves only per §14; material roles live on contextual edges only (§11). `aliases` is search vocabulary; a retired id lives in `formerly:` (§34.4), never in `aliases`.
+
+Concepts are the one authored edge species' third author (#31): the same `concept_edges:` block parts (§9.3) and patterns (§32.1) carry. Roles legal from a concept source: `related_to`, `prerequisite_of`, `extends`, `contradicts` (§10.2 matrix) — the structural concept→concept edges the honest-lever rule presupposes (§15.3). `related_concepts` stays as sugar for `role: related_to` with no weight; an authored `weight` is the §14.9 hypothesis, gated like every other.
 
 Body:
 
@@ -163,8 +169,17 @@ steps:
   - concept:rabbitmq
   - concept:grpc
   - concept:e2e-distributed-job-flow
+material_roles:
+  - step: concept:rest-api
+    primary_materials:
+      - material:mdn-http-methods
+      - material:fastapi-tutorial
+    supporting_materials:
+      - material:openapi-spec
 ---
 ```
+
+`material_roles` is the route's authored contextual-role surface (§11.1): per-step primary/supporting materials, written by import when the plan implies them (§12.2 step 6) and hand-editable like all curated content. Each `step` names a member of `steps`; the block is optional per step and whole; per step the two lists are disjoint — the same material in both is a build ERROR (§20.3), like a conflicting authored weight.
 
 SuggestedRoute states:
 
@@ -588,6 +603,39 @@ A support link carries no primacy: it never makes a material
 globally primary/supporting (§11.4, §31.4).
 Removal is a file edit; past weight decisions stay in the journal
 as audit (§25.3).
+```
+
+---
+
+## §9.15 Plan
+
+A **Plan** is an imported external proposal source — the provenance root of one import lineage (§12). The graph node (§10.1) is built from the import's extracted YAML (§21.2), whose `id`/`title` it mirrors (§12.3):
+
+```yaml
+id: plan:learn-basics-swe
+type: plan
+title: Backend distributed systems practice in Python
+```
+
+Storage is the import flow's, not a new surface: the stored original(s) under `plans/imported/` (the purgeable audit layer, §12.4) and the extracted YAML under `plans/extracted/` (§21.2, reviewed per §21.1). A changed plan is a new dated original under the same slug (§12.4): the node is the lineage, not one file — versions share it.
+
+Rules:
+
+```text
+id: plan:<slug> — the slug from the plan's own heading (§21.2);
+title must match the extracted YAML's.
+No status field: a plan has no lifecycle states — visibility
+choices live on its routes (§9.4), and a plan is never done or
+failed (§4, §31.3).
+A plan is provenance, never evidence (§9.12, §31.3) and never a
+state source (§12.2 step 10): source_plan on routes (§9.4) and
+probes (§9.11) points here.
+A classed plan stores under plans/imported/<class>/ (§33.3), and
+its extracted YAML carries sensitivity: <class> in frontmatter —
+the §33.3 route/stub pattern, so the node embeds it (§10.4) and
+the class travels by provenance union (§32.6).
+Purge follows the §34.2 provenance closure like any other
+content; the re-import story after a purge is §12.4's.
 ```
 
 ---

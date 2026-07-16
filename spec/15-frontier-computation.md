@@ -79,8 +79,9 @@ Guilt is not negative information. Guilt is a system exploiting the feeling of a
 A dependency suggestion — "to move X, Y is the real lever" — is allowed when all three hold:
 
 ```text
-1. the edge is real: a structural link (loads, builds-on) from
-   curated content or evidence, not invented at render time;
+1. the edge is real: a structural link (loads, prerequisite_of,
+   extends — authored types, §10.2) from curated content or
+   evidence, not invented at render time;
 2. the anchor is the user's own: a declared direction (§9.5) or
    an open question — never a population norm or an un-adopted
    plan;

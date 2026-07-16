@@ -29,8 +29,10 @@ external plan record via the intake boundary (§33.3)
 4. Extract candidate concepts.
 5. Extract materials and URLs.
 6. Detect material roles and declared support links ("for section X
-   use B") if the plan implies them; support links import as
-   supported_by existence only — weight is never imported (§9.14).
+   use B") if the plan implies them; roles land per-step in the
+   extracted route's material_roles (§9.4, §11.1); support links
+   import as supported_by existence only — weight is never
+   imported (§9.14).
 7. Extract practice probes/tests.
 8. Extract proposed sequence as SuggestedRoute.
 9. Create candidate graph.
@@ -47,7 +49,7 @@ persona Vera Example
 ([selfos docs/persona.md](https://github.com/jointsome0-lgtm/selfos/blob/main/docs/persona.md));
 its subject is on her fact sheet.
 
-The uploaded plan becomes a plan node:
+The uploaded plan becomes a plan node (§9.15):
 
 ```yaml
 plan:

@@ -21,9 +21,9 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §6 Core Ontology — glossary: Field, Concept, Zone, Pattern, Material(Part), Encounter, Artifact, Probe, Question, Route, Trail, Influence, State, Frontier; canonical kind list
 - §7 High-Level Architecture — plan-import and artifact-observation pipelines
 - §8 Repository Layout — placement principles + normative skeleton
-- §9 Data Model — schemas: Concept, Material, MaterialPart, SuggestedRoute, Direction, Artifact, Encounter, Question, Trail, InfluenceField, Probe, Evidence, StateDecision, SupportRelation; influence baseline v1 (§9.10)
-- §10 Graph Model — node types, edge types, edge metadata; per-kind node contract and field membership (§10.4)
-- §11 Primary and Supporting Materials — contextual roles per route/question/trail; standing support boundary (§11.4)
+- §9 Data Model — schemas: Concept, Material, MaterialPart, SuggestedRoute, Direction, Artifact, Encounter, Question, Trail, InfluenceField, Probe, Evidence, StateDecision, SupportRelation, Plan (§9.15); influence baseline v1 (§9.10)
+- §10 Graph Model — node types, edge endpoint/ownership matrix (§10.2), edge metadata; per-kind node contract and field membership (§10.4)
+- §11 Primary and Supporting Materials — contextual roles per route/question/trail: route authored, question/trail derived (§11.1–§11.3); standing support boundary (§11.4)
 - §12 Plan Import Flow — inputs, import steps, example; re-run semantics (§12.4)
 - §13 Artifact Observation Flow — inputs, observation steps, example
 - §14 State Update Rules — scales; evidence→exposure transitions; review-gated dimensions; freshness decay; material state; edge weight (§14.9)
@@ -32,7 +32,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §17 Agent Architecture — four core roles and agent rules
 - §18 Codex Role — checkpoints and challenge questions
 - §19 Boundary Checker — forbidden terms, scanned paths
-- §20 Graph Builder — build steps, stdlib-only MVP; fold ordering + as-of (§20.1), write discipline (§20.2)
+- §20 Graph Builder — build steps, stdlib-only MVP; fold ordering + as-of (§20.1), write discipline (§20.2), edge emission discipline (§20.3)
 - §21 Importer Design — hybrid deterministic + agent import; dry-run/commit, mapping decisions (§21.3)
 - §23 Progression Model — movement loop, no completion
 - §24 Security and Privacy — local-first, ignore paths

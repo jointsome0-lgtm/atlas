@@ -7,7 +7,7 @@
 2. Read material frontmatter.
 3. Expand MaterialPart nodes.
 4. Read direction files.
-5. Read suggested routes.
+5. Read plan records (extracted YAML → §9.15 node) and suggested routes.
 6. Read trail segments.
 7. Read probes.
 8. Read questions, artifacts, encounters, and decisions from state/ (JSONL journals);
@@ -16,7 +16,8 @@
 9. Fold current understanding, material, question, and body state from the journals (§14.5–§14.8, §9.8, §9.13; body mappings §32.2–§32.3): exposure and zone contact = monotone max over mapped evidence; confidence/clarity/coverage and the gated body dimensions (§32.2) = last confirmed decision, else the scale's no-knowledge value (§14.6 — condition `unknown`, never an implicit `fine`); question status = last confirmed decision, else open; depth_reached/last_seen from encounters. Ordering and the as-of bound: §20.1.
 10. Compute the influence field and the frontier from artifacts, encounters, questions, and trail segments (§9.10 baseline, §15.4).
 11. Validate references — §34.4 included: a retired id that is living,
-    or present in two formerly lists, is an error.
+    or present in two formerly lists, is an error. Edge
+    normalization, dedup, and cycle checks are §20.3's.
 12. Emit graph/atlas-graph.json per the §10.4 node contract (`fields` membership, per-kind payload), embedding the silhouette projection collected from zone frontmatter (`figure_region`, §32) under `projections` (§10) — the viewer's single input stays single (§16.4). The emission carries the §32.6 sensitivity class by provenance union: every entry the union marks — a node payload with persisted `sensitivity` (§10.4), a derived value resting on a classed row, an influence source, a frontier item citing classed evidence, a trail segment with classed `via` — is emitted with `sensitivity: <class>`.
 ```
 
@@ -74,6 +75,43 @@ atomically renames it into place — a crash never leaves a torn
 atlas-graph.json (§16.4 reads exactly one file).
 The builder is a writer like any other: it takes the instance
 lock and a second concurrent run refuses with exit 1 (§25.6).
+```
+
+## §20.3 Edge Emission Discipline
+
+Edges are emitted per the §10.2 matrix — the ownership column names the reading surface per type; the builder's endpoint constants transcribe the matrix and cite it, never the reverse (#31).
+
+```text
+Normalization: related_to is symmetric — endpoints sort
+lexicographically before anything else sees the edge, so
+two-sided authoring becomes one identity.
+Dedup: identity = (type, source, target) plus the §10.2 meta
+discriminant (order / context / step). One identity emits one
+edge; provenance is the union of the collapsed authors' or
+records' ids (§10.3). Authored duplicates collapse silently;
+duplicate journal rows stay §20.1's rule (fold once + WARNING).
+Weight conflict: two authored hypotheses on one identity that
+disagree are a build ERROR — curation must converge (§34.4); a
+confirmed weight decision (§14.9) overrides the hypothesis and
+conflicts with nothing. The same rule covers contextual roles:
+one material in both of a step's material_roles lists is an
+ERROR (§9.4).
+Cycles: a prerequisite_of cycle is a WARNING in the build report,
+carrying the cycle path — usually a too-coarse concept cut —
+never a build failure and never a dependency alarm in any render
+(§15.3, §25.4). supports cycles are normal (§9.14); no other
+type is checked.
+Endpoints: a kind outside the type's matrix row is an ERROR when
+the edge is authored in living curation; a journal-derived edge
+whose ref resolves outside the row is skipped with a warning —
+step 11's origin rule, restated once.
+As-of: journal- and segment-derived edges obey the §20.1 bound
+like the fold — a record dated after as-of derives nothing and
+is counted in the build report, never silently.
+Determinism (§20.1's byte-identical promise): provenance lists
+sort lexicographically; the edge array emits in canonical
+identity order (type, source, target, then the meta
+discriminant).
 ```
 
 No external dependencies for MVP.
