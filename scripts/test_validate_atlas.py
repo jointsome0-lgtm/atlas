@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -101,8 +102,38 @@ parts:
 ---
 """
 
+_LEVELS = ["unknown", "low", "medium", "high"]
+_SHARED_SCALES = {
+    "confidence": _LEVELS,
+    "clarity": ["vague", "rough", "stable", "disputed"],
+    "coverage": ["none", "partial", "broad"],
+    "freshness": ["fresh", "aging", "stale"],
+}
+
+VALID_SNAPSHOT = json.dumps({
+    "format": "atlas-snapshot",
+    "version": 1,
+    "generated_at": "2026-07-16T00:00:00Z",
+    "withheld": {"state": 0, "materials": 0, "trail": 0, "questions": 0, "evidence_refs": 0},
+    "scales": {
+        "concept": {"exposure": ["unseen", "touched", "read", "summarized", "applied", "taught"], **_SHARED_SCALES},
+        "material": {"depth_reached": ["skim", "read", "summarized", "applied", "taught"]},
+        "pattern": {"exposure": ["unseen", "touched", "studied", "tried", "drilled", "reviewed"], **_SHARED_SCALES},
+        "zone": {"contact": ["unseen", "touched", "loaded", "probed"], "strength": _LEVELS,
+                 "endurance": _LEVELS, "mobility": _LEVELS,
+                 "condition": ["unknown", "fine", "irritated", "recovering", "restricted", "chronic"],
+                 "freshness": ["fresh", "aging", "stale"]},
+    },
+    "evidence_refs": {"artifact:2026-07-16-001": {"kind": "artifact", "date": "2026-07-16"}},
+    "state": {"concept:example": {"exposure": "applied", "evidence": ["artifact:2026-07-16-001"], "decisions": []}},
+    "materials": {},
+    "trail": [],
+    "questions": [],
+}, indent=2) + "\n"
+
 VALID_INSTANCE = {
     "atlas/concepts/example.md": VALID_CONCEPT,
+    "graph/atlas-snapshot.json": VALID_SNAPSHOT,
     "atlas/materials/example-docs.md": VALID_MATERIAL,
     "state/receipts.jsonl": (
         '{"intake":"watch-sync/2026-07-16-001#0","marker":"opened","date":"2026-07-16"}\n'
@@ -179,6 +210,32 @@ INVALID_INSTANCES = {
         "atlas/patterns/bad.md": (
             "---\nid: pattern:bad\ntype: pattern\ntitle: Bad (Vera Example)\n"
             "concept_edges:\n  - to: concept:example\n    role: loads\n---\n"
+        ),
+    },
+    "bad-snapshot-dangling-evidence": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "exposure": "applied",
+                "evidence": ["artifact:missing"],
+                "decisions": [],
+            }},
+        }) + "\n",
+    },
+    "bad-graph-weight-on-derived-edge": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "part:m/a",'
+            ' "type": "has_part", "provenance": ["material:m"],'
+            ' "weight": "high"}],',
+        ),
+    },
+    "bad-graph-suggested-next-context": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "concept:b",'
+            ' "type": "suggested_next", "provenance": ["suggested-route:r"],'
+            ' "context": "concept:a"}],',
         ),
     },
     "bad-receipt-intake-key": {

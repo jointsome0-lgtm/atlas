@@ -403,6 +403,44 @@ def _read_jsonl(path: Path):
             raise JsonInputError(f"{path}:{number}: invalid JSON: {message}") from None
 
 
+_EVIDENCE_PREFIXES = ("artifact:", "encounter:", "question:")
+
+
+def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
+    """§33.4: every §9.12 evidence id in an evidence-bearing field resolves
+    in the top-level evidence_refs table; curated node ids `via` may carry
+    (a material part) are node refs, never table entries."""
+    table = snapshot.get("evidence_refs")
+    known = set(table) if isinstance(table, dict) else set()
+    errors: list[str] = []
+
+    def check(refs, where):
+        for ref in refs or []:
+            if (isinstance(ref, str) and ref.startswith(_EVIDENCE_PREFIXES)
+                    and ref not in known):
+                errors.append(
+                    f"{path}: {where} cites {ref}, absent from evidence_refs (§33.4)"
+                )
+
+    for node, entry in (snapshot.get("state") or {}).items():
+        if isinstance(entry, dict):
+            check(entry.get("evidence"), f"state.{node}.evidence")
+            for index, decision in enumerate(entry.get("decisions") or []):
+                if isinstance(decision, dict):
+                    check(decision.get("evidence"),
+                          f"state.{node}.decisions[{index}].evidence")
+    for node, entry in (snapshot.get("materials") or {}).items():
+        if isinstance(entry, dict):
+            check(entry.get("evidence"), f"materials.{node}.evidence")
+    for index, segment in enumerate(snapshot.get("trail") or []):
+        if isinstance(segment, dict):
+            check(segment.get("via"), f"trail[{index}].via")
+    for index, question in enumerate(snapshot.get("questions") or []):
+        if isinstance(question, dict):
+            check(question.get("source"), f"questions[{index}].source")
+    return errors
+
+
 def validate_instance(root: Path):
     schemas, errors = _load_registry()
     warnings: list[str] = []
@@ -489,6 +527,8 @@ def validate_instance(root: Path):
             # §20/§25.7: one schema id covers both graph variants, so the
             # variant-only withheld rule is checked here by file name —
             # required on the redacted emission, forbidden on the full one.
+            if schema_name == "atlas-snapshot" and isinstance(instance, dict):
+                errors.extend(_snapshot_dangling_refs(instance, path))
             if schema_name == "atlas-graph" and isinstance(instance, dict):
                 redacted = filename.endswith(".redacted.json")
                 if redacted and "withheld" not in instance:
