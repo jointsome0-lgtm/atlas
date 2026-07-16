@@ -264,6 +264,29 @@ INVALID_INSTANCES = {
             "id: suggested-route:bad",
         ).replace("- step: concept:example", "- step: concept:absent"),
     },
+    "bad-graph-duplicate-node-id": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"aliases": []}],',
+            '"aliases": []}, {"id": "concept:example", "type": "concept",'
+            ' "title": "Twin", "fields": ["knowledge"], "aliases": []}],',
+        ),
+    },
+    "bad-graph-dangling-provenance": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:example", "target": "concept:example",'
+            ' "type": "related_to", "provenance": ["concept:missing"],'
+            ' "weight": "low"}],',
+        ),
+    },
+    "bad-snapshot-state-key": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:bad/key": {
+                "evidence": ["artifact:2026-07-16-001"], "decisions": [],
+            }},
+        }) + "\n",
+    },
     "bad-snapshot-evidence-kind-mismatch": {
         "graph/atlas-snapshot.json": json.dumps({
             **json.loads(VALID_SNAPSHOT),

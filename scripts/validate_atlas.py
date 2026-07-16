@@ -404,6 +404,9 @@ def _read_jsonl(path: Path):
 
 
 _EVIDENCE_PREFIXES = ("artifact:", "encounter:", "question:")
+_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+_REGION_ID_RE = re.compile(rf"^(?:concept|pattern|zone):{_SLUG}$")
+_MATERIAL_ID_RE = re.compile(rf"^(?:material:{_SLUG}|part:{_SLUG}/{_SLUG})$")
 
 
 def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
@@ -432,8 +435,7 @@ def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     # §33.4: materials is material contact state (§14.8) — keys are
     # material(part) ids only.
     for key in (snapshot.get("materials") or {}):
-        if not (isinstance(key, str)
-                and (key.startswith("material:") or key.startswith("part:"))):
+        if not (isinstance(key, str) and _MATERIAL_ID_RE.fullmatch(key)):
             errors.append(
                 f"{path}: materials key {key!r} is not a material(part) id "
                 "(§33.4, §14.8)"
@@ -490,13 +492,13 @@ def _snapshot_state_kind_errors(snapshot: dict, path: Path) -> list[str]:
     unknown keys stay additive (§25.7)."""
     errors: list[str] = []
     for node, entry in (snapshot.get("state") or {}).items():
-        kind = node.split(":", 1)[0]
-        allowed = _STATE_DIMENSIONS.get(kind)
-        if allowed is None:
+        if not (isinstance(node, str) and _REGION_ID_RE.fullmatch(node)):
             errors.append(
-                f"{path}: state key {node} is not a region node id (§33.4)"
+                f"{path}: state key {node!r} is not a region node id (§33.4)"
             )
             continue
+        kind = node.split(":", 1)[0]
+        allowed = _STATE_DIMENSIONS[kind]
         if not isinstance(entry, dict):
             continue
         for key in entry:
@@ -658,11 +660,16 @@ def validate_instance(root: Path):
             if schema_name == "atlas-graph" and isinstance(instance, dict):
                 # §10: edge endpoints are node ids consumers resolve inside
                 # the same file — a dangling endpoint never leaves the build.
-                node_ids = {
-                    node.get("id")
-                    for node in instance.get("nodes") or []
-                    if isinstance(node, dict)
-                }
+                node_ids: set = set()
+                for node in instance.get("nodes") or []:
+                    if not isinstance(node, dict):
+                        continue
+                    node_id = node.get("id")
+                    if node_id in node_ids:
+                        errors.append(
+                            f"{path}: duplicate node id {node_id} (§10.1)"
+                        )
+                    node_ids.add(node_id)
                 for index, edge in enumerate(instance.get("edges") or []):
                     if not isinstance(edge, dict):
                         continue
@@ -672,6 +679,15 @@ def validate_instance(root: Path):
                             errors.append(
                                 f"{path}: edges[{index}].{endpoint} {ref} "
                                 "is not an emitted node id (§10)"
+                            )
+                    # §10.3: provenance is the complete derivation basis —
+                    # authoring node ids and deriving record/route ids, all
+                    # emitted as nodes of the same build.
+                    for ref in edge.get("provenance") or []:
+                        if isinstance(ref, str) and ref not in node_ids:
+                            errors.append(
+                                f"{path}: edges[{index}].provenance {ref} "
+                                "is not an emitted node id (§10.3)"
                             )
                 redacted = filename.endswith(".redacted.json")
                 if redacted and "withheld" not in instance:
