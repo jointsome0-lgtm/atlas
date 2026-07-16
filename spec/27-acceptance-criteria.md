@@ -1,21 +1,19 @@
 ## §27. Acceptance Criteria
 
+Each criterion binds a named fixture to the script that proves it, judged by the §25.8 CLI contract (#42); the §29 package that lands the script supplies the literal invocation, and §27.10 is the one review-only criterion. The golden fixtures are engine assets under `fixtures/`: the shared set — `demo-instance/` (the §12.3 curated tree, trail segments included), `demo-plan.md` (the §12.3 plan source), `demo-journals/` (hand-written §8 journal rows over the demo instance), `demo-graph/atlas-graph.json` (a hand-written §10 emission) — lands with the §29 trunk; `grammar/` lands with #30 (§20.4); `perf/` is generated and untracked (§25.8). Criterion numbers are stable — issues cite `§27.3`; a new criterion takes the next free number.
+
 The MVP is acceptable when:
 
-1. The uploaded learning plan can be represented as a plan node, direction, suggested routes, concepts, materials, probes, and initial state.
-2. Suggested routes are visible but clearly optional.
-3. A user artifact can create or update a trail segment.
-4. State updates are separate from route import.
-5. Influence field can show affected concepts.
-6. Frontier can show nearby concepts/questions without TODO wording.
-7. Graph JSON builds successfully.
-8. Viewer can show at least concepts, routes, trail, and state.
-9. Boundary checker rejects TODO/done/project-management leakage.
-10. The SDD and ADRs clearly preserve the distinction:
-
-```text
-suggested route ≠ personal trail ≠ understanding state
-```
+1. **Plan represented.** Given `fixtures/demo-plan.md`; when `import_plan.py` runs dry-run, then commit; then the §12.3 candidates exist — plan node, direction, suggested routes, concepts, materials, probes — no journal beyond the §12.4 receipt pair changed, and a subsequent build folds every new concept to the §14.6 no-knowledge values, `unseen/unknown/vague` (§31.3).
+2. **Routes optional.** Given the demo graph; when the viewer renders `mode=route`; then routes render visibly optional and hideable (§16.2), with no §4-banned wording in the viewer's own text (§19).
+3. **Artifact → trail.** Given a hand-authored trail segment in `fixtures/demo-instance/trails/` whose `via` cites a `demo-journals` artifact (the §26.1 observation floor); when the builder runs; then the graph holds the segment with its §10.2 trail edges, `via` resolved to the artifact (§9.9).
+4. **State separate from import.** Given criterion 1's committed import; when `state/` is compared before and after; then no journal beyond `state/receipts.jsonl` gained or lost a row — import writes candidates and a report only (§12.2 step 10).
+5. **Influence.** Given `fixtures/demo-journals`; when the builder runs; then `influence` lists the affected concepts with §9.10 sources and strengths.
+6. **Frontier.** Given `fixtures/demo-journals` with an open question; when the builder runs; then `frontier` holds §15.4's baseline items — mandatory evidence, one per target, §15.2's shape — and their wording obeys §15.2.
+7. **Build determinism.** Given `fixtures/demo-instance` + `fixtures/demo-journals` + an explicit `--as-of`; when the builder runs twice; then both runs exit 0 and the emissions are byte-identical (§20.1); the §25.8 build floor holds on `fixtures/perf/10k`.
+8. **Viewer.** Given `fixtures/demo-graph`; when opened by §16.4 URLs; then concepts, routes, trail, and state are visible and distinguishable without color alone; every interaction is keyboard-reachable; a non-canvas list fallback exists; §16.2's pulsing has a reduced-motion alternative; an unknown `mode`/`focus`/`field` value renders §16.4's flagged deterministic result; layout is seeded — same graph, same picture; past the §25.8 viewer ceiling the fallback engages, never silent degradation.
+9. **Boundary checker.** Given a reject fixture with a §19-banned term planted; when the checker runs; then exit 1 naming term and file; on the clean demo instance, exit 0.
+10. **The distinction holds.** The SDD and ADRs keep `suggested route ≠ personal trail ≠ understanding state` — a standing review criterion at every §18 checkpoint, not a script.
+11. **Privacy.** Given a journals fixture with one §32.6-classed row; when the builder runs with `--redact`; then the redacted emission omits everything the taint union marks and carries per-key `withheld` counts, never ids, while the full graph carries no `withheld` (§20); the §33.4 snapshot inherits this criterion when its lane lands (§26.2).
 
 ---
-

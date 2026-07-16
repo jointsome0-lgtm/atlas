@@ -167,13 +167,15 @@ comment; # anywhere else is content.
 Not YAML: anchors, aliases, merge keys, tags, flow style ({...},
 [...] beyond the empty-sequence token), directives, and multiple
 documents are unsupported.
-Ceilings: the bounded dimensions are normative — frontmatter
-bytes, file bytes, line bytes, scalar bytes, nesting depth,
-fields per mapping, entries per sequence, parsed nodes per
-document; the numeric values are set by measurement with the
-§25/§27 executable floors (#23) through a Decision Log entry.
-Byte ceilings apply before full decode or split; depth and node
-counts during the parse.
+Ceilings (sized 2026-07-16 from measured corpus maxima with
+headroom for the extracted plan document — Decision Log, #23):
+frontmatter — or the fence-less extracted document —
+≤ 131,072 bytes; whole file ≤ 262,144; line ≤ 4,096; scalar
+≤ 8,192; nesting depth ≤ 8; fields per mapping ≤ 64; entries per
+sequence ≤ 1,024 (a plan extract legitimately lists hundreds of
+concepts); parsed nodes per document ≤ 16,384. Byte ceilings
+apply before full decode or split; depth and node counts during
+the parse.
 Determinism: same bytes ⇒ same object or the same ERROR. A
 diagnostic names the file and frontmatter line, fails closed, and
 never yields a partial object.
@@ -182,7 +184,7 @@ ambiguous indentation, tabs, CRLF, BOM, duplicate keys,
 mapping/sequence mixing, deep nesting, oversized input, Unicode,
 quoting, folded text; every implementation must pass them. The
 fixtures land with #30's mechanical PR; the ceilings' cases carry
-#23's values.
+the values above.
 ```
 
 ---

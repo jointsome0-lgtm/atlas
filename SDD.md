@@ -36,11 +36,11 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §21 Importer Design — hybrid deterministic + agent import; dry-run/commit, mapping decisions (§21.3)
 - §23 Progression Model — movement loop, no completion
 - §24 Security and Privacy — local-first, ignore paths
-- §25 Non-Functional Requirements — versionable, auditable, low pressure; domain-parameterized core (§25.5); durable (§25.6); persisted formats and schemas (§25.7)
-- §26 MVP Scope — must have / can skip
-- §27 Acceptance Criteria — 10 MVP checks
+- §25 Non-Functional Requirements — versionable, auditable, low pressure; domain-parameterized core (§25.5); durable (§25.6); persisted formats and schemas (§25.7); executable floors (§25.8)
+- §26 MVP Scope — must have / can skip; manual observation floor
+- §27 Acceptance Criteria — 11 Given/When/Then checks over named golden fixtures
 - §28 Risks and Mitigations — drift risks and countermeasures
-- §29 Implementation Phases — Phase 0–5; partial-freeze posture and Body Atlas gate
+- §29 Implementation Phases — guard/contract trunk + parallel verticals + integration proof; partial-freeze posture and Body Atlas gate
 - §30 Final Design Statement — three layers that must never collapse
 - §31 Key Invariants — eight hard rules; approved 2026-07-04
 - §32 Body Atlas — second domain instantiation: zones+patterns field, body scales, capture spectrum, honest frontier (§15.3), medical layer

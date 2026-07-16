@@ -72,7 +72,7 @@ ships with the migration of the curated content — curation is
 editable where journals are not.
 ```
 
-The persisted formats and their schema files (`spec/schemas/<name>.schema.json`; the files land with #30's mechanical PR, their numeric ceilings with #23):
+The persisted formats and their schema files (`spec/schemas/<name>.schema.json`; the files land with #30's mechanical PR; the numeric ceilings are §20.4's and §25.8's — #23):
 
 ```text
 concept, zone, pattern, material, direction, suggested-route,
@@ -95,6 +95,44 @@ report-import, report-batch, report-build
 ```
 
 The set is closed: a new persisted format registers here in the same change that creates it.
+
+## §25.8 Executable Floors
+
+The environment and limits §27 tests against (#23, #42). Values are 2026-07-16 measurements times a stated headroom factor, never a pretty number; the one corpus-less value is labeled; any value changes only through a Decision Log entry:
+
+```text
+Runtime: CPython 3.12 — the CI pin and the supported floor;
+scripts stay stdlib-only (§20).
+Text: strict UTF-8 without BOM, LF only — every Atlas-authored
+persisted text file (§20.4 states it for frontmatter); delivered
+intake batches and imported plan originals stay as delivered
+(§33.2, §12.2 step 1).
+Build floor: fixtures/perf/10k — 10,000 nodes at ~2.3 edges/node,
+deterministically generated, output untracked (§27) — builds in
+≤ 24 s wall time and ≤ 400 MiB peak RSS on the CI runner
+(measured median 2.37 s / 50 MiB; ×10 and ×8).
+Emission budget: the emitted graph averages ≤ 4,500 bytes per
+node (measured 452; ×10).
+Journal row: ≤ 16,384 bytes per JSONL record — a policy ceiling,
+no corpus exists yet: a row that outgrows it is content in event
+clothing.
+Viewer: interactive at 1,000 nodes in view (measured: 3.1 ms per
+naive-layout iteration, 0.65 ms per canvas frame); past 2,400
+nodes in view — the measured frame-budget crossing of the naive
+n² layout — the §27.8 list fallback engages; a smarter layout
+raises the ceiling through the Decision Log, never silently.
+CLI contract (every script): exit 0 success, 1 failure, 2 usage;
+diagnostics to stderr, one per line, prefixed ERROR: / WARNING:;
+stdout carries the result summary.
+Determinism: §20.1's byte-identical rebuild — §27.7 executes it.
+Atomicity: §20.2's discipline; the builder's own crash-path
+tests exercise it (#60), no acceptance criterion restates it.
+Restore drill (documented, run on demand — not a CI job): a
+fresh clone of the instance repository plus one build reproduces
+the emitted graph byte-identically (§25.6).
+Privacy: §27.11's redaction criterion is the floor for every
+derived export (§20, §33.4).
+```
 
 ---
 
