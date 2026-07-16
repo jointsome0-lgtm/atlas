@@ -13,7 +13,7 @@
 8. Read questions, artifacts, encounters, and decisions from state/ (JSONL journals);
    build the retired→living id map from formerly: frontmatter and resolve
    journal and curated refs through it (§34.4).
-9. Fold current understanding, material, question, and body state from the journals (§14.5–§14.8, §9.8, §9.13; body mappings §32.2–§32.3): exposure and zone contact = monotone max over mapped evidence; confidence/clarity/coverage and the gated body dimensions (§32.2) = last confirmed decision, else the scale's no-knowledge value (§14.6 — condition `unknown`, never an implicit `fine`); question status = last confirmed decision, else open; depth_reached/last_seen from encounters. Ordering and the as-of bound: §20.1.
+9. Fold current understanding, material, question, and body state from the journals per §14.5–§14.8, §14.6's no-knowledge else-branch included, §9.8, §9.13 (body mappings §32.2–§32.3). Ordering and the as-of bound: §20.1.
 10. Compute the influence field and the frontier from artifacts, encounters, questions, and trail segments (§9.10 baseline, §15.4).
 11. Validate references — §34.4 included: a retired id that is living,
     or present in two formerly lists, is an error. Edge
@@ -106,8 +106,7 @@ the edge is authored in living curation; a journal-derived edge
 whose ref resolves outside the row is skipped with a warning —
 step 11's origin rule, restated once.
 As-of: journal- and segment-derived edges obey the §20.1 bound
-like the fold — a record dated after as-of derives nothing and
-is counted in the build report, never silently.
+like the fold.
 Determinism (§20.1's byte-identical promise): provenance lists
 sort lexicographically; the edge array emits in canonical
 identity order (type, source, target, then the meta
@@ -129,7 +128,7 @@ Frontmatter parses by the §20.4 grammar — a closed stdlib parser, never PyYAM
 
 ## §20.4 Frontmatter Grammar
 
-The YAML-shaped persisted surfaces — curated frontmatter blocks and the extracted plan document (§21.2) — are written in one deliberately closed grammar, stated here. It is YAML-shaped, not YAML: a general YAML tool may happen to read these files, but its rewrite carries no conformance promise. This section is the canon; every reader and writer — builder, importer, observer, validator — implements it, and `validate_atlas.py` checks implementations against the conformance fixtures. Bytes in, object or diagnostic out; nothing in between is canonical (#30's de-facto-schema disease, cured the way §20.3 cures constants).
+The YAML-shaped persisted surfaces — curated frontmatter blocks and the extracted plan document (§21.2) — are written in one deliberately closed grammar, stated here. It is YAML-shaped, not YAML: a general YAML tool may happen to read these files, but its rewrite carries no conformance promise. This section is the canon; every reader and writer — builder, importer, observer, validator — implements it, and `validate_atlas.py` checks implementations against the conformance fixtures. Bytes in, object or diagnostic out; nothing in between is canonical.
 
 ```text
 Encoding: strict UTF-8, no BOM; invalid UTF-8 is an ERROR. LF is
@@ -167,8 +166,7 @@ comment; # anywhere else is content.
 Not YAML: anchors, aliases, merge keys, tags, flow style ({...},
 [...] beyond the empty-sequence token), directives, and multiple
 documents are unsupported.
-Ceilings (sized 2026-07-16 from measured corpus maxima with
-headroom for the extracted plan document — Decision Log, #23):
+Ceilings (Decision Log 2026-07-16, #23):
 frontmatter — or the fence-less extracted document —
 ≤ 131,072 bytes; whole file ≤ 262,144; line ≤ 4,096; scalar
 ≤ 8,192; nesting depth ≤ 8; fields per mapping ≤ 64; entries per
