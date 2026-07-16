@@ -689,6 +689,15 @@ def validate_instance(root: Path):
                                 f"{path}: edges[{index}].provenance {ref} "
                                 "is not an emitted node id (§10.3)"
                             )
+                    # §10.3: context and step are identity discriminants —
+                    # node ids consumers resolve like endpoints.
+                    for key in ("context", "step"):
+                        ref = edge.get(key)
+                        if isinstance(ref, str) and ref not in node_ids:
+                            errors.append(
+                                f"{path}: edges[{index}].{key} {ref} "
+                                "is not an emitted node id (§10.3)"
+                            )
                 redacted = filename.endswith(".redacted.json")
                 if redacted and "withheld" not in instance:
                     errors.append(

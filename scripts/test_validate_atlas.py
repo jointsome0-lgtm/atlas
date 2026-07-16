@@ -264,6 +264,23 @@ INVALID_INSTANCES = {
             "id: suggested-route:bad",
         ).replace("- step: concept:example", "- step: concept:absent"),
     },
+    "bad-graph-region-field": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"fields": ["knowledge"], "aliases": []}],',
+            '"fields": ["body"], "aliases": []}],',
+        ).replace(
+            '"fields": ["knowledge"], "aliases": []},',
+            '"fields": ["body"], "aliases": []},',
+        ),
+    },
+    "bad-graph-dangling-context": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:example", "target": "concept:other",'
+            ' "type": "suggested_next", "provenance": ["concept:example"],'
+            ' "context": "suggested-route:missing"}],',
+        ),
+    },
     "bad-graph-duplicate-node-id": {
         "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
             '"aliases": []}],',
