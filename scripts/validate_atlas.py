@@ -408,6 +408,7 @@ _SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _REGION_ID_RE = re.compile(rf"^(?:concept|pattern|zone):{_SLUG}$")
 _EVIDENCE_ID_RE = re.compile(rf"^(?:artifact|encounter|question):{_SLUG}$")
 _MATERIAL_ID_RE = re.compile(rf"^(?:material:{_SLUG}|part:{_SLUG}/{_SLUG})$")
+_ZONE_ID_RE = re.compile(rf"^zone:{_SLUG}$")
 
 
 
@@ -561,7 +562,9 @@ def validate_instance(root: Path):
                 # the step discriminator must be part of the route.
                 if schema_name == "suggested-route" and isinstance(instance, dict):
                     steps = instance.get("steps")
-                    members = set(steps) if isinstance(steps, list) else set()
+                    members = {step for step in steps
+                               if isinstance(step, str)} if isinstance(
+                                   steps, list) else set()
                     for index, role in enumerate(instance.get("material_roles") or []):
                         if not isinstance(role, dict):
                             continue
@@ -674,6 +677,8 @@ def validate_instance(root: Path):
                     if not isinstance(node, dict):
                         continue
                     node_id = node.get("id")
+                    if not isinstance(node_id, str):
+                        continue  # the schema already reported the type
                     if node_id in node_ids:
                         errors.append(
                             f"{path}: duplicate node id {node_id} (§10.1)"
@@ -728,6 +733,8 @@ def validate_instance(root: Path):
                     for edge in instance.get("edges") or []
                     if isinstance(edge, dict)
                     and edge.get("type") == "step_of_route"
+                    and isinstance(edge.get("target"), str)
+                    and isinstance(edge.get("source"), str)
                 }
                 for index, edge in enumerate(instance.get("edges") or []):
                     if not isinstance(edge, dict):
@@ -735,10 +742,21 @@ def validate_instance(root: Path):
                     step = edge.get("step")
                     if (edge.get("type") in ("primary_for", "supporting_for")
                             and isinstance(step, str)
+                            and isinstance(edge.get("target"), str)
                             and (edge.get("target"), step) not in route_steps):
                         errors.append(
                             f"{path}: edges[{index}].step {step} is not a "
                             f"step of {edge.get('target')} (§9.4)"
+                        )
+                # §10/§32.1: projections are the curated zone → figure_region
+                # mapping; the schema subset cannot constrain map keys, so
+                # the zone-id shape of each key is checked here (values are
+                # the schema's figure_region slug pattern).
+                for key in _as_dict(instance.get("projections")):
+                    if not _ZONE_ID_RE.fullmatch(key):
+                        errors.append(
+                            f"{path}: projections key {key!r} is not a "
+                            "zone id (§10/§32.1)"
                         )
                 redacted = filename.endswith(".redacted.json")
                 if redacted and "withheld" not in instance:

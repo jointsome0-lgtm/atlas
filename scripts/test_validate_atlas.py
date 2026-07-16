@@ -478,6 +478,28 @@ INVALID_INSTANCES = {
             '"atlas-intake"', '"wrong"'
         ),
     },
+    "bad-route-step-shape": {
+        "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
+            "id: suggested-route:example-default",
+            "id: suggested-route:bad",
+        ).replace(
+            "steps:\n  - concept:example\n",
+            "steps:\n  - id: concept:example\n",
+        ),
+    },
+    "bad-graph-node-id-type": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": [], "type": "concept", "title": "Bad",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ),
+    },
+    "bad-graph-projection-key": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"projections": {}',
+            '"projections": {"concept:a": "left shoulder"}',
+        ),
+    },
 }
 
 
