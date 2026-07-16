@@ -25,7 +25,7 @@ This is a public engine repository. All real data lives in a private instance re
 
 Shared skills ship as the `sdd` plugin from the `selfos-skills` repo (a Claude Code plugin marketplace): `/plugin marketplace add jointsome0-lgtm/selfos-skills` (or the local checkout `~/projects/selfos-skills`), then `/plugin install sdd@selfos`. To grill the spec: `/sdd:grill-sdd`. If a needed skill is missing from a session, ask the user to install/update the plugin.
 
-<!-- BEGIN SDD-CONVENTIONS v1.0.0 sha256:30cba528aee9a6ebbb08c24739d0269bb12768fd368043ce2b63e73f1480bfda -->
+<!-- BEGIN SDD-CONVENTIONS v1.1.0 sha256:3003d86d310122af19c0c89da88f7087e682eab9f086dda9e245cfdad0833072 -->
 ## SDD conventions — shared mechanics
 
 Shared structural rules for SDD-stage repositories, vendored from
@@ -40,6 +40,14 @@ lanes, and review policy stay local to each repository.
   pass over the spec happens only on an explicit full-pass request.
 - **One normative home per rule.** Every rule is owned by exactly one §;
   everywhere else references it instead of restating it.
+- **Enumerable data lives in canon artifacts.** Eval cases, enum tables,
+  fixture examples, and machine-readable schemas are authored as canon
+  artifacts (a ledger, schema files, fixture trees), CI-validated where a
+  validator exists — a missing validator defers the check, never the
+  extraction; the owning § keeps the annotation, the binding rule, and
+  the pointer. Decisions, invariants, and rationale stay in the §§ in
+  full text, and canon never points at living implementation code as its
+  source.
 - **A decision lands as three writes.** An accepted decision = the SDD edit,
   one concise Decision Log line, and the rationale in the issue or commit.
 - **Correction versus trade-off.** A factual or editorial fix whose desired
