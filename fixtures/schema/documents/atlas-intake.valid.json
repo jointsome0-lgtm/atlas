@@ -1,0 +1,15 @@
+{
+  "format": "atlas-intake",
+  "version": 1,
+  "source": "vera-example",
+  "batch": "2026-07-16-001",
+  "records": [
+    {
+      "kind": "artifact",
+      "date": "2026-07-16",
+      "type": "note",
+      "text": "Synthetic schema fixture authored by Vera Example.",
+      "refs": [{"title": "Invented reference"}]
+    }
+  ]
+}

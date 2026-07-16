@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/plan-extract.schema.json",
+  "description": "Atlas fence-less extracted-plan document, transcribing the §21.2 envelope and §9.15 sensitivity rule; §21.2 does not yet define list-item fields.",
+  "type": "object",
+  "properties": {
+    "id": {"type": "string", "pattern": "^plan:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "title": {"type": "string"},
+    "directions": {"$ref": "#/$defs/extractedList"},
+    "concepts": {"$ref": "#/$defs/extractedList"},
+    "materials": {"$ref": "#/$defs/extractedList"},
+    "material_parts": {"$ref": "#/$defs/extractedList"},
+    "suggested_routes": {"$ref": "#/$defs/extractedList"},
+    "probes": {"$ref": "#/$defs/extractedList"},
+    "notes": {"$ref": "#/$defs/extractedList"},
+    "sensitivity": {"$ref": "#/$defs/sensitivity"}
+  },
+  "required": ["id", "title", "directions", "concepts", "materials", "material_parts", "suggested_routes", "probes", "notes"],
+  "additionalProperties": false,
+  "$defs": {
+    "parsedValue": {
+      "anyOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"$ref": "#/$defs/parsedValue"}},
+        {"type": "object", "additionalProperties": {"$ref": "#/$defs/parsedValue"}}
+      ]
+    },
+    "extractedList": {"type": "array", "items": {"$ref": "#/$defs/parsedValue"}},
+    "sensitivity": {
+      "type": "string",
+      "enum": ["medical"],
+      "description": "Sensitivity classes transcribed verbatim from §32.6 and §33.2–§33.3."
+    }
+  }
+}

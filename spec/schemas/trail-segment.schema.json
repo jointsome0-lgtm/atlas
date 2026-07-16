@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/trail-segment.schema.json",
+  "description": "Atlas curated TrailSegment frontmatter, transcribing §9.9, §10.1, and §32.6.",
+  "type": "object",
+  "properties": {
+    "id": {"type": "string", "pattern": "^trail-segment:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "type": {"const": "trail_segment"},
+    "date": {"$ref": "#/$defs/date"},
+    "direction": {"type": "string", "pattern": "^direction:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "from": {
+      "oneOf": [
+        {"$ref": "#/$defs/conceptId"},
+        {"type": "array", "items": {"$ref": "#/$defs/conceptId"}}
+      ]
+    },
+    "to": {"$ref": "#/$defs/conceptId"},
+    "via": {"type": "array", "items": {"$ref": "#/$defs/viaId"}},
+    "reason": {"type": "string"},
+    "resulting_questions": {"type": "array", "items": {"type": "string", "pattern": "^question:[a-z0-9]+(?:-[a-z0-9]+)*$"}},
+    "sensitivity": {"$ref": "#/$defs/sensitivity"}
+  },
+  "required": ["id", "type", "date", "direction", "to", "via", "reason"],
+  "additionalProperties": false,
+  "$defs": {
+    "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "conceptId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "viaId": {"type": "string", "pattern": "^(?:artifact:[a-z0-9]+(?:-[a-z0-9]+)*|material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
+    "sensitivity": {
+      "type": "string",
+      "enum": ["medical"],
+      "description": "Sensitivity classes transcribed verbatim from §32.6 and §33.2."
+    }
+  }
+}

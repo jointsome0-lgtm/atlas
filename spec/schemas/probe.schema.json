@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/probe.schema.json",
+  "description": "Atlas curated Probe frontmatter, transcribing §9.11, §10.1–§10.2, and §34.4.",
+  "type": "object",
+  "properties": {
+    "id": {"$ref": "#/$defs/probeId"},
+    "type": {"const": "probe"},
+    "title": {"type": "string"},
+    "concepts": {"type": "array", "items": {"$ref": "#/$defs/targetId"}},
+    "source_plan": {"type": "string", "pattern": "^plan:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "status": {"$ref": "#/$defs/lifecycleStatus"},
+    "formerly": {"type": "array", "items": {"$ref": "#/$defs/probeId"}}
+  },
+  "required": ["id", "type", "title", "concepts", "status"],
+  "additionalProperties": false,
+  "$defs": {
+    "probeId": {"type": "string", "pattern": "^probe:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "targetId": {"type": "string", "pattern": "^(?:concept|pattern|zone):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "lifecycleStatus": {
+      "type": "string",
+      "enum": ["active", "archived"],
+      "description": "Probe lifecycle values transcribed verbatim from §9.11."
+    }
+  }
+}

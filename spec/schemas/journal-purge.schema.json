@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/journal-purge.schema.json",
+  "description": "Atlas purges.jsonl content-free purge note, transcribing §34.3 and §32.6.",
+  "type": "object",
+  "properties": {
+    "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "classes": {"type": "array", "items": {"$ref": "#/$defs/sensitivity"}, "uniqueItems": true},
+    "gen": {"type": "integer", "minimum": 1}
+  },
+  "required": ["date", "gen"],
+  "additionalProperties": false,
+  "$defs": {
+    "sensitivity": {
+      "type": "string",
+      "enum": ["medical"],
+      "description": "Sensitivity classes transcribed verbatim from §32.6 and §33.2."
+    }
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/journal-decision.schema.json",
+  "description": "Atlas decisions.jsonl StateDecision row, transcribing §9.13, §9.8, §14.2–§14.4, §14.9, §33.2, and §32.6.",
+  "type": "object",
+  "properties": {
+    "date": {"$ref": "#/$defs/date"},
+    "target": {"oneOf": [{"$ref": "#/$defs/nodeId"}, {"$ref": "#/$defs/edgeTarget"}]},
+    "dimension": {"$ref": "#/$defs/dimension"},
+    "to": {"$ref": "#/$defs/decisionValue"},
+    "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidenceId"}},
+    "proposed_by": {"type": "string"},
+    "decision": {"$ref": "#/$defs/decision"},
+    "intake": {"$ref": "#/$defs/intakeKey"},
+    "sensitivity": {"$ref": "#/$defs/sensitivity"}
+  },
+  "required": ["date", "target", "dimension", "to", "evidence", "proposed_by", "decision"],
+  "additionalProperties": false,
+  "allOf": [
+    {"if": {"properties": {"dimension": {"const": "confidence"}}, "required": ["dimension"]}, "then": {"properties": {"to": {"$ref": "#/$defs/confidenceValue"}}}},
+    {"if": {"properties": {"dimension": {"const": "clarity"}}, "required": ["dimension"]}, "then": {"properties": {"to": {"$ref": "#/$defs/clarityValue"}}}},
+    {"if": {"properties": {"dimension": {"const": "coverage"}}, "required": ["dimension"]}, "then": {"properties": {"to": {"$ref": "#/$defs/coverageValue"}}}},
+    {"if": {"properties": {"dimension": {"const": "weight"}}, "required": ["dimension"]}, "then": {"properties": {"to": {"$ref": "#/$defs/weightValue"}, "target": {"$ref": "#/$defs/edgeTarget"}}}},
+    {"if": {"properties": {"dimension": {"const": "status"}}, "required": ["dimension"]}, "then": {"properties": {"to": {"$ref": "#/$defs/statusValue"}}}},
+    {"if": {"properties": {"dimension": {"enum": ["strength", "endurance", "mobility"], "description": "Review-gated Zone capacity dimensions transcribed verbatim from §32.2."}}, "required": ["dimension"]}, "then": {"properties": {"to": {"$ref": "#/$defs/capacityValue"}}}},
+    {"if": {"properties": {"dimension": {"const": "condition"}}, "required": ["dimension"]}, "then": {"properties": {"to": {"$ref": "#/$defs/conditionValue"}}}},
+    {"if": {"properties": {"dimension": {"enum": ["confidence", "clarity", "coverage", "status", "strength", "endurance", "mobility", "condition"], "description": "Node-target StateDecision dimensions transcribed from §9.13 and §32.2."}}, "required": ["dimension"]}, "then": {"properties": {"target": {"$ref": "#/$defs/nodeId"}}}}
+  ],
+  "$defs": {
+    "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "nodeId": {"type": "string", "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
+    "edgeTarget": {"type": "string", "pattern": "^(?:related_to|prerequisite_of|extends|implements|contradicts|explains|demonstrates|critiques|mentions|loads|has_part|overall_concept|supports|part_of_direction|step_of_route|suggested_next|visited|moved_to|via|pulled_by|produced_artifact|updates_state|influences|probed_by|primary_for|supporting_for):(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)->(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
+    "evidenceId": {"type": "string", "pattern": "^(?:artifact|encounter|question):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "intakeKey": {"type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9-]+#[0-9]+$"},
+    "dimension": {
+      "type": "string",
+      "enum": ["confidence", "clarity", "coverage", "weight", "status", "strength", "endurance", "mobility", "condition"],
+      "description": "StateDecision dimensions transcribed from §9.13 plus the review-gated Zone dimensions instantiated in §32.2."
+    },
+    "decisionValue": {
+      "type": "string",
+      "enum": ["unknown", "low", "medium", "high", "vague", "rough", "stable", "disputed", "none", "partial", "broad", "open", "clarified", "resolved", "stale", "fine", "irritated", "recovering", "restricted", "chronic"],
+      "description": "Decision targets are the verbatim §14.2 confidence, §14.3 clarity, §14.4 coverage, §14.9 weight, §9.8 question-status, and §32.2 Zone values."
+    },
+    "confidenceValue": {
+      "type": "string",
+      "enum": ["unknown", "low", "medium", "high"],
+      "description": "Confidence values transcribed verbatim from §14.2."
+    },
+    "clarityValue": {
+      "type": "string",
+      "enum": ["vague", "rough", "stable", "disputed"],
+      "description": "Clarity values transcribed verbatim from §14.3."
+    },
+    "coverageValue": {
+      "type": "string",
+      "enum": ["none", "partial", "broad"],
+      "description": "Coverage values transcribed verbatim from §14.4."
+    },
+    "weightValue": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Edge-weight decision values transcribed verbatim from §14.9."
+    },
+    "statusValue": {
+      "type": "string",
+      "enum": ["open", "clarified", "resolved", "stale"],
+      "description": "Question states transcribed verbatim from §9.8."
+    },
+    "capacityValue": {
+      "type": "string",
+      "enum": ["unknown", "low", "medium", "high"],
+      "description": "Zone capacity values transcribed verbatim from §32.2."
+    },
+    "conditionValue": {
+      "type": "string",
+      "enum": ["unknown", "fine", "irritated", "recovering", "restricted", "chronic"],
+      "description": "Zone condition values transcribed verbatim from §32.2."
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["confirmed", "rejected"],
+      "description": "Resolved proposal decisions transcribed verbatim from §9.13."
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["medical"],
+      "description": "Sensitivity classes transcribed verbatim from §32.6 and §33.2."
+    }
+  }
+}

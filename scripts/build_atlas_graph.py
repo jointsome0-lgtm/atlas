@@ -16,6 +16,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from frontmatter import FrontmatterError, parse_frontmatter
+
 ROOT = Path(__file__).resolve().parents[1]
 
 # §10.1 — closed set; a domain pass extends it in the same commit.
@@ -59,7 +61,7 @@ _SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 PART_ID_RE = re.compile(rf"^part:{_SLUG}/{_SLUG}$")
 NODE_ID_RE = re.compile(rf"^[a-z-]+:{_SLUG}$")
 
-# §9.3/§32.1 — roles an author may write in concept_edges; the structural
+# §9.1/§9.3/§32.1 — roles an author may write in concept_edges; the structural
 # types (has_part, step_of_route, …) are created by the builder only.
 AUTHORED_ROLES = {
     "related_to", "prerequisite_of", "extends", "implements", "contradicts",
@@ -70,21 +72,41 @@ AUTHORED_ROLES = {
 # exactly as a chapter maps to concepts.
 CONCEPT_KIND = {"concept", "pattern"}
 
-# Endpoint-kind contract per emitted edge type (source kinds, target kinds).
-# Authored roles default to part/pattern -> concept-kind; §32.1 pins loads;
-# probes reveal understanding (concept-kind) or capacity (zones, §32.2).
+# §10.2 endpoint-kind contract per emitted edge type (source kinds, target
+# kinds), transcribed in full so check-constants can detect either-side drift.
 ENDPOINT_RULES = {
     "related_to": (CONCEPT_KIND, CONCEPT_KIND),
-    "overall_concept": ({"material"}, CONCEPT_KIND),
-    "has_part": ({"material"}, {"material_part"}),
+    "prerequisite_of": (CONCEPT_KIND | {"material_part"}, CONCEPT_KIND),
+    "extends": (CONCEPT_KIND | {"material_part"}, CONCEPT_KIND),
+    "implements": ({"material_part"}, CONCEPT_KIND),
+    "contradicts": (CONCEPT_KIND | {"material_part"}, CONCEPT_KIND),
+    "explains": ({"material_part"}, CONCEPT_KIND),
+    "demonstrates": ({"material_part"}, CONCEPT_KIND),
+    "critiques": ({"material_part"}, CONCEPT_KIND),
+    "mentions": ({"material_part"}, CONCEPT_KIND),
+    "loads": ({"pattern"}, {"zone"}),
     "supports": ({"material", "material_part"}, {"material", "material_part"}),
+    "has_part": ({"material"}, {"material_part"}),
+    "overall_concept": ({"material"}, CONCEPT_KIND),
     "part_of_direction": (CONCEPT_KIND, {"direction"}),
     "step_of_route": (CONCEPT_KIND, {"suggested_route"}),
+    "suggested_next": (CONCEPT_KIND, CONCEPT_KIND),
     "probed_by": (CONCEPT_KIND | {"zone"}, {"probe"}),
-    "loads": ({"pattern"}, {"zone"}),
-    **{role: ({"material_part", "pattern"}, CONCEPT_KIND)
-       for role in ("prerequisite_of", "extends", "implements", "contradicts",
-                    "explains", "demonstrates", "critiques", "mentions")},
+    "pulled_by": (CONCEPT_KIND | {"zone"}, {"question"}),
+    "visited": ({"encounter"}, {"material", "material_part"}),
+    "influences": ({"artifact"}, CONCEPT_KIND | {"zone"}),
+    "updates_state": ({"artifact"}, CONCEPT_KIND | {"zone"}),
+    "moved_to": (CONCEPT_KIND, CONCEPT_KIND),
+    "via": ({"trail_segment"}, {"material", "material_part"}),
+    "produced_artifact": ({"trail_segment"}, {"artifact"}),
+    "primary_for": (
+        {"material", "material_part"},
+        {"suggested_route", "question", "trail_segment"},
+    ),
+    "supporting_for": (
+        {"material", "material_part"},
+        {"suggested_route", "question", "trail_segment"},
+    ),
 }
 
 # §14.9 — authored edge weight is a closed scale (the import-time hypothesis).
@@ -98,111 +120,6 @@ ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archi
 FORBIDDEN_ROUTE_STATUSES = {"done", "failed", "late", "blocked"}
 
 
-class BuildError(Exception):
-    pass
-
-
-# ---------------------------------------------------------------- frontmatter
-
-# A mapping key requires whitespace (or EOL) after the colon — bare ids like
-# `material:mdn-http-methods` contain colons and must stay scalars.
-_SCALAR_RE = re.compile(r"^(?P<indent>\s*)(?P<key>[A-Za-z_][\w-]*):(?:\s+(?P<value>.*))?$")
-_ITEM_RE = re.compile(r"^(?P<indent>\s*)-\s*(?P<value>.*)$")
-
-
-def _parse_scalar(raw: str):
-    raw = raw.strip()
-    if raw in ("", "|", ">"):
-        return None
-    if raw.startswith(("'", '"')) and raw.endswith(raw[0]) and len(raw) >= 2:
-        return raw[1:-1]
-    if raw == "[]":
-        return []
-    return raw
-
-
-def parse_frontmatter(text: str, source: Path) -> dict:
-    """Parse the SDD's YAML subset: nested maps, lists of scalars, lists of maps.
-
-    Deliberately small (§20: "use simple frontmatter parser manually"); block
-    scalars (`>`/`|`) are folded to a single joined string.
-    """
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        raise BuildError(f"{source}: missing frontmatter opening '---'")
-    try:
-        end = next(i for i, l in enumerate(lines[1:], 1) if l.strip() == "---")
-    except StopIteration:
-        raise BuildError(f"{source}: missing frontmatter closing '---'") from None
-    body = lines[1:end]
-
-    def parse_block(start: int, stop: int, indent: int):
-        # Returns (mapping-or-list, consumed-through-index).
-        result = None
-        i = start
-        while i < stop:
-            line = body[i]
-            if not line.strip() or line.lstrip().startswith("#"):
-                i += 1
-                continue
-            cur_indent = len(line) - len(line.lstrip())
-            if cur_indent < indent:
-                break
-            item = _ITEM_RE.match(line)
-            if item and cur_indent == indent:
-                if result is None:
-                    result = []
-                if not isinstance(result, list):
-                    raise BuildError(f"{source}: mixed list/map at line {i + end}")
-                value = item.group("value")
-                inner = _SCALAR_RE.match(value)
-                if inner:  # list of maps: "- id: part:a/x"
-                    rest, j = parse_block(i + 1, stop, cur_indent + 2)
-                    entry = {inner.group("key"): _parse_scalar(inner.group("value") or "")}
-                    if isinstance(rest, dict):
-                        entry.update(rest)
-                        i = j
-                    else:
-                        i += 1
-                    result.append(entry)
-                else:
-                    result.append(_parse_scalar(value))
-                    i += 1
-                continue
-            scalar = _SCALAR_RE.match(line)
-            if scalar and cur_indent == indent:
-                if result is None:
-                    result = {}
-                if not isinstance(result, dict):
-                    raise BuildError(f"{source}: mixed list/map at line {i + end}")
-                key, raw = scalar.group("key"), scalar.group("value") or ""
-                if raw.strip() in ("|", ">"):
-                    # block scalar: joined continuation lines
-                    parts = []
-                    j = i + 1
-                    while j < stop and (not body[j].strip()
-                                        or len(body[j]) - len(body[j].lstrip()) > cur_indent):
-                        parts.append(body[j].strip())
-                        j += 1
-                    result[key] = " ".join(p for p in parts if p)
-                    i = j
-                elif raw.strip() == "":
-                    nested, j = parse_block(i + 1, stop, cur_indent + 2)
-                    result[key] = nested
-                    i = j
-                else:
-                    result[key] = _parse_scalar(raw)
-                    i += 1
-                continue
-            raise BuildError(f"{source}: cannot parse line {i + end + 1}: {line!r}")
-        return result, i
-
-    parsed, _ = parse_block(0, len(body), 0)
-    if not isinstance(parsed, dict):
-        raise BuildError(f"{source}: frontmatter is not a mapping")
-    return parsed
-
-
 # ------------------------------------------------------------------- loading
 
 def load_dir(curated: Path, subdir: str) -> list[tuple[dict, Path]]:
@@ -213,7 +130,7 @@ def load_dir(curated: Path, subdir: str) -> list[tuple[dict, Path]]:
     for path in sorted(directory.glob("*.md")):
         if path.name.startswith("_"):
             continue
-        docs.append((parse_frontmatter(path.read_text(encoding="utf-8"), path), path))
+        docs.append((parse_frontmatter(path.read_bytes(), path), path))
     return docs
 
 
@@ -413,6 +330,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         edge.pop("_origin", None)
 
     graph = {
+        "format": "atlas-graph",
+        "version": 1,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "nodes": sorted(nodes.values(), key=lambda n: n["id"]),
         "edges": sorted(edges, key=lambda e: (e["source"], e["target"], e["type"])),
@@ -441,7 +360,7 @@ def main() -> int:
     output = Path(args[1]).resolve()
     try:
         graph, errors, warnings = build(curated)
-    except BuildError as exc:
+    except FrontmatterError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     for warning in warnings:

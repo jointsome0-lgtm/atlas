@@ -1,0 +1,11 @@
+---
+id: concept:tabs-in-body
+type: concept
+title: Tabs in body (Vera Example)
+---
+
+# Body
+
+```text
+	indented with a tab: outside the grammar
+```

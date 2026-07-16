@@ -1,0 +1,6 @@
+---
+# top-level comment
+outer:
+  # nested comment
+  value: Vera Example
+---
