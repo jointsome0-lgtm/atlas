@@ -69,8 +69,13 @@ VALID_INTAKE_BATCH = """{
 }
 """
 
+FULL_WITHHELD = (
+    '"withheld": {"nodes": 1, "edges": 0, "trails": 0, "state": 0,'
+    ' "influence": 0, "frontier": 0, "projections": 0}'
+)
+
 VALID_REDACTED_GRAPH = VALID_EMPTY_GRAPH.replace(
-    '"nodes": [],', '"withheld": {"nodes": 1},\n  "nodes": [],'
+    '"nodes": [],', FULL_WITHHELD + ',\n  "nodes": [],'
 )
 
 GRAPH_WITH_NODE = VALID_EMPTY_GRAPH.replace(
@@ -498,6 +503,25 @@ INVALID_INSTANCES = {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"projections": {}',
             '"projections": {"concept:a": "left shoulder"}',
+        ),
+    },
+    "bad-route-role-material-shape": {
+        "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
+            "id: suggested-route:example-default",
+            "id: suggested-route:bad",
+        ).replace(
+            "    primary_materials:\n      - material:example-docs\n",
+            "    primary_materials:\n      - id: material:example-docs\n",
+        ),
+    },
+    "bad-graph-withheld-partial": {
+        "graph/atlas-graph.redacted.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],', '"withheld": {"nodes": 1},\n  "nodes": [],'
+        ),
+    },
+    "bad-graph-withheld-foreign-key": {
+        "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH.replace(
+            '"projections": 0}', '"projections": 0, "note": 1}'
         ),
     },
 }

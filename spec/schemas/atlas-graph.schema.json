@@ -14,7 +14,20 @@
     "influence": {"type": "object"},
     "frontier": {"type": "array"},
     "projections": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}},
-    "withheld": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
+    "withheld": {
+      "type": "object",
+      "properties": {
+        "nodes": {"type": "integer", "minimum": 0},
+        "edges": {"type": "integer", "minimum": 0},
+        "trails": {"type": "integer", "minimum": 0},
+        "state": {"type": "integer", "minimum": 0},
+        "influence": {"type": "integer", "minimum": 0},
+        "frontier": {"type": "integer", "minimum": 0},
+        "projections": {"type": "integer", "minimum": 0}
+      },
+      "required": ["nodes", "edges", "trails", "state", "influence", "frontier", "projections"],
+      "additionalProperties": false
+    }
   },
   "required": ["format", "version", "nodes", "edges", "trails", "state", "influence", "frontier", "projections"],
   "additionalProperties": true,

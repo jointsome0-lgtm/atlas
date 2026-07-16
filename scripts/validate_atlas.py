@@ -576,9 +576,11 @@ def validate_instance(root: Path):
                             )
                         # §9.4: per step the two lists are disjoint — the
                         # same material in both is an error (§20.3).
-                        primary = role.get("primary_materials") or []
-                        supporting = role.get("supporting_materials") or []
-                        for shared in sorted(set(primary) & set(supporting)):
+                        primary = {m for m in _as_list(role.get("primary_materials"))
+                                   if isinstance(m, str)}
+                        supporting = {m for m in _as_list(role.get("supporting_materials"))
+                                      if isinstance(m, str)}
+                        for shared in sorted(primary & supporting):
                             errors.append(
                                 f"{path}: material_roles[{index}] lists "
                                 f"{shared} as both primary and supporting "
