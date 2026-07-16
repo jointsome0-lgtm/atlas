@@ -264,6 +264,37 @@ INVALID_INSTANCES = {
             "id: suggested-route:bad",
         ).replace("- step: concept:example", "- step: concept:absent"),
     },
+    "bad-graph-trail-shape": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "trail-segment:2026-07-16-001",'
+            ' "type": "trail_segment", "title": "", "fields": [],'
+            ' "date": "2026-07-16", "direction": "direction:d",'
+            ' "to": "material:m", "via": ["question:q"], "reason": "r",'
+            ' "resulting_questions": []}],',
+        ),
+    },
+    "bad-graph-role-step-not-in-route": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1},'
+            ' {"source": "material:m", "target": "suggested-route:r",'
+            ' "type": "primary_for", "provenance": ["suggested-route:r"],'
+            ' "step": "concept:b"}],',
+        ),
+    },
     "bad-snapshot-state-type": {
         "graph/atlas-snapshot.json": json.dumps({
             **json.loads(VALID_SNAPSHOT),

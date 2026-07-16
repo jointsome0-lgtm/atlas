@@ -720,6 +720,25 @@ def validate_instance(root: Path):
                                 f"{path}: edges[{index}].{key} {ref} "
                                 "is not an emitted node id (§10.3)"
                             )
+                # §9.4/§10.3: a route-context role edge's step must be one of
+                # that route's own step_of_route edges.
+                route_steps = {
+                    (edge.get("target"), edge.get("source"))
+                    for edge in instance.get("edges") or []
+                    if isinstance(edge, dict)
+                    and edge.get("type") == "step_of_route"
+                }
+                for index, edge in enumerate(instance.get("edges") or []):
+                    if not isinstance(edge, dict):
+                        continue
+                    step = edge.get("step")
+                    if (edge.get("type") in ("primary_for", "supporting_for")
+                            and isinstance(step, str)
+                            and (edge.get("target"), step) not in route_steps):
+                        errors.append(
+                            f"{path}: edges[{index}].step {step} is not a "
+                            f"step of {edge.get('target')} (§9.4)"
+                        )
                 redacted = filename.endswith(".redacted.json")
                 if redacted and "withheld" not in instance:
                     errors.append(
