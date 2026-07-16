@@ -264,6 +264,19 @@ INVALID_INSTANCES = {
             "id: suggested-route:bad",
         ).replace("- step: concept:example", "- step: concept:absent"),
     },
+    "bad-snapshot-state-type": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": [1],
+        }) + "\n",
+    },
+    "bad-graph-part-parent": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "part:a/x", "type": "material_part",'
+            ' "title": "X", "fields": [], "material": "material:b"}],',
+        ),
+    },
     "bad-graph-region-field": {
         "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
             '"fields": ["knowledge"], "aliases": []}],',

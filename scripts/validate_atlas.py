@@ -409,6 +409,14 @@ _REGION_ID_RE = re.compile(rf"^(?:concept|pattern|zone):{_SLUG}$")
 _MATERIAL_ID_RE = re.compile(rf"^(?:material:{_SLUG}|part:{_SLUG}/{_SLUG})$")
 
 
+
+def _as_dict(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value):
+    return value if isinstance(value, list) else []
+
 def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     """§33.4: every §9.12 evidence id in an evidence-bearing field resolves
     in the top-level evidence_refs table; curated node ids `via` may carry
@@ -434,7 +442,7 @@ def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
 
     # §33.4: materials is material contact state (§14.8) — keys are
     # material(part) ids only.
-    for key in (snapshot.get("materials") or {}):
+    for key in _as_dict(snapshot.get("materials")):
         if not (isinstance(key, str) and _MATERIAL_ID_RE.fullmatch(key)):
             errors.append(
                 f"{path}: materials key {key!r} is not a material(part) id "
@@ -449,20 +457,20 @@ def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
                     f"{path}: {where} cites {ref}, absent from evidence_refs (§33.4)"
                 )
 
-    for node, entry in (snapshot.get("state") or {}).items():
+    for node, entry in _as_dict(snapshot.get("state")).items():
         if isinstance(entry, dict):
             check(entry.get("evidence"), f"state.{node}.evidence")
             for index, decision in enumerate(entry.get("decisions") or []):
                 if isinstance(decision, dict):
                     check(decision.get("evidence"),
                           f"state.{node}.decisions[{index}].evidence")
-    for node, entry in (snapshot.get("materials") or {}).items():
+    for node, entry in _as_dict(snapshot.get("materials")).items():
         if isinstance(entry, dict):
             check(entry.get("evidence"), f"materials.{node}.evidence")
-    for index, segment in enumerate(snapshot.get("trail") or []):
+    for index, segment in enumerate(_as_list(snapshot.get("trail"))):
         if isinstance(segment, dict):
             check(segment.get("via"), f"trail[{index}].via")
-    for index, question in enumerate(snapshot.get("questions") or []):
+    for index, question in enumerate(_as_list(snapshot.get("questions"))):
         if isinstance(question, dict):
             check(question.get("source"), f"questions[{index}].source")
     return errors
@@ -491,7 +499,7 @@ def _snapshot_state_kind_errors(snapshot: dict, path: Path) -> list[str]:
     never carries a zone ladder. Only cross-kind dimension keys are errors;
     unknown keys stay additive (§25.7)."""
     errors: list[str] = []
-    for node, entry in (snapshot.get("state") or {}).items():
+    for node, entry in _as_dict(snapshot.get("state")).items():
         if not (isinstance(node, str) and _REGION_ID_RE.fullmatch(node)):
             errors.append(
                 f"{path}: state key {node!r} is not a region node id (§33.4)"
@@ -670,6 +678,20 @@ def validate_instance(root: Path):
                             f"{path}: duplicate node id {node_id} (§10.1)"
                         )
                     node_ids.add(node_id)
+                    # §10.1/§10.4: a part id carries its owning material's
+                    # slug, and the embedded material is that parent.
+                    parent = node.get("material")
+                    if (node.get("type") == "material_part"
+                            and isinstance(node_id, str)
+                            and isinstance(parent, str)
+                            and node_id.startswith("part:") and "/" in node_id):
+                        slug = node_id[len("part:"):].split("/", 1)[0]
+                        if parent != f"material:{slug}":
+                            errors.append(
+                                f"{path}: node {node_id} embeds material "
+                                f"{parent} — the id's owner is "
+                                f"material:{slug} (§10.1/§10.4)"
+                            )
                 for index, edge in enumerate(instance.get("edges") or []):
                     if not isinstance(edge, dict):
                         continue
