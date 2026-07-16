@@ -1,6 +1,27 @@
 ## §29. Implementation Phases
 
-Sequencing only; MVP scope is defined in §26.
+The phase table sequences work only; MVP scope is defined in §26.
+
+### Current implementation posture
+
+**State: Partial freeze.** The knowledge-domain vertical is active. Approved work may proceed through named issues and their prerequisites, including #29, #30, #31, #34, #36, #37, #42, #44, #49, and #56; every issue's own entry gates remain binding. An approved knowledge slice may land before unrelated Atlas specification debt closes, but this does not waive its gate or authorize divergence from the SDD. Normative friction discovered during implementation becomes a focused issue and, if accepted, an SDD edit plus Decision Log entry before code changes behavior.
+
+### Body Atlas freeze
+
+§32 remains an extension design and second-domain test, but Body Atlas implementation is frozen under #45. Phases 1–3 and their tickets must not depend on §32-specific code. During the freeze, excluded work is Body Atlas code, real health journals, silhouette implementation, medical-derived state, new body-specific features, fields, or modes, and public sample health data. Accordingly, §20's body-domain branches are deferred as active implementation requirements. The pre-freeze Phase 1 spike's existing zone/pattern parsing, `figure_region` projection hook, and invented non-sensitive Vera Example second-domain fixtures may remain only as generic-core regression evidence: Phase 1–3 work must not extend them, make an issue depend on them, render a silhouette, fold body or medical state, or admit sample health data. §20 becomes active in full only after unfreeze. A §32 defect may still be corrected when it affects the generic core.
+
+Body Atlas may be considered for implementation only after every objective gate below is satisfied:
+
+- the graph builder and first knowledge field viewer are usable (#44);
+- at least one real plan has been imported through a reviewed, idempotent flow;
+- at least one week of non-medical artifact observation has been folded and inspected by the owner;
+- the rename, deletion, and history contract is resolved (#35);
+- the Atlas threat model and agent-context boundary are resolved (#37);
+- no-evidence medical state and sensitivity-taint propagation are resolved (#38);
+- the public-engine/private-instance deployment model is decided in the selfos integration repository;
+- a private-data test fixture and explicit purge and backup story exist before any real health record enters the system.
+
+Satisfying any one prerequisite, including the first knowledge viewer, does not unfreeze Body Atlas. After all objective gates are satisfied, implementation still requires a new explicit owner decision and Decision Log entry.
 
 | Phase | Content |
 |-------|---------|
@@ -12,4 +33,3 @@ Sequencing only; MVP scope is defined in §26.
 | 5 — Agent team integration | Agent roles; review workflows; Codex checkpoints; state-auditor gate |
 
 ---
-

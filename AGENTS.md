@@ -1,7 +1,6 @@
 # atlas — agent instructions
 
-The primary artifact is the specification — `SDD.md` (map) + `spec/` (body, one file per §).
-Implementation started 2026-07-11 (§29 Phase 1, the graph-builder spike): code changes must cite the § they implement, and SDD refinement continues alongside — a spec finding is still an issue/§ edit, never a silent code workaround.
+The primary artifact remains the binding specification — `SDD.md` (map) + `spec/` (body, one file per §). Atlas is under a **partial freeze**: the named knowledge-domain slices in §29 may be implemented through their owning issues and prerequisites, while Body Atlas implementation remains frozen under atlas#45. Point implementation work must follow §29 and its owning issue; normative friction becomes a focused issue and, if accepted, an SDD edit plus Decision Log entry before code changes behavior.
 
 ## SDD refinement rules
 
