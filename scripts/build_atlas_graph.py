@@ -255,6 +255,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 extra["source_plan"] = meta["source_plan"]
             if expected == "probe":
                 extra["body"] = body  # the check itself (§9.11)
+            # §10.4/§25.7: these authored payload fields are required on the
+            # emitted node — a missing one fails the build here rather than
+            # emitting a graph the boundary validator rejects.
+            for field in {"material": ("kind", "url", "status"),
+                          "direction": ("attractor", "status"),
+                          "probe": ("status",)}.get(expected, ()):
+                if meta.get(field) is None:
+                    errors.append(
+                        f"{path}: {expected} requires {field} (§10.4)")
             extra = {k: v for k, v in extra.items() if v is not None}
             add_node(meta.get("id"), expected, meta.get("title", ""), path,
                      extra or None)

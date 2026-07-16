@@ -55,6 +55,25 @@ class BuilderIntegrationTests(unittest.TestCase):
                 code = validate_atlas.main(["validate", directory])
         self.assertEqual(0, code, stderr.getvalue())
 
+    def test_missing_material_payload_fails_the_build(self):
+        # §10.4/§25.7: kind/url/status are required on the emitted material
+        # node — omitting them must fail the build, not emit an invalid graph.
+        with tempfile.TemporaryDirectory() as directory:
+            material = Path(directory) / "materials" / "bad.md"
+            material.parent.mkdir(parents=True)
+            material.write_text(
+                "---\nid: material:bad\ntype: material\n"
+                "title: Bad (Vera Example)\n---\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
+                _, errors, _ = build_atlas_graph.build(Path(directory))
+        for field in ("kind", "url", "status"):
+            self.assertTrue(
+                any(f"material requires {field}" in error for error in errors),
+                errors,
+            )
+
     def test_main_writes_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "atlas-graph.json"

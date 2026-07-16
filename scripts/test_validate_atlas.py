@@ -524,6 +524,17 @@ INVALID_INSTANCES = {
             '"projections": 0}', '"projections": 0, "note": 1}'
         ),
     },
+    "bad-graph-nodes-type": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],', '"nodes": 1,'
+        ),
+    },
+    "bad-snapshot-evidence-type": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {"evidence": 1, "decisions": 1}},
+        }) + "\n",
+    },
 }
 
 

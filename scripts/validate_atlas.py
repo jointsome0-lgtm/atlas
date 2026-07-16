@@ -452,7 +452,7 @@ def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
             )
 
     def check(refs, where):
-        for ref in refs or []:
+        for ref in _as_list(refs):
             if (isinstance(ref, str) and ref.startswith(_EVIDENCE_PREFIXES)
                     and ref not in known):
                 errors.append(
@@ -462,7 +462,7 @@ def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     for node, entry in _as_dict(snapshot.get("state")).items():
         if isinstance(entry, dict):
             check(entry.get("evidence"), f"state.{node}.evidence")
-            for index, decision in enumerate(entry.get("decisions") or []):
+            for index, decision in enumerate(_as_list(entry.get("decisions"))):
                 if isinstance(decision, dict):
                     check(decision.get("evidence"),
                           f"state.{node}.decisions[{index}].evidence")
@@ -526,7 +526,7 @@ def _snapshot_state_kind_errors(snapshot: dict, path: Path) -> list[str]:
                 f"{kind} ladder (§14.1/§32.3)"
             )
         gated = _DECISION_DIMENSIONS.get(kind, set())
-        for index, decision in enumerate(entry.get("decisions") or []):
+        for index, decision in enumerate(_as_list(entry.get("decisions"))):
             if not isinstance(decision, dict):
                 continue
             dimension = decision.get("dimension")
@@ -565,7 +565,7 @@ def validate_instance(root: Path):
                     members = {step for step in steps
                                if isinstance(step, str)} if isinstance(
                                    steps, list) else set()
-                    for index, role in enumerate(instance.get("material_roles") or []):
+                    for index, role in enumerate(_as_list(instance.get("material_roles"))):
                         if not isinstance(role, dict):
                             continue
                         step = role.get("step")
@@ -592,7 +592,7 @@ def validate_instance(root: Path):
                     slug = (material_id.split(":", 1)[1]
                             if isinstance(material_id, str) and ":" in material_id
                             else None)
-                    for index, part in enumerate(instance.get("parts") or []):
+                    for index, part in enumerate(_as_list(instance.get("parts"))):
                         part_id = part.get("id") if isinstance(part, dict) else None
                         if (slug and isinstance(part_id, str)
                                 and not part_id.startswith(f"part:{slug}/")):
@@ -675,7 +675,7 @@ def validate_instance(root: Path):
                 # §10: edge endpoints are node ids consumers resolve inside
                 # the same file — a dangling endpoint never leaves the build.
                 node_ids: set = set()
-                for node in instance.get("nodes") or []:
+                for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
                         continue
                     node_id = node.get("id")
@@ -700,7 +700,7 @@ def validate_instance(root: Path):
                                 f"{parent} — the id's owner is "
                                 f"material:{slug} (§10.1/§10.4)"
                             )
-                for index, edge in enumerate(instance.get("edges") or []):
+                for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue
                     for endpoint in ("source", "target"):
@@ -713,7 +713,7 @@ def validate_instance(root: Path):
                     # §10.3: provenance is the complete derivation basis —
                     # authoring node ids and deriving record/route ids, all
                     # emitted as nodes of the same build.
-                    for ref in edge.get("provenance") or []:
+                    for ref in _as_list(edge.get("provenance")):
                         if isinstance(ref, str) and ref not in node_ids:
                             errors.append(
                                 f"{path}: edges[{index}].provenance {ref} "
@@ -732,13 +732,13 @@ def validate_instance(root: Path):
                 # that route's own step_of_route edges.
                 route_steps = {
                     (edge.get("target"), edge.get("source"))
-                    for edge in instance.get("edges") or []
+                    for edge in _as_list(instance.get("edges"))
                     if isinstance(edge, dict)
                     and edge.get("type") == "step_of_route"
                     and isinstance(edge.get("target"), str)
                     and isinstance(edge.get("source"), str)
                 }
-                for index, edge in enumerate(instance.get("edges") or []):
+                for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue
                     step = edge.get("step")
