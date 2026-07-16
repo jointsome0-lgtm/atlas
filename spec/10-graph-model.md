@@ -18,7 +18,7 @@ Generated graph file:
 
 `projections` is curated viewer-projection content the builder embeds (zone → figure region, §32; §20 step 12) so the viewer's single input stays single (§16.4) — a mapping, never state (§31.8).
 
-`version` is the graph-file contract version: an integer the viewer checks before rendering (an unsupported version fails visibly, #44); it bumps only through a Decision Log entry.
+`version` is the graph-file contract version: an integer the viewer checks before rendering (an unsupported version fails visibly, #44); versioning discipline per §25.7.
 
 `generated_at` is the fold's as-of date rendered at UTC midnight (§20.1) — the same shape as the snapshot's (§33.4); it is absent in a build with no dated input, and a consumer must tolerate its absence.
 
@@ -121,34 +121,18 @@ supporting_for    | material, part         | suggested_route, question, trail_se
 Rules:
 
 ```text
-Direction is real, and a→b / b→a coexist as independent edges for
-every type except related_to — the one symmetric type: the
-builder canonicalizes it (endpoints sorted lexicographically), so
-two-sided authoring collapses into one edge with provenance union
-(§20.3).
-Identity = (type, source, target) plus the row's meta
-discriminant (order / context / step) where listed. Duplicates of
-one identity collapse into one edge; conflicting authored weights
-on one identity are a build ERROR (§20.3).
-Weight exists on the authored species only, per the §14.9 chain
-(decision, else authored hypothesis, else unassessed); supports
-is authored with no weight at all (§9.14); derived edges never
-carry weight.
-Cycles: a prerequisite_of cycle is a build-report WARNING —
-surfaced, never a build failure and never a dependency alarm
-(§15.3, §25.4); supports cycles are normal (§9.14); no other
-type is checked — trail topology is emergent (§9.9) and mutual
-contradicts is a real shape.
+Direction is real: a→b / b→a coexist as independent edges for
+every type except related_to — the one symmetric type;
+canonicalization, identity/dedup, weight-conflict errors, and
+cycle handling are §20.3's.
+Weight exists on the authored species only, per the §14.9 chain;
+supports is authored with no weight at all (§9.14); derived edges
+never carry weight.
 influences names the record-level trace an artifact leaves on a
 region; the aggregated influence field stays a top-level derived
 key (§9.10), never edge data.
-Per-author role sets, read off the source column: a part (§9.3)
-authors the material-voice roles (implements, explains,
-demonstrates, critiques, mentions) plus prerequisite_of, extends,
-contradicts; a concept (§9.1) authors the concept-voice four
-(related_to, prerequisite_of, extends, contradicts); a pattern
-(§32.1) authors the concept-voice four — it is a concept-kind
-node, not a readable source — plus loads.
+Per-author role sets are read off the matrix's source column,
+never re-enumerated.
 ```
 
 ## §10.3 Edge Metadata
@@ -168,7 +152,7 @@ Edges should support metadata:
 }
 ```
 
-`weight` is evidence-updatable (§14.9): an authored value (`concept_edges`, §9.3) is the import-time hypothesis; confirmed weight decisions (§9.13) override it; the fold emits the current value. `supports` edges (§9.14) are authored with no weight at all.
+`weight` follows §14.9 (`supports`: §9.14).
 
 Requiredness (#31):
 
