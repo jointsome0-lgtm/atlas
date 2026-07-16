@@ -16,44 +16,7 @@ The user progresses by movement, not by completion.
 9. Atlas shows Frontier.
 ```
 
-## §23.2 Example
-
-Plan suggests:
-
-```text
-REST → Redis → Kafka → RabbitMQ → gRPC
-```
-
-User starts with REST and writes an idempotency test.
-
-Atlas records:
-
-```text
-PersonalTrail:
-REST API → Idempotency
-```
-
-Influence expands to:
-
-```text
-HTTP methods
-POST semantics
-Redis idempotency key
-duplicate side effects
-Kafka duplicate event handling
-```
-
-Frontier shows:
-
-```text
-Redis idempotency key
-201 vs 202
-409 vs 422
-OpenAPI idempotency header
-Kafka idempotent consumer
-```
-
-None of these are tasks — they are nearby territory (see §15).
+§23.2 retired 2026-07-16 (#63): its REST/idempotency walkthrough duplicated §2, §12.3, and §15.2; the number is never reused.
 
 ---
 
