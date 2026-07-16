@@ -70,7 +70,8 @@
         "id": {"$ref": "#/$defs/partId"},
         "title": {"type": "string"},
         "concept_edges": {"type": "array", "items": {"$ref": "#/$defs/conceptEdge"}},
-        "supported_by": {"type": "array", "items": {"$ref": "#/$defs/supportRef"}}
+        "supported_by": {"type": "array", "items": {"$ref": "#/$defs/supportRef"}},
+        "formerly": {"type": "array", "items": {"$ref": "#/$defs/partId"}}
       },
       "required": ["id", "title"],
       "additionalProperties": false

@@ -46,7 +46,7 @@
     "conceptKindId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "questionId": {"type": "string", "pattern": "^question:[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "zoneId": {"type": "string", "pattern": "^zone:[a-z0-9]+(?:-[a-z0-9]+)*$"},
-    "intakeKey": {"type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9-]+#[0-9]+$"},
+    "intakeKey": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*#[0-9]+$"},
     "dimension": {
       "type": "string",
       "enum": ["confidence", "clarity", "coverage", "weight", "status", "strength", "endurance", "mobility", "condition"],

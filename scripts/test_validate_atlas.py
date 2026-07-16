@@ -84,8 +84,30 @@ GRAPH_WITH_EDGE = VALID_EMPTY_GRAPH.replace(
     ' "provenance": ["pattern:p"], "weight": "unassessed"}],',
 )
 
+VALID_MATERIAL = """---
+id: material:example-docs
+type: material
+title: Example Docs (Vera Example)
+kind: docs
+url: ""
+status: active
+overall_concepts:
+  - concept:example
+parts:
+  - id: part:example-docs/intro
+    title: Intro
+    formerly:
+      - part:example-docs/old-intro
+---
+"""
+
 VALID_INSTANCE = {
     "atlas/concepts/example.md": VALID_CONCEPT,
+    "atlas/materials/example-docs.md": VALID_MATERIAL,
+    "state/receipts.jsonl": (
+        '{"intake":"watch-sync/2026-07-16-001#0","marker":"opened","date":"2026-07-16"}\n'
+        '{"intake":"watch-sync/2026-07-16-001#0","marker":"processed","date":"2026-07-16"}\n'
+    ),
     "plans/extracted/example.yaml": VALID_PLAN_EXTRACT,
     "state/artifacts.jsonl": VALID_ARTIFACT_ROW,
     "state/decisions.jsonl": (
@@ -157,6 +179,11 @@ INVALID_INSTANCES = {
         "atlas/patterns/bad.md": (
             "---\nid: pattern:bad\ntype: pattern\ntitle: Bad (Vera Example)\n"
             "concept_edges:\n  - to: concept:example\n    role: loads\n---\n"
+        ),
+    },
+    "bad-receipt-intake-key": {
+        "state/receipts.jsonl": (
+            '{"intake":"-bad/also--bad#1","marker":"opened","date":"2026-07-16"}\n'
         ),
     },
     "bad-intake-path-mismatch": {
