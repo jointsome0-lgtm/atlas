@@ -115,6 +115,14 @@ INVALID_INSTANCES = {
     "bad-graph-redacted-without-withheld": {
         "graph/atlas-graph.redacted.json": VALID_EMPTY_GRAPH,
     },
+    "bad-decision-weight-on-derived-edge": {
+        "state/decisions.jsonl": (
+            '{"date":"2026-07-16","target":"has_part:material:a->part:a/b",'
+            '"dimension":"weight","to":"high",'
+            '"evidence":["artifact:2026-07-16-001"],'
+            '"proposed_by":"user","decision":"confirmed"}\n'
+        ),
+    },
     "bad-decision-status-target": {
         "state/decisions.jsonl": (
             '{"date":"2026-07-16","target":"concept:example","dimension":"status",'
