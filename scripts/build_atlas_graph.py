@@ -117,6 +117,9 @@ LIFECYCLE_STATUSES = {"active", "archived"}
 MATERIAL_KINDS = {"article", "docs", "paper", "book", "repo", "video",
                   "course", "spec", "tutorial", "internal"}
 
+# §32.6/§33.2 sensitivity classes, transcribed verbatim.
+SENSITIVITY_CLASSES = {"medical"}
+
 # §9.4 — route lifecycle vocabulary; task-state words are §4 leakage.
 ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archived"}
 FORBIDDEN_ROUTE_STATUSES = {"done", "failed", "late", "blocked"}
@@ -272,6 +275,21 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     f"{origin}: {field} item {item!r} is not an id")
         return result
 
+    def str_field(value, origin, field, vocabulary=None):
+        # §10.4 string payloads fail closed: a container value or a value
+        # outside the field's vocabulary is a build ERROR, never an invalid
+        # payload in the emitted node.
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            errors.append(f"{origin}: {field} {value!r} is not a string")
+            return None
+        if vocabulary is not None and value not in vocabulary:
+            errors.append(f"{origin}: {field} {value!r} outside the "
+                          f"vocabulary {sorted(vocabulary)}")
+            return None
+        return value
+
     # §20 steps 1-2, 4-5: curated kinds. Zones/patterns dirs are read the same
     # way and are simply empty until the body domain lands (§32).
     for subdir, expected in (
@@ -308,8 +326,10 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             extra = {"status": status} if status else {}
             if meta.get("formerly") is not None:
                 extra["formerly"] = meta["formerly"]
-            if meta.get("sensitivity") is not None:
-                extra["sensitivity"] = meta["sensitivity"]
+            sensitivity = str_field(meta.get("sensitivity"), path,
+                                    "sensitivity", SENSITIVITY_CLASSES)
+            if sensitivity is not None:
+                extra["sensitivity"] = sensitivity
             if expected in ("concept", "pattern"):
                 # §10.4: aliases embed as an array of strings — gate the
                 # authored shape before it reaches the emitted node.
@@ -324,11 +344,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     errors.append(f"{path}: material kind {kind!r} outside "
                                   f"the §9.2 vocabulary")
                 extra["kind"] = kind
-                extra["url"] = meta.get("url")
+                extra["url"] = str_field(meta.get("url"), path, "url")
             if expected == "direction":
-                extra["attractor"] = meta.get("attractor")
-            if expected in ("suggested_route", "probe") and meta.get("source_plan"):
-                extra["source_plan"] = meta["source_plan"]
+                extra["attractor"] = str_field(meta.get("attractor"),
+                                               path, "attractor")
+            if expected in ("suggested_route", "probe"):
+                source_plan = str_field(meta.get("source_plan"), path,
+                                        "source_plan")
+                if source_plan is not None:
+                    extra["source_plan"] = source_plan
             if expected == "probe":
                 extra["body"] = body  # the check itself (§9.11)
             # §10.4/§25.7: these authored payload fields are required on the

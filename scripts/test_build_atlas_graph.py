@@ -385,6 +385,33 @@ class BuilderIntegrationTests(unittest.TestCase):
             errors,
         )
 
+    def test_round39_string_payload_gates_fail_the_build(self):
+        # §10.4/§25.8: container sensitivity/url/attractor/source_plan
+        # values are ERRORs, never invalid payloads in the emitted graph.
+        files = {
+            "concepts/a.md": "---\nid: concept:a\ntype: concept\n"
+                             "title: A (Vera Example)\nsensitivity:\n"
+                             "  - medical\n---\n",
+            "materials/m.md": "---\nid: material:m\ntype: material\n"
+                              "title: M (Vera Example)\nkind: docs\n"
+                              "url:\n  - x\nstatus: active\n---\n",
+            "directions/d.md": "---\nid: direction:d\ntype: direction\n"
+                               "title: D (Vera Example)\nstatus: active\n"
+                               "attractor:\n  - goal\n---\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for relative, content in files.items():
+                target = Path(directory) / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        for needle in ("sensitivity", "url", "attractor"):
+            self.assertTrue(
+                any(needle in error and "is not a string" in error
+                    for error in errors),
+                (needle, errors),
+            )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.
