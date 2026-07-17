@@ -349,6 +349,42 @@ class BuilderIntegrationTests(unittest.TestCase):
             any("is not a string" in error for error in errors), errors
         )
 
+    def test_round38_shape_guards_fail_the_build(self):
+        # §25.8: a concept_edges item without a role (schema-required) or
+        # with a non-string role, a container status, and a container title
+        # are ERRORs — no default role, no traceback, no invalid payload.
+        files = {
+            "patterns/p.md": "---\nid: pattern:p\ntype: pattern\n"
+                             "title: P (Vera Example)\nconcept_edges:\n"
+                             "  - to: concept:a\n---\n",
+            "materials/m.md": "---\nid: material:m\ntype: material\n"
+                              "title: M (Vera Example)\nkind: docs\n"
+                              "url: \"\"\nstatus:\n  - active\n---\n",
+            "concepts/a.md": "---\nid: concept:a\ntype: concept\n"
+                             "title:\n  - A (Vera Example)\n---\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for relative, content in files.items():
+                target = Path(directory) / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not an authored relationship role" in error
+                for error in errors),
+            errors,
+        )
+        self.assertTrue(
+            any("status" in error and "is not a string" in error
+                for error in errors),
+            errors,
+        )
+        self.assertTrue(
+            any("title" in error and "is not a string" in error
+                for error in errors),
+            errors,
+        )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.

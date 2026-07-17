@@ -157,6 +157,10 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         if not isinstance(node_id, str):
             errors.append(f"{source}: id {node_id!r} is not a string (§10.1)")
             return
+        if not isinstance(title, str):
+            errors.append(
+                f"{source}: title {title!r} on {node_id} is not a string")
+            title = ""
         if node_id in nodes:
             errors.append(f"{source}: duplicate id {node_id}")
             return
@@ -213,11 +217,12 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             if weight is not None and weight not in EDGE_WEIGHTS:
                 errors.append(f"{path}: weight {weight!r} on {owner_id} -> "
                               f"{ce.get('to')} outside the §14.9 scale")
-            role = ce.get("role", "mentions")
-            if role not in AUTHORED_ROLES:
+            role = ce.get("role")
+            if not isinstance(role, str) or role not in AUTHORED_ROLES:
                 errors.append(f"{path}: role {role!r} on {owner_id} -> "
                               f"{ce.get('to')} is not an authored relationship "
                               f"role (§9.3/§32.1)")
+                continue
             add_edge(owner_id, ce.get("to"), role, path, [owner_id], weight=weight)
             if isinstance(ce.get("to"), str):
                 targets.append(ce["to"])
@@ -284,6 +289,10 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             # atlas-graph.json and nothing else (§16.4), so a hidden route
             # must be distinguishable from an available one in the output.
             status = meta.get("status")
+            if status is not None and not isinstance(status, str):
+                errors.append(f"{path}: status {status!r} is not a string "
+                              f"(§9.2/§9.4/§9.11)")
+                status = None
             if status is not None and expected in ("concept", "zone", "pattern"):
                 # §9.1/§32.1: concept-kind files carry identity, links, and
                 # content only — every state dimension is derived (§31.8).
