@@ -429,7 +429,10 @@ _PROVENANCE_SOURCE_OWNED = (_builder.AUTHORED_ROLES - {"related_to"}) | {
     "updates_state", "via", "produced_artifact"}
 _PROVENANCE_TARGET_OWNED = {
     "supports", "probed_by", "part_of_direction", "step_of_route",
-    "pulled_by", "primary_for", "supporting_for"}
+    "pulled_by"}
+# primary_for/supporting_for ownership is contextual (§11.1–§11.3):
+# authored on a route target, derived from journal records on question
+# and trail targets — checked against the payload-backing sets.
 
 
 def _graph_field_errors(instance: dict, path: Path) -> list[str]:
@@ -938,6 +941,25 @@ def validate_instance(root: Path):
                     if (isinstance(edge.get("type"), str)
                             and isinstance(edge.get("source"), str)
                             and isinstance(edge.get("target"), str)):
+                        # §10.2/§20.3: the meta discriminants are per-type —
+                        # order on step_of_route, context on suggested_next,
+                        # step on route-context roles; anywhere else they
+                        # would mint fake identities for one edge.
+                        allowed_meta = {
+                            "step_of_route": {"order"},
+                            "suggested_next": {"context"},
+                        }.get(edge["type"], set())
+                        if (edge["type"] in ("primary_for", "supporting_for")
+                                and edge["target"].startswith(
+                                    "suggested-route:")):
+                            allowed_meta = {"step"}
+                        for key in ("order", "context", "step"):
+                            if key in edge and key not in allowed_meta:
+                                errors.append(
+                                    f"{path}: edges[{index}] {edge['type']} "
+                                    f"carries {key} — not this type's §10.2 "
+                                    "meta discriminant (§20.3)"
+                                )
                         # NOTE: related_to's symmetric endpoint-sort joins
                         # this identity with the builder-side §20.3
                         # canonicalization in PR E1 (#31) — enforcing it
@@ -1057,6 +1079,10 @@ def validate_instance(root: Path):
                 payload_movements: dict = {}
                 payload_via: set = set()
                 payload_produced: set = set()
+                # encounter id -> (target, depth, context.question,
+                # context.artifact): the §11.2–§11.3 role folds recompute
+                # from these rows.
+                encounter_rows: dict = {}
                 for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
                         continue
@@ -1066,6 +1092,12 @@ def validate_instance(root: Path):
                     if (node.get("type") == "encounter"
                             and isinstance(node.get("target"), str)):
                         payload_visits.add((nid, node["target"]))
+                        context = node.get("context")
+                        if not isinstance(context, dict):
+                            context = {}
+                        encounter_rows[nid] = (
+                            node["target"], node.get("depth"),
+                            context.get("question"), context.get("artifact"))
                         if (node["target"] in node_ids
                                 and (nid, node["target"]) not in visited_pairs):
                             errors.append(
@@ -1169,6 +1201,93 @@ def validate_instance(root: Path):
                                 f"-> {pair[1]} is not backed by a {noun} "
                                 "(§10.2/§10.4)"
                             )
+                    if edge.get("type") in ("primary_for", "supporting_for"):
+                        role, src, tgt = edge["type"], pair[0], pair[1]
+                        prov = {ref for ref in _as_list(edge.get("provenance"))
+                                if isinstance(ref, str)}
+                        if tgt.startswith("suggested-route:"):
+                            # §11.1: route roles are authored on the route.
+                            if prov and tgt not in prov:
+                                errors.append(
+                                    f"{path}: edges[{index}] {role} "
+                                    f"provenance must include the authoring "
+                                    f"route {tgt} (§10.3/§11.1)"
+                                )
+                        elif tgt.startswith("question:"):
+                            # §11.2: derived from encounters citing the
+                            # question — deep use (applied|taught) folds
+                            # primary, else supporting.
+                            citing = {
+                                eid for eid, row in encounter_rows.items()
+                                if row[0] == src and row[2] == tgt}
+                            if not citing:
+                                errors.append(
+                                    f"{path}: edges[{index}] {role} {src} -> "
+                                    f"{tgt} is not backed by an encounter "
+                                    "citing the question (§11.2)"
+                                )
+                                continue
+                            deep = any(
+                                encounter_rows[eid][1] in ("applied", "taught")
+                                for eid in citing)
+                            expected = "primary_for" if deep else "supporting_for"
+                            if role != expected:
+                                errors.append(
+                                    f"{path}: edges[{index}] {role} {src} -> "
+                                    f"{tgt} — the citing encounters fold "
+                                    f"{expected} (§11.2)"
+                                )
+                            if prov and not (prov & citing):
+                                errors.append(
+                                    f"{path}: edges[{index}] {role} "
+                                    "provenance names no deriving encounter "
+                                    "(§10.3/§11.2)"
+                                )
+                        elif tgt.startswith("trail-segment:"):
+                            # §11.3: via materials fold primary; the target
+                            # of an encounter citing one of the segment's
+                            # via artifacts, not itself in via, supporting.
+                            if role == "primary_for":
+                                if (tgt, src) not in payload_via:
+                                    errors.append(
+                                        f"{path}: edges[{index}] primary_for "
+                                        f"{src} -> {tgt} is not backed by "
+                                        "the segment's via (§11.3)"
+                                    )
+                                elif prov and tgt not in prov:
+                                    errors.append(
+                                        f"{path}: edges[{index}] primary_for "
+                                        f"provenance must include the "
+                                        f"recording segment {tgt} "
+                                        "(§10.3/§11.3)"
+                                    )
+                            else:
+                                if (tgt, src) in payload_via:
+                                    errors.append(
+                                        f"{path}: edges[{index}] "
+                                        f"supporting_for {src} -> {tgt} — a "
+                                        "via material folds primary (§11.3)"
+                                    )
+                                    continue
+                                citing = {
+                                    eid for eid, row in encounter_rows.items()
+                                    if row[0] == src and row[3] is not None
+                                    and (tgt, row[3]) in payload_produced}
+                                if not citing:
+                                    errors.append(
+                                        f"{path}: edges[{index}] "
+                                        f"supporting_for {src} -> {tgt} is "
+                                        "not backed by an encounter citing "
+                                        "a via artifact (§11.3)"
+                                    )
+                                elif prov and not (
+                                        tgt in prov and prov & citing):
+                                    errors.append(
+                                        f"{path}: edges[{index}] "
+                                        "supporting_for provenance must list "
+                                        "the segment and a deriving "
+                                        "encounter (§10.3/§11.3)"
+                                    )
                     if (edge.get("type") == "moved_to"
                             and pair in payload_movements):
                         # §10.3: the derivation basis is the recording row —

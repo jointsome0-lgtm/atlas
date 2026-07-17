@@ -628,6 +628,42 @@ INVALID_INSTANCES = {
             ' "provenance": ["encounter:e"]}],',
         ),
     },
+    "bad-graph-off-type-discriminant": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": ["knowledge"], "kind": "docs", "url": "",'
+            ' "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"]},'
+            ' {"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"],'
+            ' "order": 2}],',
+        ),
+    },
+    "bad-graph-forged-question-role": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "artifact:x", "type": "artifact", "title": "X",'
+            ' "fields": [], "kind": "note", "path": "p",'
+            ' "observed_at": "2026-07-16", "summary": "s",'
+            ' "evidence_strength": "noticed"},'
+            ' {"id": "question:q", "type": "question", "title": "Q",'
+            ' "fields": [], "text": "Vera Example?",'
+            ' "created_at": "2026-07-16",'
+            ' "source": {"artifact": "artifact:x"}}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "question:q",'
+            ' "type": "primary_for", "provenance": ["question:q"]}],',
+        ),
+    },
     "bad-graph-duplicate-edge-identity": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',
