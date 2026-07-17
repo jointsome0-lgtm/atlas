@@ -1088,6 +1088,52 @@ class JournalProjectionTests(unittest.TestCase):
                        if n["type"] == "trail_segment")
         self.assertEqual("direction:missing", segment["direction"])
 
+    def test_malformed_question_source_fails_the_build(self):
+        # §25.8/§10.4: a present-but-malformed source object must fail
+        # closed, never emit a question node without its provenance.
+        row = _QUESTION_ROW.replace(
+            '{"artifact": "artifact:2026-07-16-001"}', '{"artifact": 5}')
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/questions.jsonl": row + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a §9.8 source object" in e for e in errors), errors)
+
+    def test_malformed_encounter_context_fails_the_build(self):
+        # §25.8: a malformed context silently dropped would silently
+        # change the §11.2 role derivation.
+        with _materialize({
+            "state/encounters.jsonl": _encounter_row(
+                context={"question": 5}) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a §9.7 context object" in e for e in errors), errors)
+
+    def test_non_via_kind_in_trail_via_fails_the_build(self):
+        # §9.9/§10.4: via holds material(part)/artifact ids only — an
+        # off-kind id fails before it is embedded in the payload.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - concept:a\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a material(part) or artifact id" in e
+                for e in errors), errors)
+
     def test_trail_with_classed_via_is_emitted_classed(self):
         # §20 step 12/§32.6: a segment whose via cites a classed material
         # carries the class.

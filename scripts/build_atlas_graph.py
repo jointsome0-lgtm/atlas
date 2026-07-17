@@ -435,7 +435,17 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     errors.append(f"{path}: from {origin_ref!r} is not an id "
                                   f"or list of ids (§9.9)")
                     origin_ref, trail_origins = None, []
-                trail_via = id_list(meta.get("via"), path, "via")
+                # §9.9/§10.4: via holds material(part) and artifact ids
+                # only — an off-kind id must fail before it is embedded,
+                # not merely lose its derived edge in the lenient pass.
+                trail_via = []
+                for ref in id_list(meta.get("via"), path, "via"):
+                    if ref.split(":", 1)[0] in ("material", "part",
+                                                "artifact"):
+                        trail_via.append(ref)
+                    else:
+                        errors.append(f"{path}: via item {ref!r} is not a "
+                                      "material(part) or artifact id (§9.9)")
                 extra["date"] = date_field(meta.get("date"), path, "date")
                 note_activity(extra["date"])
                 extra["direction"] = str_field(meta.get("direction"), path,
@@ -753,14 +763,16 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         # §9.7/§10.4: the journal row embeds whole — date, target, depth,
         # mode, context — and derives the visited edge.
         context = row.get("context")
-        if context is not None and not isinstance(context, dict):
+        if context is not None and (
+                not isinstance(context, dict) or not context
+                or any(key not in ("question", "artifact")
+                       or not isinstance(value, str)
+                       for key, value in context.items())):
+            # Fail closed (§25.8): a malformed context silently dropped
+            # would silently change the §11.2 derivation.
             errors.append(f"{origin}: context {context!r} is not a §9.7 "
                           "context object")
             context = None
-        if isinstance(context, dict):
-            context = {key: value for key, value in context.items()
-                       if key in ("question", "artifact")
-                       and isinstance(value, str)} or None
         extra = {
             "date": date_field(row.get("date"), origin, "date"),
             "target": str_field(row.get("target"), origin, "target"),
@@ -796,14 +808,17 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         # pulled_by edges; status is derived, never stored (§31.8).
         pulls = id_list(row.get("pulls"), origin, "pulls")
         source_ref = row.get("source")
-        if source_ref is not None and not isinstance(source_ref, dict):
+        if source_ref is not None and (
+                not isinstance(source_ref, dict) or not source_ref
+                or any(key not in ("artifact", "encounter")
+                       or not isinstance(value, str)
+                       for key, value in source_ref.items())):
+            # Fail closed (§25.8): a present-but-malformed source must be
+            # a build error, never a question node emitted without its
+            # §10.4-required provenance.
             errors.append(f"{origin}: source {source_ref!r} is not a §9.8 "
                           "source object")
             source_ref = None
-        if isinstance(source_ref, dict):
-            source_ref = {key: value for key, value in source_ref.items()
-                          if key in ("artifact", "encounter")
-                          and isinstance(value, str)} or None
         extra = {
             "text": str_field(row.get("text"), origin, "text"),
             "created_at": date_field(row.get("created_at"), origin,
