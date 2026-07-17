@@ -554,6 +554,25 @@ INVALID_INSTANCES = {
             '"version": 1,\n  "generated_at": "2026-07-16T12:34:56Z",',
         ),
     },
+    "bad-graph-missing-suggested-next": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1},'
+            ' {"source": "concept:b", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 2}],',
+        ),
+    },
     "bad-graph-suggested-next-not-consecutive": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

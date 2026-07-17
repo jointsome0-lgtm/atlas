@@ -762,6 +762,26 @@ def validate_instance(root: Path):
                             )
                             continue
                         orders[edge["order"]] = edge["source"]
+                # §10.2: consecutive steps derive suggested_next — every
+                # adjacent (k, k+1) pair of a route must have its edge.
+                suggested_pairs = {
+                    (edge.get("context"), edge.get("source"),
+                     edge.get("target"))
+                    for edge in _as_list(instance.get("edges"))
+                    if isinstance(edge, dict)
+                    and edge.get("type") == "suggested_next"
+                }
+                for route, orders in sorted(step_orders.items()):
+                    for position in sorted(orders):
+                        follower = orders.get(position + 1)
+                        if follower is not None and (
+                                route, orders[position],
+                                follower) not in suggested_pairs:
+                            errors.append(
+                                f"{path}: route {route} steps at orders "
+                                f"{position}/{position + 1} have no "
+                                "suggested_next edge (§10.2)"
+                            )
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue

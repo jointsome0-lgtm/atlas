@@ -572,6 +572,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     f"formerly entry {old!r} on {node_id} is not a canonical "
                     f"§10.1 id (§34.4)")
                 continue
+            if id_type(old) != nodes[node_id].get("type"):
+                errors.append(
+                    f"formerly entry {old!r} on {node_id} changes kind — "
+                    f"identity continuation is per-kind (§34.4)")
+                continue
             if old in nodes:
                 errors.append(
                     f"formerly {old} on {node_id} is still a living id (§34.4)")

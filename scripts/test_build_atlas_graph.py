@@ -485,6 +485,23 @@ class BuilderIntegrationTests(unittest.TestCase):
             errors,
         )
 
+    def test_cross_kind_formerly_fails_the_build(self):
+        # §34.4: identity continuation is per-kind — a material cannot
+        # absorb a part id.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "materials"
+            base.mkdir(parents=True)
+            (base / "m.md").write_text(
+                "---\nid: material:m\ntype: material\n"
+                "title: M (Vera Example)\nkind: docs\nurl: \"\"\n"
+                "status: active\nformerly:\n  - part:old/x\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("changes kind" in error for error in errors), errors
+        )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.
