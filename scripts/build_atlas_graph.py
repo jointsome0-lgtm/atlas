@@ -360,8 +360,17 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 # §11.1: the authored route context emits material(part) →
                 # route edges carrying step metadata; per step the two lists
                 # are disjoint (§9.4 — a §20.3 conflict otherwise).
-                for role in meta.get("material_roles") or []:
+                roles = meta.get("material_roles")
+                if roles is not None and not isinstance(roles, list):
+                    errors.append(
+                        f"{path}: material_roles must be a list of role "
+                        f"mappings (§9.4)")
+                    roles = []
+                for role in roles or []:
                     if not isinstance(role, dict):
+                        errors.append(
+                            f"{path}: material_roles item {role!r} is not a "
+                            f"role mapping (§9.4)")
                         continue
                     step = role.get("step")
                     if step not in steps:
@@ -467,6 +476,27 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
 
     for node_id, node in nodes.items():
         node["fields"] = sorted(fields_of(node_id))
+
+    # §34.4: the retired→living map — every retired id lives in exactly one
+    # living formerly list, and a retired id that is also living, or present
+    # in two lists, is a build error (a 1→n redirect is unrepresentable).
+    retired: dict[str, str] = {}
+    for node_id in sorted(nodes):
+        for old in nodes[node_id].get("formerly") or []:
+            if not isinstance(old, str):
+                errors.append(
+                    f"formerly entry {old!r} on {node_id} is not an id (§34.4)")
+                continue
+            if old in nodes:
+                errors.append(
+                    f"formerly {old} on {node_id} is still a living id (§34.4)")
+            survivor = retired.get(old)
+            if survivor is not None:
+                errors.append(
+                    f"retired id {old} redirects to both {survivor} and "
+                    f"{node_id} (§34.4)")
+            else:
+                retired[old] = node_id
 
     graph = {
         "format": "atlas-graph",

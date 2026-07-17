@@ -113,6 +113,52 @@ class BuilderIntegrationTests(unittest.TestCase):
         part = next(n for n in graph["nodes"] if n["id"] == "part:docs/intro")
         self.assertEqual(["part:docs/old-intro"], part["formerly"])
 
+    def test_scalar_material_role_entry_fails_the_build(self):
+        # §9.4: a role entry is the step plus its lists — a scalar item must
+        # be an ERROR, not a silently absent set of role edges.
+        with tempfile.TemporaryDirectory() as directory:
+            route = Path(directory) / "suggested-routes" / "bad.md"
+            route.parent.mkdir(parents=True)
+            route.write_text(
+                "---\nid: suggested-route:bad\ntype: suggested_route\n"
+                "title: Bad (Vera Example)\nstatus: available\n"
+                "steps:\n  - concept:a\n"
+                "material_roles:\n  - material:m\n---\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
+                _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a role mapping" in error for error in errors), errors
+        )
+
+    def test_conflicting_formerly_redirects_fail_the_build(self):
+        # §34.4: a retired id that is still living, or that redirects to two
+        # survivors, is a build error.
+        concepts = {
+            "a.md": "---\nid: concept:a\ntype: concept\n"
+                    "title: A (Vera Example)\nformerly:\n  - concept:b\n"
+                    "  - concept:gone\n---\n",
+            "b.md": "---\nid: concept:b\ntype: concept\n"
+                    "title: B (Vera Example)\n---\n",
+            "c.md": "---\nid: concept:c\ntype: concept\n"
+                    "title: C (Vera Example)\nformerly:\n  - concept:gone\n"
+                    "---\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            for name, content in concepts.items():
+                (base / name).write_text(content, encoding="utf-8")
+            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
+                _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is still a living id" in error for error in errors), errors
+        )
+        self.assertTrue(
+            any("redirects to both" in error for error in errors), errors
+        )
+
     def test_main_writes_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "atlas-graph.json"
