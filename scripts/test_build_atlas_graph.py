@@ -1467,6 +1467,40 @@ class JournalProjectionTests(unittest.TestCase):
             any("question row requires pulls (§9.8)" in e for e in errors),
             errors)
 
+    def test_classed_material_part_taints_via_segment(self):
+        # §32.6: taint is union by provenance — a part of a classed
+        # material carries the class, and a segment citing it via the
+        # part unions it in.
+        material = (_MATERIAL % ("m", "M")).replace(
+            "status: active\n", "status: active\nsensitivity: medical\n"
+        ).replace(
+            "parts: []\n",
+            "parts:\n  - id: part:m/p\n    title: P (Vera Example)\n")
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": material,
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: []\nto: concept:b\n"
+                "via:\n  - part:m/p\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        part = next(n for n in graph["nodes"]
+                    if n["type"] == "material_part")
+        self.assertEqual("medical", part["sensitivity"])
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual("medical", segment["sensitivity"])
+
     def test_trail_with_classed_via_is_emitted_classed(self):
         # §20 step 12/§32.6: a segment whose via cites a classed material
         # carries the class.

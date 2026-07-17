@@ -622,6 +622,12 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     # §10.4/§34.4: formerly travels wherever the id is
                     # persisted — a part rename keeps its redirects.
                     part_extra = {"material": node_id}
+                    if sensitivity is not None:
+                        # §32.6: taint is union by provenance — the part
+                        # is derived from this classed curated file, so
+                        # it carries the class (and everything citing it
+                        # unions through the node, via included).
+                        part_extra["sensitivity"] = sensitivity
                     if part.get("formerly") is not None:
                         part_extra["formerly"] = part["formerly"]
                     add_node(part_id, "material_part", part.get("title", ""),
