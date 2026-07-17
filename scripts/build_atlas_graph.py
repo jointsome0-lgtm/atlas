@@ -114,6 +114,9 @@ EDGE_WEIGHTS = {"low", "medium", "high"}
 
 # §9.2/§9.11 — lifecycle vocabulary for everything that is not a route.
 LIFECYCLE_STATUSES = {"active", "archived"}
+# §9.2 material kinds, transcribed verbatim (checked by check-constants).
+MATERIAL_KINDS = {"article", "docs", "paper", "book", "repo", "video",
+                  "course", "spec", "tutorial", "internal"}
 
 # §9.4 — route lifecycle vocabulary; task-state words are §4 leakage.
 ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archived"}
@@ -247,7 +250,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             if expected == "zone":
                 extra["notes"] = body  # file body: care notes (§32.2)
             if expected == "material":
-                extra["kind"] = meta.get("kind")
+                kind = meta.get("kind")
+                if kind is not None and kind not in MATERIAL_KINDS:
+                    errors.append(f"{path}: material kind {kind!r} outside "
+                                  f"the §9.2 vocabulary")
+                extra["kind"] = kind
                 extra["url"] = meta.get("url")
             if expected == "direction":
                 extra["attractor"] = meta.get("attractor")

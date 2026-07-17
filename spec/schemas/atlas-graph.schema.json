@@ -198,7 +198,16 @@
         "target": {"type": "string", "pattern": "^(?:material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$", "description": "Encounters are contact with a material(part) (§9.7); the embedded target mirrors the journal row."},
         "depth": {"$ref": "#/$defs/encounterDepth"},
         "mode": {"type": "string"},
-        "context": {},
+        "context": {
+          "type": "object",
+          "properties": {
+            "question": {"type": "string", "pattern": "^question:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+            "artifact": {"type": "string", "pattern": "^artifact:[a-z0-9]+(?:-[a-z0-9]+)*$"}
+          },
+          "minProperties": 1,
+          "additionalProperties": false,
+          "description": "Encounter context mirrors the §9.7 journal row object."
+        },
         "direction": {"type": "string", "pattern": "^direction:[a-z0-9]+(?:-[a-z0-9]+)*$"},
         "from": {},
         "to": {"$ref": "#/$defs/nodeId"},

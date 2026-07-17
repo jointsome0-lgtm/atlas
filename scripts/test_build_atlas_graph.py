@@ -176,6 +176,25 @@ class BuilderIntegrationTests(unittest.TestCase):
             any("must be a list of ids" in error for error in errors), errors
         )
 
+    def test_unknown_material_kind_fails_the_build(self):
+        # §9.2: kind is a closed vocabulary — the graph schema rejects
+        # anything else, so the builder must too.
+        with tempfile.TemporaryDirectory() as directory:
+            material = Path(directory) / "materials" / "bad.md"
+            material.parent.mkdir(parents=True)
+            material.write_text(
+                "---\nid: material:bad\ntype: material\n"
+                "title: Bad (Vera Example)\nkind: blog\nurl: \"\"\n"
+                "status: active\n---\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
+                _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("outside the §9.2 vocabulary" in error for error in errors),
+            errors,
+        )
+
     def test_main_writes_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "atlas-graph.json"

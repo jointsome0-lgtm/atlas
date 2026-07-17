@@ -832,6 +832,7 @@ def check_constants():
         ("ENDPOINT_RULES", builder.ENDPOINT_RULES, "schema $defs.endpointRules", schema_endpoints),
         ("EDGE_WEIGHTS", set(builder.EDGE_WEIGHTS), "schema $defs.edgeWeight", set(defs["edgeWeight"]["enum"])),
         ("LIFECYCLE_STATUSES", set(builder.LIFECYCLE_STATUSES), "schema $defs.lifecycleStatus", set(defs["lifecycleStatus"]["enum"])),
+        ("MATERIAL_KINDS", set(builder.MATERIAL_KINDS), "schema $defs.materialKind", set(defs["materialKind"]["enum"])),
         ("ROUTE_STATUSES", set(builder.ROUTE_STATUSES), "schema $defs.routeStatus", set(defs["routeStatus"]["enum"])),
         ("ID_PREFIXES", builder.ID_PREFIXES, "schema $defs.idPrefixes", schema_prefixes),
     )

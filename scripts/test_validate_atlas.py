@@ -561,6 +561,14 @@ INVALID_INSTANCES = {
             ' "depth": "skim", "mode": "reading", "context": "solo"}],',
         ),
     },
+    "bad-graph-encounter-context": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "material:m",'
+            ' "depth": "skim", "mode": "reading", "context": "solo"}],',
+        ),
+    },
     "bad-snapshot-evidence-type": {
         "graph/atlas-snapshot.json": json.dumps({
             **json.loads(VALID_SNAPSHOT),
