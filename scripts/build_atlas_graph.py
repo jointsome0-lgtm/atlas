@@ -388,11 +388,9 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                             f"role mapping (§9.4)")
                         continue
                     step = role.get("step")
-                    if step not in steps:
-                        errors.append(
-                            f"{path}: material_roles step {step!r} is not a "
-                            f"member of steps (§9.4)")
-                        continue
+                    # Membership and disjointness are checked post-pass on
+                    # §34.4-resolved ids — a stale spelling must resolve,
+                    # not fail (§34.4).
                     # Fail closed on non-string items before set math and
                     # edge emission — a schema-invalid role list must error,
                     # never traceback or emit a malformed endpoint.
@@ -417,10 +415,6 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
 
                     primary = role_ids("primary_materials")
                     supporting = role_ids("supporting_materials")
-                    for shared in sorted(set(primary) & set(supporting)):
-                        errors.append(
-                            f"{path}: {shared} is both primary and supporting "
-                            f"for step {step} (§9.4/§20.3)")
                     for material, role_type in (
                         [(m, "primary_for") for m in primary]
                         + [(m, "supporting_for") for m in supporting]
@@ -478,6 +472,31 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     for refs in field_refs.values():
         refs[:] = [retired.get(ref, ref) if isinstance(ref, str) else ref
                    for ref in refs]
+
+    # §9.4 on §34.4-resolved ids: a role step must be a member of its
+    # route's steps, and per (route, step) the two lists stay disjoint —
+    # a rename cannot fail a stale spelling or bypass disjointness.
+    route_steps = {(edge["target"], edge["source"]) for edge in edges
+                   if edge["type"] == "step_of_route"}
+    role_seen: dict = {}
+    for edge in edges:
+        if edge["type"] not in ("primary_for", "supporting_for"):
+            continue
+        route, step = edge["target"], edge.get("step")
+        if not (isinstance(route, str)
+                and route.startswith("suggested-route:")):
+            continue
+        if (route, step) not in route_steps:
+            errors.append(
+                f"{edge['_origin']}: material_roles step {step!r} is not a "
+                f"member of steps (§9.4)")
+        key = (route, step, edge["source"])
+        previous = role_seen.get(key)
+        if previous is not None and previous != edge["type"]:
+            errors.append(
+                f"{edge['_origin']}: {edge['source']} is both primary and "
+                f"supporting for step {step} (§9.4/§20.3)")
+        role_seen[key] = edge["type"]
 
     # §20 step 11: broken curated links are errors; only references to
     # user-deletable records (trail segments, artifacts, encounters, §5.2)
