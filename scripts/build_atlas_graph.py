@@ -611,6 +611,32 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         refs[:] = [retired.get(ref, ref) if isinstance(ref, str) else ref
                    for ref in refs]
 
+    # §20.3 (minimal V1 slice): exact-identity duplicates collapse before
+    # emission — provenance unions, a weight conflict on one identity is a
+    # build ERROR. Symmetric related_to canonicalization and the rest of
+    # §20.3 land with PR E1 (#31).
+    canonical: dict = {}
+    deduped: list[dict] = []
+    for edge in edges:
+        identity = (edge["type"], edge["source"], edge["target"],
+                    edge.get("context"), edge.get("order"), edge.get("step"))
+        kept = canonical.get(identity)
+        if kept is None:
+            canonical[identity] = edge
+            deduped.append(edge)
+            continue
+        if kept.get("weight") != edge.get("weight"):
+            errors.append(
+                f"{edge['_origin']}: conflicting weights "
+                f"{kept.get('weight')!r} vs {edge.get('weight')!r} on "
+                f"{edge['type']} {edge['source']} -> {edge['target']} "
+                f"(§20.3)")
+            continue
+        kept["provenance"] = sorted(
+            set(kept["provenance"]) | set(edge["provenance"]))
+    edges = deduped
+
+
     # §9.4 on §34.4-resolved ids: a role step must be a member of its
     # route's steps, and per (route, step) the two lists stay disjoint —
     # a rename cannot fail a stale spelling or bypass disjointness.

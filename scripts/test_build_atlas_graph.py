@@ -526,6 +526,28 @@ class BuilderIntegrationTests(unittest.TestCase):
             # the loser must not have removed the holder's lock
             self.assertTrue((Path(directory) / ".atlas-lock").exists())
 
+    def test_exact_duplicate_edges_collapse_with_unioned_provenance(self):
+        # §20.3 (V1 slice): a repeated authored entry collapses into one
+        # edge; the emitted graph passes its own boundary validator.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nrelated_concepts:\n"
+                "  - concept:b\n  - concept:b\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\n---\n",
+                encoding="utf-8",
+            )
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        related = [e for e in graph["edges"] if e["type"] == "related_to"]
+        self.assertEqual(1, len(related))
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.

@@ -664,6 +664,21 @@ INVALID_INSTANCES = {
             ' "type": "part_of_direction", "provenance": ["direction:d"]}],',
         ),
     },
+    "bad-graph-artifact-via-without-produced": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "artifact:x", "type": "artifact", "title": "X",'
+            ' "fields": [], "kind": "note", "path": "p",'
+            ' "observed_at": "2026-07-16", "summary": "s",'
+            ' "evidence_strength": "weak"},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": [], "attractor": "a", "status": "active"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": [], "date": "2026-07-16",'
+            ' "direction": "direction:d", "to": "concept:absent",'
+            ' "via": ["artifact:x"], "reason": "r"}],',
+        ),
+    },
     "bad-graph-part-without-has-part": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

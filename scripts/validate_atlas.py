@@ -981,6 +981,14 @@ def validate_instance(root: Path):
                     and isinstance(edge.get("source"), str)
                     and isinstance(edge.get("target"), str)
                 }
+                produced_pairs = {
+                    (edge.get("source"), edge.get("target"))
+                    for edge in _as_list(instance.get("edges"))
+                    if isinstance(edge, dict)
+                    and edge.get("type") == "produced_artifact"
+                    and isinstance(edge.get("source"), str)
+                    and isinstance(edge.get("target"), str)
+                }
                 # §34.4 at the boundary: formerly is per-kind, never a
                 # living id, and one retired id has one survivor.
                 formerly_survivors: dict = {}
@@ -1022,8 +1030,18 @@ def validate_instance(root: Path):
                                     "moved_to edge (§10.2/§9.9)"
                                 )
                         for ref in _as_list(node.get("via")):
-                            if (isinstance(ref, str) and ref in node_ids
-                                    and (nid, ref) not in via_pairs):
+                            if not (isinstance(ref, str) and ref in node_ids):
+                                continue
+                            # §10.2: material(part) via items derive via
+                            # edges; artifact items derive produced_artifact.
+                            if ref.startswith("artifact:"):
+                                if (nid, ref) not in produced_pairs:
+                                    errors.append(
+                                        f"{path}: segment {nid} artifact "
+                                        f"{ref} has no produced_artifact "
+                                        "edge (§10.2/§9.9)"
+                                    )
+                            elif (nid, ref) not in via_pairs:
                                 errors.append(
                                     f"{path}: segment {nid} via {ref} has "
                                     "no via edge (§10.2/§9.9)"
