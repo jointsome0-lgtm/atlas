@@ -653,10 +653,12 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         if rotated.is_dir():
             # §8: per-year rotation concatenates lexicographically (§20.1).
             paths.extend(sorted(rotated.glob("*.jsonl")))
+        # §20.1: the rotated files' lexicographic concatenation IS the
+        # journal — duplicate detection spans it, not each file.
+        seen_rows: set = set()
         for path in paths:
             data = path.read_bytes()
             chunks = data.split(b"\n")
-            seen_rows: set = set()
             for number, raw in enumerate(chunks, 1):
                 if not raw:
                     if number == len(chunks):
@@ -865,7 +867,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 node["context"] = {key: resolve_ref(value, origin)
                                    for key, value in node["context"].items()}
         if node["type"] == "trail_segment":
-            for key in ("to", "from"):
+            for key in ("to", "from", "direction"):
                 if isinstance(node.get(key), str):
                     node[key] = resolve_ref(node[key], origin)
             for key in ("from", "via", "resulting_questions"):

@@ -938,6 +938,46 @@ class JournalProjectionTests(unittest.TestCase):
         self.assertEqual(1, len([n for n in graph["nodes"]
                                  if n["type"] == "artifact"]))
 
+    def test_duplicate_row_across_rotated_files_folds_once(self):
+        # §20.1: the rotated files' lexicographic concatenation is one
+        # journal — a byte-identical repeat across files folds once.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts/2025.jsonl": _ARTIFACT_ROW + "\n",
+            "state/artifacts/2026.jsonl": _ARTIFACT_ROW + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(any("folded once (§20.1)" in w for w in warnings),
+                        warnings)
+        self.assertEqual(1, len([n for n in graph["nodes"]
+                                 if n["type"] == "artifact"]))
+
+    def test_stale_trail_direction_resolves_through_formerly(self):
+        # §34.4: direction is a curated ref — a renamed direction resolves
+        # in the emitted segment payload, with the stale-ref warning.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:new\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\nformerly:\n  - direction:old\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:old\nfrom: concept:a\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual("direction:new", segment["direction"])
+        self.assertTrue(
+            any("stale curated ref direction:old resolved to direction:new"
+                in w for w in warnings), warnings)
+
     def test_malformed_journal_row_fails_the_build(self):
         with _materialize({
             "state/artifacts.jsonl": "not json\n",
