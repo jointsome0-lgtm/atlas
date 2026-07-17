@@ -430,14 +430,18 @@ def _graph_field_errors(instance: dict, path: Path) -> list[str]:
     types = {}
     for node in _as_list(instance.get("nodes")):
         if isinstance(node, dict) and isinstance(node.get("id"), str):
-            types[node["id"]] = node.get("type")
+            # A non-string type already carries its schema diagnostic —
+            # None keeps every set membership below hashable.
+            node_type = node.get("type")
+            types[node["id"]] = node_type if isinstance(node_type, str) else None
     refs: dict = {}
     for edge in _as_list(instance.get("edges")):
         if not isinstance(edge, dict):
             continue
         src, tgt = edge.get("source"), edge.get("target")
         kind = edge.get("type")
-        if not (isinstance(src, str) and isinstance(tgt, str)):
+        if not (isinstance(src, str) and isinstance(tgt, str)
+                and isinstance(kind, str)):
             continue
         if kind in ("overall_concept", "has_part"):
             refs.setdefault(src, []).append(tgt)

@@ -619,6 +619,17 @@ INVALID_INSTANCES = {
             ' "provenance": ["encounter:e"]}],',
         ),
     },
+    "bad-graph-container-types": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": [], "title": "A",'
+            ' "fields": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "concept:a",'
+            ' "type": [], "provenance": ["concept:a"]}],',
+        ),
+    },
     "bad-graph-fields-mismatch": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',
