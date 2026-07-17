@@ -310,7 +310,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 extra["notes"] = body  # file body: care notes (§32.2)
             if expected == "material":
                 kind = meta.get("kind")
-                if kind is not None and kind not in MATERIAL_KINDS:
+                if kind is not None and (not isinstance(kind, str)
+                                         or kind not in MATERIAL_KINDS):
                     errors.append(f"{path}: material kind {kind!r} outside "
                                   f"the §9.2 vocabulary")
                 extra["kind"] = kind
@@ -389,8 +390,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         part_extra["formerly"] = part["formerly"]
                     add_node(part_id, "material_part", part.get("title", ""),
                              path, part_extra)
-                    if part_id is None:
-                        continue
+                    if not isinstance(part_id, str):
+                        continue  # add_node already recorded the shape error
                     if material_slug and not part_id.startswith(f"part:{material_slug}/"):
                         errors.append(
                             f"{path}: part id {part_id!r} does not carry its "
@@ -509,6 +510,12 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             if not isinstance(old, str):
                 errors.append(
                     f"formerly entry {old!r} on {node_id} is not an id (§34.4)")
+                continue
+            shape = PART_ID_RE if old.startswith("part:") else NODE_ID_RE
+            if id_type(old) is None or not shape.match(old):
+                errors.append(
+                    f"formerly entry {old!r} on {node_id} is not a canonical "
+                    f"§10.1 id (§34.4)")
                 continue
             if old in nodes:
                 errors.append(

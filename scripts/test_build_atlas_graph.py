@@ -317,6 +317,38 @@ class BuilderIntegrationTests(unittest.TestCase):
             errors,
         )
 
+    def test_round37_shape_guards_fail_the_build(self):
+        # §25.8 fail-closed: a non-id formerly entry, a list-valued material
+        # kind, and a list-valued part id are ERRORs, never tracebacks or
+        # schema-invalid graph payloads.
+        files = {
+            "concepts/a.md": "---\nid: concept:a\ntype: concept\n"
+                             "title: A (Vera Example)\nformerly:\n"
+                             "  - garbage\n---\n",
+            "materials/m.md": "---\nid: material:m\ntype: material\n"
+                              "title: M (Vera Example)\nkind:\n  - docs\n"
+                              "url: \"\"\nstatus: active\nparts:\n"
+                              "  - id:\n      - part:m/a\n    title: A\n"
+                              "---\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for relative, content in files.items():
+                target = Path(directory) / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a canonical §10.1 id" in error for error in errors),
+            errors,
+        )
+        self.assertTrue(
+            any("outside the §9.2 vocabulary" in error for error in errors),
+            errors,
+        )
+        self.assertTrue(
+            any("is not a string" in error for error in errors), errors
+        )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.
