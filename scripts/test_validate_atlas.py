@@ -664,6 +664,37 @@ INVALID_INSTANCES = {
             ' "type": "part_of_direction", "provenance": ["direction:d"]}],',
         ),
     },
+    "bad-graph-unbacked-moved-to": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:c", "type": "concept", "title": "C",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:d", "type": "concept", "title": "D",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": ["knowledge"], "attractor": "a", "status": "active"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
+            ' "direction": "direction:d", "from": "concept:a",'
+            ' "to": "concept:b", "via": [], "reason": "r"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]},'
+            ' {"source": "concept:b", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]},'
+            ' {"source": "concept:a", "target": "concept:b",'
+            ' "type": "moved_to",'
+            ' "provenance": ["trail-segment:2026-07-16-001"]},'
+            ' {"source": "concept:c", "target": "concept:d",'
+            ' "type": "moved_to",'
+            ' "provenance": ["trail-segment:2026-07-16-001"]}],',
+        ),
+    },
     "bad-graph-artifact-via-without-produced": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

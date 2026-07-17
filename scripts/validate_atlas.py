@@ -1048,6 +1048,15 @@ def validate_instance(root: Path):
                 # §34.4 at the boundary: formerly is per-kind, never a
                 # living id, and one retired id has one survivor.
                 formerly_survivors: dict = {}
+                # §10.2/§10.4 cut both ways: the payload derives the typed
+                # edge AND every such edge must be backed by a payload —
+                # an unbacked edge renders contact or movement the journal
+                # never recorded (no-fork rule, §31.8).
+                payload_visits: set = set()
+                payload_parts: set = set()
+                payload_movements: set = set()
+                payload_via: set = set()
+                payload_produced: set = set()
                 for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
                         continue
@@ -1055,30 +1064,35 @@ def validate_instance(root: Path):
                     if not isinstance(nid, str):
                         continue
                     if (node.get("type") == "encounter"
-                            and isinstance(node.get("target"), str)
-                            and node["target"] in node_ids
-                            and (nid, node["target"]) not in visited_pairs):
-                        errors.append(
-                            f"{path}: encounter {nid} target "
-                            f"{node['target']} has no visited edge "
-                            "(§10.2/§10.4)"
-                        )
+                            and isinstance(node.get("target"), str)):
+                        payload_visits.add((nid, node["target"]))
+                        if (node["target"] in node_ids
+                                and (nid, node["target"]) not in visited_pairs):
+                            errors.append(
+                                f"{path}: encounter {nid} target "
+                                f"{node['target']} has no visited edge "
+                                "(§10.2/§10.4)"
+                            )
                     if (node.get("type") == "material_part"
-                            and isinstance(node.get("material"), str)
-                            and node["material"] in node_ids
-                            and (node["material"], nid) not in has_part_pairs):
-                        errors.append(
-                            f"{path}: part {nid} has no has_part edge from "
-                            f"{node['material']} (§10.2/§10.4)"
-                        )
+                            and isinstance(node.get("material"), str)):
+                        payload_parts.add((node["material"], nid))
+                        if (node["material"] in node_ids
+                                and (node["material"], nid)
+                                not in has_part_pairs):
+                            errors.append(
+                                f"{path}: part {nid} has no has_part edge "
+                                f"from {node['material']} (§10.2/§10.4)"
+                            )
                     if node.get("type") == "trail_segment":
                         origin = node.get("from")
                         origins = origin if isinstance(origin, list) else [origin]
                         destination = node.get("to")
                         for ref in origins:
-                            if (isinstance(ref, str) and ref in node_ids
-                                    and isinstance(destination, str)
-                                    and destination in node_ids
+                            if not (isinstance(ref, str)
+                                    and isinstance(destination, str)):
+                                continue
+                            payload_movements.add((ref, destination))
+                            if (ref in node_ids and destination in node_ids
                                     and (ref, destination) not in moved_pairs):
                                 errors.append(
                                     f"{path}: segment {nid} movement "
@@ -1086,10 +1100,16 @@ def validate_instance(root: Path):
                                     "moved_to edge (§10.2/§9.9)"
                                 )
                         for ref in _as_list(node.get("via")):
-                            if not (isinstance(ref, str) and ref in node_ids):
+                            if not isinstance(ref, str):
                                 continue
                             # §10.2: material(part) via items derive via
                             # edges; artifact items derive produced_artifact.
+                            if ref.startswith("artifact:"):
+                                payload_produced.add((nid, ref))
+                            else:
+                                payload_via.add((nid, ref))
+                            if ref not in node_ids:
+                                continue
                             if ref.startswith("artifact:"):
                                 if (nid, ref) not in produced_pairs:
                                     errors.append(
@@ -1124,6 +1144,43 @@ def validate_instance(root: Path):
                             )
                         else:
                             formerly_survivors[old_id] = nid
+                # §10.2/§10.4 reverse direction: reject a derived typed edge
+                # no payload records — with the forward checks above, the
+                # payload and the typed edges can never fork (§31.8).
+                payload_backing = (
+                    ("visited", payload_visits, "encounter target"),
+                    ("has_part", payload_parts, "embedded part parent"),
+                    ("moved_to", payload_movements, "trail segment movement"),
+                    ("via", payload_via, "trail segment via item"),
+                    ("produced_artifact", payload_produced,
+                     "trail segment via item"),
+                )
+                for index, edge in enumerate(_as_list(instance.get("edges"))):
+                    if not isinstance(edge, dict):
+                        continue
+                    pair = (edge.get("source"), edge.get("target"))
+                    if not all(isinstance(ref, str) for ref in pair):
+                        continue
+                    for etype, backing, noun in payload_backing:
+                        if edge.get("type") == etype and pair not in backing:
+                            errors.append(
+                                f"{path}: edges[{index}] {etype} {pair[0]} "
+                                f"-> {pair[1]} is not backed by a {noun} "
+                                "(§10.2/§10.4)"
+                            )
+                    if (edge.get("type") == "suggested_next"
+                            and isinstance(edge.get("context"), str)):
+                        orders = step_orders.get(edge["context"], {})
+                        if pair not in {
+                            (orders[k], orders[k + 1])
+                            for k in orders if k + 1 in orders
+                        }:
+                            errors.append(
+                                f"{path}: edges[{index}] suggested_next "
+                                f"{pair[0]} -> {pair[1]} is not a "
+                                f"consecutive step pair of "
+                                f"{edge['context']} (§10.2)"
+                            )
                 # §10/§32.1: projections are the curated zone → figure_region
                 # mapping; the schema subset cannot constrain map keys, so
                 # the zone-id shape of each key is checked here (values are
