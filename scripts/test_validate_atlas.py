@@ -636,6 +636,31 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertIn("0 errors", stdout)
         self.assertEqual("", stderr)
 
+    def test_optional_row_fields_stay_optional_in_the_graph(self):
+        # §10.4 embeds the row fields: a background encounter has no
+        # context (§9.7) and a landing segment has no resulting_questions
+        # (§9.9) — the graph boundary must accept both.
+        graph = VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": [], "attractor": "a", "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "material:m",'
+            ' "depth": "skim", "mode": "background"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": [], "date": "2026-07-16",'
+            ' "direction": "direction:d", "to": "concept:a",'
+            ' "via": ["material:m"], "reason": "r"}],',
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({"graph/atlas-graph.json": graph}, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+
     def test_demo_instance(self):
         root = ROOT / "fixtures" / "demo-instance"
         code, stdout, stderr = self.run_cli("validate", str(root))
