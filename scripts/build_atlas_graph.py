@@ -166,6 +166,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     field_refs: dict[str, list] = {}  # node -> refs its §10.4 fields derive from
     segments: list = []  # (id, via list, origin) — §11.3 role derivation
     encounter_records: list = []  # (id, target, depth, ctx question/artifact, origin)
+    activity_dates: list = []  # §20.1 — the dated-input universe
+
+    date_shape = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+    def note_activity(value):
+        # §20.1: the default as-of is the max activity date across journal
+        # rows and trail segments; malformed dates never anchor a graph.
+        if isinstance(value, str) and date_shape.fullmatch(value):
+            activity_dates.append(value)
 
     def add_node(node_id, node_type, title, source, extra=None):
         if node_id is None:
@@ -359,7 +368,13 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             # formerly and sensitivity travel wherever persisted.
             extra = {"status": status} if status else {}
             if meta.get("formerly") is not None:
-                extra["formerly"] = meta["formerly"]
+                if expected == "trail_segment":
+                    # §34.4: journal record ids get no redirect machinery —
+                    # hand-editing the row is the owner's mechanism (§5.2).
+                    errors.append(f"{path}: trail segment records get no "
+                                  f"formerly redirect (§34.4)")
+                else:
+                    extra["formerly"] = meta["formerly"]
             sensitivity = str_field(meta.get("sensitivity"), path,
                                     "sensitivity", SENSITIVITY_CLASSES)
             if sensitivity is not None:
@@ -409,6 +424,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     origin_ref, trail_origins = None, []
                 trail_via = id_list(meta.get("via"), path, "via")
                 extra["date"] = str_field(meta.get("date"), path, "date")
+                note_activity(extra["date"])
                 extra["direction"] = str_field(meta.get("direction"), path,
                                                "direction")
                 extra["to"] = str_field(meta.get("to"), path, "to")
@@ -701,6 +717,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             "sensitivity": str_field(row.get("sensitivity"), origin,
                                      "sensitivity", SENSITIVITY_CLASSES),
         }
+        note_activity(extra["observed_at"])
         for field in ("kind", "path", "observed_at", "summary",
                       "evidence_strength"):
             if extra[field] is None:
@@ -742,6 +759,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             "sensitivity": str_field(row.get("sensitivity"), origin,
                                      "sensitivity", SENSITIVITY_CLASSES),
         }
+        note_activity(extra["date"])
         for field in ("date", "target", "depth", "mode"):
             if extra[field] is None:
                 errors.append(f"{origin}: encounter row requires {field} "
@@ -781,6 +799,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             "sensitivity": str_field(row.get("sensitivity"), origin,
                                      "sensitivity", SENSITIVITY_CLASSES),
         }
+        note_activity(extra["created_at"])
         for field in ("text", "created_at", "source"):
             if extra[field] is None:
                 errors.append(f"{origin}: question row requires {field} "
@@ -1114,8 +1133,10 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
 
     # §20.1: generated_at is the fold's as-of date at UTC midnight, never
     # the wall clock (determinism: same inputs ⇒ byte-identical output).
-    # This phase reads no dated records, so the key is absent — consumers
-    # must tolerate that (§10).
+    # The default as-of is the max activity date across the dated inputs —
+    # journal rows and trail segments; with no dated input the key stays
+    # absent, not invented. The explicit --as-of bound over the folds is
+    # #29's.
     graph = {
         "format": "atlas-graph",
         "version": 1,
@@ -1131,6 +1152,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         "frontier": [],     # §29 Phase 4 (§15)
         "projections": dict(sorted(projections.items())),  # §20 step 12, §32
     }
+    if activity_dates:
+        graph["generated_at"] = max(activity_dates) + "T00:00:00Z"
     return graph, errors, warnings
 
 

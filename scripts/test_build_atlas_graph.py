@@ -1016,6 +1016,43 @@ class JournalProjectionTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual([], warnings)
 
+    def test_generated_at_anchors_to_max_activity_date(self):
+        # §20.1: the default as-of is the max activity date across the
+        # dated inputs, emitted as UTC midnight.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW.replace(
+                '"2026-07-16"', '"2026-07-14"') + "\n",
+            "state/questions.jsonl": _QUESTION_ROW + "\n",
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual("2026-07-16T00:00:00Z", graph["generated_at"])
+
+    def test_trail_segment_formerly_is_rejected(self):
+        # §34.4: journal record ids get no redirect machinery — a segment
+        # authoring formerly is an error, never an identity continuation.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n"
+                "formerly:\n  - trail-segment:2026-07-15-009\n---\n"),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("no formerly redirect (§34.4)" in e for e in errors), errors)
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertNotIn("formerly", segment)
+
     def test_trail_with_classed_via_is_emitted_classed(self):
         # §20 step 12/§32.6: a segment whose via cites a classed material
         # carries the class.
