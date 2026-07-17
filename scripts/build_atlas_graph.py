@@ -718,6 +718,26 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     state_dir = (curated.parent / "state"
                  if curated.name == "atlas" else curated / "state")
 
+    def strict_row(raw):
+        # §25.7/§25.8: the journal is a persisted format — the builder
+        # reads it exactly as strictly as the boundary (validate_atlas),
+        # or its output can embed rows the boundary reader rejects
+        # (duplicate keys keep-last, non-finite constants).
+        def pairs(items):
+            obj = {}
+            for key, value in items:
+                if key in obj:
+                    raise ValueError(f"duplicate JSON key {key!r}")
+                obj[key] = value
+            return obj
+
+        def constant(name):
+            raise ValueError(
+                f"non-finite JSON number {name!r} is unsupported")
+
+        return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs,
+                          parse_constant=constant)
+
     def journal_rows(stem):
         paths = []
         direct = state_dir / f"{stem}.jsonl"
@@ -746,10 +766,18 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                                     "duplicate row folded once (§20.1)")
                     continue
                 seen_rows.add(raw)
+                if b"\r" in raw:
+                    # §25.7: LF-only, same as the boundary reader.
+                    errors.append(f"{path}:{number}: CR/CRLF is "
+                                  "unsupported; use LF")
+                    continue
                 try:
-                    row = json.loads(raw.decode("utf-8"))
-                except (UnicodeDecodeError, ValueError):
+                    row = strict_row(raw)
+                except (UnicodeDecodeError, json.JSONDecodeError):
                     errors.append(f"{path}:{number}: invalid JSONL row")
+                    continue
+                except ValueError as exc:
+                    errors.append(f"{path}:{number}: {exc}")
                     continue
                 if not isinstance(row, dict):
                     errors.append(f"{path}:{number}: journal row is not an "
@@ -991,6 +1019,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             warn_dangling(node.get("direction"), origin)
             for ref in node.get("resulting_questions") or []:
                 warn_dangling(ref, origin)
+            if "from" not in node:
+                # With no origin, no moved_to edge carries to — the
+                # destination is payload-only here and its dangle must
+                # be reported like the fields above (§20 step 11).
+                warn_dangling(node.get("to"), origin)
         if node["type"] == "artifact" and isinstance(node.get("probe"), str):
             node["probe"] = resolve_ref(node["probe"], origin)
             warn_dangling(node["probe"], origin)

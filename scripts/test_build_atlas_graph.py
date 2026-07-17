@@ -1213,6 +1213,51 @@ class JournalProjectionTests(unittest.TestCase):
         self.assertEqual({"artifact": "artifact:missing"},
                          question["source"])
 
+    def test_crlf_journal_row_fails_the_build(self):
+        # §25.7: the builder reads the journal as strictly as the
+        # boundary — CR/CRLF never projects.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\r\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("CR/CRLF is unsupported; use LF" in e for e in errors),
+            errors)
+
+    def test_duplicate_json_key_journal_row_fails_the_build(self):
+        # §25.7/§25.8: duplicate keys silently keep-last under a bare
+        # json.loads — they must fail like the boundary reader.
+        row = _ARTIFACT_ROW[:-1] + ', "touches": ["concept:c"]}'
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": row + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("duplicate JSON key 'touches'" in e for e in errors),
+            errors)
+
+    def test_dangling_destination_without_from_warns(self):
+        # §20 step 11: a segment with no from derives no moved_to, so a
+        # deleted destination is payload-only — it warns, never fails.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nto: concept:gone\nvia: []\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("concept:gone missing" in w for w in warnings), warnings)
+
     def test_unevidenced_trail_origin_warns(self):
         # §9.9/§13.2 step 9: every listed origin must be evidenced by the
         # segment's own via context — a from with no artifact evidence is
