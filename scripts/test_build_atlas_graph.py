@@ -535,6 +535,8 @@ class BuilderIntegrationTests(unittest.TestCase):
             graph = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual("atlas-graph", graph["format"])
             self.assertEqual(1, graph["version"])
+            # §20.2: the write is temp-file + atomic rename — nothing left.
+            self.assertEqual([], list(Path(directory).glob("*.tmp")))
 
 
 if __name__ == "__main__":

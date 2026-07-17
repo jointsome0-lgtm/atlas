@@ -734,8 +734,13 @@ def main() -> int:
         return 1
     if not check_only:
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(graph, ensure_ascii=False, indent=2) + "\n",
-                          encoding="utf-8")
+        # §20.2: write a temp file beside the output and atomically rename
+        # it into place — a crash or concurrent read never sees a torn
+        # graph (§16.4 reads exactly one file).
+        tmp = output.with_name(output.name + ".tmp")
+        tmp.write_text(json.dumps(graph, ensure_ascii=False, indent=2) + "\n",
+                       encoding="utf-8")
+        tmp.replace(output)
     try:
         output_display = output.relative_to(ROOT)
     except ValueError:
