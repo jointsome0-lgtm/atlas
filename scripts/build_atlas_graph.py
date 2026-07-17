@@ -117,6 +117,23 @@ EDGE_WEIGHTS = {"low", "medium", "high"}
 # boundary reader (validate_atlas aliases this constant).
 JOURNAL_ROW_BYTES = 16_384
 
+# §9.6/§9.7/§9.8 (§25.7): the journal schemas close their key sets
+# (additionalProperties: false) — a typo key must fail here too, never
+# be silently ignored (a misspelled sensitivity drops a privacy marking).
+JOURNAL_ROW_KEYS = {
+    "artifacts": {"id", "type", "path", "observed_at", "summary", "touches",
+                  "supports_state_updates", "evidence_strength", "probe",
+                  "sensitivity", "intake"},
+    "encounters": {"id", "date", "target", "depth", "mode", "context",
+                   "sensitivity", "intake"},
+    "questions": {"id", "type", "text", "created_at", "pulls", "source",
+                  "sensitivity", "intake"},
+}
+
+# §9.6/§9.8: touches, supports_state_updates and pulls hold region ids —
+# the journal schemas pin regionId to these three kinds.
+REGION_PREFIXES = {"concept", "pattern", "zone"}
+
 # §9.2/§9.11 — lifecycle vocabulary for everything that is not a route.
 LIFECYCLE_STATUSES = {"active", "archived"}
 # §9.2 material kinds, transcribed verbatim (checked by check-constants).
@@ -793,13 +810,30 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     errors.append(f"{path}:{number}: journal row is not an "
                                   "object")
                     continue
+                unknown = set(row) - JOURNAL_ROW_KEYS[stem]
+                if unknown:
+                    # The schema closes the key set — an unknown key is a
+                    # malformed row, never silently ignored content.
+                    errors.append(
+                        f"{path}:{number}: unknown journal key(s) "
+                        f"{', '.join(sorted(unknown))} (§25.7)")
+                    continue
                 yield f"{path}:{number}", row
 
     for origin, row in journal_rows("artifacts"):
         # §9.6/§10.4: the authored type: embeds as kind (type is §10.1's).
-        touches = id_list(row.get("touches"), origin, "touches")
-        supports_updates = id_list(row.get("supports_state_updates"), origin,
-                                   "supports_state_updates")
+        touches = [
+            ref for ref in (
+                kinded_ref(ref, origin, "touches", REGION_PREFIXES, "§9.6")
+                for ref in id_list(row.get("touches"), origin, "touches"))
+            if ref is not None]
+        supports_updates = [
+            ref for ref in (
+                kinded_ref(ref, origin, "supports_state_updates",
+                           REGION_PREFIXES, "§9.6")
+                for ref in id_list(row.get("supports_state_updates"), origin,
+                                   "supports_state_updates"))
+            if ref is not None]
         extra = {
             "kind": str_field(row.get("type"), origin, "type"),
             "path": str_field(row.get("path"), origin, "path"),
@@ -891,7 +925,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     for origin, row in journal_rows("questions"):
         # §9.8/§10.4: text, created_at, source embed; pulls derive the
         # pulled_by edges; status is derived, never stored (§31.8).
-        pulls = id_list(row.get("pulls"), origin, "pulls")
+        pulls = [
+            ref for ref in (
+                kinded_ref(ref, origin, "pulls", REGION_PREFIXES, "§9.8")
+                for ref in id_list(row.get("pulls"), origin, "pulls"))
+            if ref is not None]
         source_ref = row.get("source")
         if source_ref is not None and (
                 not isinstance(source_ref, dict) or not source_ref

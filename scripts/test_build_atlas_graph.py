@@ -1213,6 +1213,42 @@ class JournalProjectionTests(unittest.TestCase):
         self.assertEqual({"artifact": "artifact:missing"},
                          question["source"])
 
+    def test_off_region_journal_ref_fails_the_build(self):
+        # §9.6/§9.8: touches and pulls hold region ids (concept/pattern/
+        # zone) — an off-kind ref fails closed, never a lenient drop that
+        # loses evidence.
+        artifact = _ARTIFACT_ROW.replace('"touches": ["concept:c"]',
+                                         '"touches": ["material:m"]')
+        question = _QUESTION_ROW.replace('"pulls": ["concept:c"]',
+                                         '"pulls": ["material:m"]')
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": artifact + "\n",
+            "state/questions.jsonl": question + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("touches 'material:m' is not a concept/pattern/zone id"
+                in e for e in errors), errors)
+        self.assertTrue(
+            any("pulls 'material:m' is not a concept/pattern/zone id"
+                in e for e in errors), errors)
+
+    def test_unknown_journal_key_fails_the_build(self):
+        # §25.7: the journal schemas close their key sets — a typo like
+        # sensitivty must fail, never silently drop a privacy marking.
+        row = json.loads(_ARTIFACT_ROW)
+        row["sensitivty"] = "medical"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("unknown journal key(s) sensitivty (§25.7)" in e
+                for e in errors), errors)
+
     def test_oversize_journal_row_fails_the_build(self):
         # §25.8: the boundary reader enforces a 16,384-byte row ceiling —
         # the builder must never project a row the boundary refuses.
