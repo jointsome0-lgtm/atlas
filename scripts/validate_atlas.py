@@ -420,6 +420,16 @@ _FIELD_DERIVED_KINDS = {"material", "material_part", "suggested_route",
                         "encounter", "trail_segment", "plan"}
 _PART_EDGE_ROLES = {"prerequisite_of", "extends", "contradicts", "implements",
                     "explains", "demonstrates", "critiques", "mentions"}
+# §10.3: provenance is the direct derivation basis, so per edge kind it must
+# name the owning record — the authored species' authoring endpoint (§9.3
+# concept_edges on the source, §9.14 supported_by on the receiving target),
+# a derived species' deriving payload node (§10.2/§10.4 ownership).
+_PROVENANCE_SOURCE_OWNED = (_builder.AUTHORED_ROLES - {"related_to"}) | {
+    "overall_concept", "has_part", "visited", "influences",
+    "updates_state", "via", "produced_artifact"}
+_PROVENANCE_TARGET_OWNED = {
+    "supports", "probed_by", "part_of_direction", "step_of_route",
+    "pulled_by", "primary_for", "supporting_for"}
 
 
 def _graph_field_errors(instance: dict, path: Path) -> list[str]:
@@ -765,6 +775,7 @@ def validate_instance(root: Path):
                 # the same file — a dangling endpoint never leaves the build.
                 node_ids: set = set()
                 zone_ids: set = set()
+                node_types: dict = {}
                 for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
                         continue
@@ -776,6 +787,9 @@ def validate_instance(root: Path):
                             f"{path}: duplicate node id {node_id} (§10.1)"
                         )
                     node_ids.add(node_id)
+                    node_types[node_id] = (node.get("type")
+                                           if isinstance(node.get("type"), str)
+                                           else None)
                     if node.get("type") == "zone":
                         zone_ids.add(node_id)
                     # §10.1/§10.4: a part id carries its owning material's
@@ -820,6 +834,39 @@ def validate_instance(root: Path):
                                 f"{path}: edges[{index}].{key} {ref} "
                                 "is not an emitted node id (§10.3)"
                             )
+                    # §10.3: provenance is the derivation basis, not just any
+                    # resolvable ids — it must name the record that authored
+                    # or derived the edge, or redaction/audit consumers trust
+                    # the wrong record (§32.6 reads this list).
+                    etype = edge.get("type")
+                    if not isinstance(etype, str):
+                        etype = None  # the schema already reported the type
+                    prov = {ref for ref in _as_list(edge.get("provenance"))
+                            if isinstance(ref, str)}
+                    owner, owner_role = None, None
+                    if etype in _PROVENANCE_SOURCE_OWNED:
+                        owner, owner_role = edge.get("source"), "authoring source"
+                    elif etype in _PROVENANCE_TARGET_OWNED:
+                        owner, owner_role = edge.get("target"), "owning target"
+                    elif etype == "suggested_next":
+                        owner, owner_role = edge.get("context"), "deriving route"
+                    if isinstance(owner, str) and prov and owner not in prov:
+                        errors.append(
+                            f"{path}: edges[{index}] {etype} provenance must "
+                            f"include the {owner_role} {owner} (§10.3)"
+                        )
+                    elif etype == "related_to" and prov and not (
+                            prov & {edge.get("source"), edge.get("target")}):
+                        errors.append(
+                            f"{path}: edges[{index}] related_to provenance "
+                            "must include an authoring endpoint (§10.3)"
+                        )
+                    elif etype == "moved_to" and prov and "trail_segment" not in {
+                            node_types.get(ref) for ref in prov}:
+                        errors.append(
+                            f"{path}: edges[{index}] moved_to provenance must "
+                            "include the deriving trail segment (§9.9/§10.3)"
+                        )
                 # §9.4/§10.3: a route-context role edge's step must be one of
                 # that route's own step_of_route edges.
                 route_steps = {

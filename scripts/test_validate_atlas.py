@@ -767,6 +767,26 @@ INVALID_INSTANCES = {
             ' "context": "suggested-route:r"}],',
         ),
     },
+    "bad-graph-concept-with-status": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"aliases": []}],',
+            '"aliases": [], "status": "active"}],',
+        ),
+    },
+    "bad-graph-supports-foreign-provenance": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:a", "type": "material", "title": "A",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "material:b", "type": "material", "title": "B",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:a", "target": "material:b",'
+            ' "type": "supports", "provenance": ["material:a"],'
+            ' "weight": "unassessed"}],',
+        ),
+    },
     "bad-graph-question-source-shape": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',
