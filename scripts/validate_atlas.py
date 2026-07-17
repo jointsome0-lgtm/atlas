@@ -1029,15 +1029,24 @@ def validate_instance(root: Path):
                                     f"carries {key} — not this type's §10.2 "
                                     "meta discriminant (§20.3)"
                                 )
-                        # NOTE: related_to's symmetric endpoint-sort joins
-                        # this identity with the builder-side §20.3
-                        # canonicalization in PR E1 (#31) — enforcing it
-                        # here first would reject V1's own emission.
-                        identity = tuple(
+                        # §20.3: related_to is the one symmetric type —
+                        # persisted edges carry the canonical sorted
+                        # endpoints, and identity uses the sorted pair so a
+                        # reversed duplicate cannot sit beside the canonical
+                        # spelling.
+                        source, target = edge["source"], edge["target"]
+                        if edge["type"] == "related_to":
+                            if target < source:
+                                errors.append(
+                                    f"{path}: edges[{index}] related_to "
+                                    f"endpoints {source} -> {target} are "
+                                    "not sorted (§20.3)"
+                                )
+                                source, target = target, source
+                        identity = (edge["type"], source, target) + tuple(
                             edge.get(key) if isinstance(
                                 edge.get(key), (str, int)) else None
-                            for key in ("type", "source", "target",
-                                        "context", "order", "step"))
+                            for key in ("context", "order", "step"))
                         if identity in edge_identities:
                             errors.append(
                                 f"{path}: edges[{index}] duplicates edge "

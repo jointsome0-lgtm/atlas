@@ -205,9 +205,9 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             edge["_origin"] = str(origin)
         edges.append(edge)
 
-    def add_concept_edges(owner_id, entries, path):
-        # One authored-edge species (§9.3): material parts and body patterns
-        # (§32.1) alike; weight is the §14.9 closed scale.
+    def add_concept_edges(owner_id, owner_kind, entries, path):
+        # One authored-edge species (§9.1/§9.3/§32.1): concepts, material
+        # parts, and body patterns alike; weight is the §14.9 closed scale.
         targets: list[str] = []
         if entries is not None and not isinstance(entries, list):
             errors.append(f"{path}: concept_edges on {owner_id} must be a "
@@ -229,6 +229,13 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 errors.append(f"{path}: role {role!r} on {owner_id} -> "
                               f"{ce.get('to')} is not an authored relationship "
                               f"role (§9.3/§32.1)")
+                continue
+            # §10.2 (#31): role legality is per author kind — the matrix is
+            # normative, ENDPOINT_RULES transcribes it.
+            if owner_kind not in ENDPOINT_RULES[role][0]:
+                errors.append(f"{path}: role {role} on {owner_id} -> "
+                              f"{ce.get('to')} is not authorable from a "
+                              f"{owner_kind} source (§10.2)")
                 continue
             add_edge(owner_id, ce.get("to"), role, path, [owner_id], weight=weight)
             if isinstance(ce.get("to"), str):
@@ -383,13 +390,20 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 continue  # add_node already recorded the shape error
 
             if expected == "concept":
-                for rel in meta.get("related_concepts") or []:
+                # §9.1 (#31): concepts are the authored species' third
+                # author; related_concepts stays sugar for role: related_to
+                # with no weight.
+                add_concept_edges(node_id, "concept",
+                                  meta.get("concept_edges"), path)
+                for rel in id_list(meta.get("related_concepts"), path,
+                                   "related_concepts"):
                     add_edge(node_id, rel, "related_to", path, [node_id])
 
             if expected == "pattern":
                 # §32.1: a pattern authors its loads/etc. edges as a part
                 # authors concept_edges — same species, same gated weight.
-                add_concept_edges(node_id, meta.get("concept_edges"), path)
+                add_concept_edges(node_id, "pattern",
+                                  meta.get("concept_edges"), path)
 
             if expected == "zone":
                 # §20 step 12: the silhouette mapping rides in the graph so
@@ -455,7 +469,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     # §10.4: a part's fields come from its concept_edges
                     # targets; the material unions its parts' fields.
                     field_refs[part_id] = add_concept_edges(
-                        part_id, part.get("concept_edges"), path)
+                        part_id, "material_part", part.get("concept_edges"),
+                        path)
                     add_supports(part_id, part.get("supported_by"), path)
                     field_refs[node_id].append(part_id)
 
@@ -611,10 +626,19 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         refs[:] = [retired.get(ref, ref) if isinstance(ref, str) else ref
                    for ref in refs]
 
-    # §20.3 (minimal V1 slice): exact-identity duplicates collapse before
-    # emission — provenance unions, a weight conflict on one identity is a
-    # build ERROR. Symmetric related_to canonicalization and the rest of
-    # §20.3 land with PR E1 (#31).
+    # §20.3 normalization: related_to is the one symmetric type — endpoints
+    # sort lexicographically before anything else sees the edge, so
+    # two-sided authoring becomes one identity (provenance unions in the
+    # collapse below). Sorted after §34.4 resolution: renames re-sort.
+    for edge in edges:
+        if (edge["type"] == "related_to"
+                and isinstance(edge.get("source"), str)
+                and isinstance(edge.get("target"), str)
+                and edge["target"] < edge["source"]):
+            edge["source"], edge["target"] = edge["target"], edge["source"]
+
+    # §20.3 dedup: one identity emits one edge — provenance unions, a
+    # weight conflict on one identity is a build ERROR.
     canonical: dict = {}
     deduped: list[dict] = []
     for edge in edges:
@@ -644,6 +668,40 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             set(kept["provenance"]) | set(edge["provenance"]))
     edges = deduped
 
+    # §20.3 cycles: a prerequisite_of cycle is a WARNING carrying the cycle
+    # path — usually a too-coarse concept cut, never a build failure and
+    # never a dependency alarm (§15.3, §25.4). supports cycles are normal
+    # (§9.14); no other type is checked. Iterative DFS, sorted order, so
+    # the report is deterministic and deep chains cannot overflow.
+    prereq: dict = {}
+    for edge in edges:
+        if (edge["type"] == "prerequisite_of"
+                and isinstance(edge.get("source"), str)
+                and isinstance(edge.get("target"), str)):
+            prereq.setdefault(edge["source"], set()).add(edge["target"])
+    color: dict = {}  # 1 = on the current path, 2 = done
+    for start in sorted(prereq):
+        if color.get(start):
+            continue
+        path_stack = [start]
+        iters = [iter(sorted(prereq.get(start, ())))]
+        color[start] = 1
+        while iters:
+            nxt = next(iters[-1], None)
+            if nxt is None:
+                color[path_stack.pop()] = 2
+                iters.pop()
+                continue
+            mark = color.get(nxt)
+            if mark == 1:
+                cycle = path_stack[path_stack.index(nxt):] + [nxt]
+                warnings.append(
+                    "prerequisite_of cycle (usually a too-coarse concept "
+                    "cut, §20.3): " + " -> ".join(cycle))
+            elif mark is None:
+                color[nxt] = 1
+                path_stack.append(nxt)
+                iters.append(iter(sorted(prereq.get(nxt, ()))))
 
     # §9.4 on §34.4-resolved ids: a role step must be a member of its
     # route's steps, and per (route, step) the two lists stay disjoint —

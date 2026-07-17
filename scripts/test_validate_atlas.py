@@ -690,6 +690,20 @@ INVALID_INSTANCES = {
             ' "type": "primary_for", "provenance": ["question:q"]}],',
         ),
     },
+    "bad-graph-unsorted-related-to": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:b", "target": "concept:a",'
+            ' "type": "related_to", "provenance": ["concept:b"],'
+            ' "weight": "unassessed"}],',
+        ),
+    },
     "bad-graph-duplicate-edge-identity": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

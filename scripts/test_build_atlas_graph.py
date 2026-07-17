@@ -572,6 +572,144 @@ class BuilderIntegrationTests(unittest.TestCase):
         self.assertEqual(1, len(extends))
         self.assertEqual("high", extends[0]["weight"])
 
+    def test_concept_authored_concept_edges_are_emitted(self):
+        # §9.1 (#31): concepts are the authored species' third author —
+        # a concept_edges block on a concept reaches the graph.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: prerequisite_of\n"
+                "    weight: high\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\n---\n",
+                encoding="utf-8",
+            )
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        prereqs = [e for e in graph["edges"]
+                   if e["type"] == "prerequisite_of"]
+        self.assertEqual(1, len(prereqs))
+        self.assertEqual("concept:a", prereqs[0]["source"])
+        self.assertEqual("concept:b", prereqs[0]["target"])
+        self.assertEqual("high", prereqs[0]["weight"])
+        self.assertEqual(["concept:a"], prereqs[0]["provenance"])
+
+    def test_concept_cannot_author_part_voice_roles(self):
+        # §10.2: mentions is part-voice — not authorable from a concept.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: mentions\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("not authorable from a concept source" in error
+                for error in errors), errors)
+
+    def test_part_cannot_author_related_to(self):
+        # §10.2: related_to sources are concept-kind only.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "materials"
+            base.mkdir(parents=True)
+            (base / "m.md").write_text(
+                "---\nid: material:m\ntype: material\n"
+                "title: M (Vera Example)\nkind: docs\nurl: \"\"\n"
+                "status: active\nparts:\n  - id: part:m/x\n    title: X\n"
+                "    concept_edges:\n      - to: concept:c\n"
+                "        role: related_to\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("not authorable from a material_part source" in error
+                for error in errors), errors)
+
+    def test_two_sided_related_to_collapses_sorted_with_union(self):
+        # §20.3: related_to is symmetric — endpoints sort and two-sided
+        # authoring becomes one identity with unioned provenance.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nrelated_concepts:\n"
+                "  - concept:b\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\nrelated_concepts:\n"
+                "  - concept:a\n---\n",
+                encoding="utf-8",
+            )
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        related = [e for e in graph["edges"] if e["type"] == "related_to"]
+        self.assertEqual(1, len(related))
+        self.assertEqual("concept:a", related[0]["source"])
+        self.assertEqual("concept:b", related[0]["target"])
+        self.assertEqual(["concept:a", "concept:b"],
+                         related[0]["provenance"])
+
+    def test_two_sided_related_to_weight_conflict_errors(self):
+        # §20.3: after canonicalization, two authored hypotheses that
+        # disagree on one identity are a build ERROR.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: related_to\n"
+                "    weight: high\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:a\n    role: related_to\n"
+                "    weight: low\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("conflicting weights" in error for error in errors), errors)
+
+    def test_prerequisite_cycle_warns_with_path(self):
+        # §20.3: a prerequisite_of cycle is a WARNING carrying the cycle
+        # path — never a build failure.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: prerequisite_of\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:a\n    role: prerequisite_of\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("prerequisite_of cycle" in warning
+                and "concept:a -> concept:b -> concept:a" in warning
+                for warning in warnings), warnings)
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.
