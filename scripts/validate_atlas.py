@@ -885,6 +885,10 @@ def validate_instance(root: Path):
                     if (isinstance(edge.get("type"), str)
                             and isinstance(edge.get("source"), str)
                             and isinstance(edge.get("target"), str)):
+                        # NOTE: related_to's symmetric endpoint-sort joins
+                        # this identity with the builder-side §20.3
+                        # canonicalization in PR E1 (#31) — enforcing it
+                        # here first would reject V1's own emission.
                         identity = tuple(
                             edge.get(key) if isinstance(
                                 edge.get(key), (str, int)) else None
