@@ -466,6 +466,25 @@ class BuilderIntegrationTests(unittest.TestCase):
             errors,
         )
 
+    def test_container_concept_edge_weight_fails_the_build(self):
+        # §25.8/§14.9: a nested weight value is an ERROR, never a hash
+        # attempt on a container or an invalid emitted weight.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "patterns"
+            base.mkdir(parents=True)
+            (base / "p.md").write_text(
+                "---\nid: pattern:p\ntype: pattern\n"
+                "title: P (Vera Example)\nconcept_edges:\n"
+                "  - to: zone:z\n    role: loads\n    weight:\n"
+                "      - high\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("outside the §14.9 scale" in error for error in errors),
+            errors,
+        )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.

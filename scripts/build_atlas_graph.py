@@ -217,9 +217,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                               f"{owner_id} is not an edge mapping (§9.3)")
                 continue
             weight = ce.get("weight")
-            if weight is not None and weight not in EDGE_WEIGHTS:
+            if weight is not None and (not isinstance(weight, str)
+                                       or weight not in EDGE_WEIGHTS):
                 errors.append(f"{path}: weight {weight!r} on {owner_id} -> "
                               f"{ce.get('to')} outside the §14.9 scale")
+                continue
             role = ce.get("role")
             if not isinstance(role, str) or role not in AUTHORED_ROLES:
                 errors.append(f"{path}: role {role!r} on {owner_id} -> "
