@@ -1213,6 +1213,44 @@ class JournalProjectionTests(unittest.TestCase):
         self.assertEqual({"artifact": "artifact:missing"},
                          question["source"])
 
+    def test_malformed_intake_key_fails_the_build(self):
+        # §25.7/§33.2: a present-but-malformed intake provenance fails
+        # closed; a well-formed one projects cleanly.
+        bad = json.loads(_ARTIFACT_ROW)
+        bad["intake"] = {}
+        good = json.loads(_QUESTION_ROW)
+        good["intake"] = "batch-1/entry-2#3"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(bad) + "\n",
+            "state/questions.jsonl": json.dumps(good) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("intake {} is not an intake key (§33.2)" in e
+                for e in errors), errors)
+        self.assertEqual([], [e for e in errors if "question" in e])
+
+    def test_empty_from_landing_dangling_to_warns(self):
+        # §9.9 allows from: [] (a landing) — no moved_to edge carries to,
+        # so a deleted destination must still warn (§20 step 11).
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: []\nto: concept:gone\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("concept:gone missing" in w for w in warnings), warnings)
+
     def test_off_region_journal_ref_fails_the_build(self):
         # §9.6/§9.8: touches and pulls hold region ids (concept/pattern/
         # zone) — an off-kind ref fails closed, never a lenient drop that

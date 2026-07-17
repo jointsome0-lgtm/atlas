@@ -134,6 +134,9 @@ JOURNAL_ROW_KEYS = {
 # the journal schemas pin regionId to these three kinds.
 REGION_PREFIXES = {"concept", "pattern", "zone"}
 
+# §33.2 (§25.7): the optional intake provenance key — batch/entry#row.
+INTAKE_KEY_RE = re.compile(rf"^{_SLUG}/{_SLUG}#[0-9]+$")
+
 # §9.2/§9.11 — lifecycle vocabulary for everything that is not a route.
 LIFECYCLE_STATUSES = {"active", "archived"}
 # §9.2 material kinds, transcribed verbatim (checked by check-constants).
@@ -810,6 +813,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     errors.append(f"{path}:{number}: journal row is not an "
                                   "object")
                     continue
+                intake = row.get("intake")
+                if intake is not None and (
+                        not isinstance(intake, str)
+                        or not INTAKE_KEY_RE.fullmatch(intake)):
+                    # §25.7: a present-but-malformed intake provenance
+                    # fails closed like every other schema-shaped field.
+                    errors.append(f"{path}:{number}: intake {intake!r} is "
+                                  "not an intake key (§33.2)")
+                    continue
                 unknown = set(row) - JOURNAL_ROW_KEYS[stem]
                 if unknown:
                     # The schema closes the key set — an unknown key is a
@@ -1072,10 +1084,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             warn_dangling(node.get("direction"), origin)
             for ref in node.get("resulting_questions") or []:
                 warn_dangling(ref, origin)
-            if "from" not in node:
-                # With no origin, no moved_to edge carries to — the
-                # destination is payload-only here and its dangle must
-                # be reported like the fields above (§20 step 11).
+            if not node.get("from"):
+                # With no origin — from absent or the []-landing (§9.9)
+                # — no moved_to edge carries to: the destination is
+                # payload-only here and its dangle must be reported like
+                # the fields above (§20 step 11).
                 warn_dangling(node.get("to"), origin)
         if node["type"] == "artifact" and isinstance(node.get("probe"), str):
             node["probe"] = resolve_ref(node["probe"], origin)
