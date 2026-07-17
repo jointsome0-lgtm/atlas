@@ -581,7 +581,11 @@ _STATE_DIMENSIONS = {
     "pattern": {"exposure", "confidence", "clarity", "coverage", "freshness"},
     "zone": {"contact", "strength", "endurance", "mobility", "condition", "freshness"},
 }
-_ALL_STATE_DIMENSIONS = set().union(*_STATE_DIMENSIONS.values())
+# §14.8/§33.4: the material contact ladder lives under `materials` — a
+# region state entry never carries it, so it is cross-kind everywhere.
+_MATERIAL_STATE_DIMENSIONS = {"depth_reached"}
+_ALL_STATE_DIMENSIONS = (set().union(*_STATE_DIMENSIONS.values())
+                         | _MATERIAL_STATE_DIMENSIONS)
 _EXPOSURE_VALUES = {
     "concept": {"unseen", "touched", "read", "summarized", "applied", "taught"},
     "pattern": {"unseen", "touched", "studied", "tried", "drilled", "reviewed"},
@@ -775,7 +779,6 @@ def validate_instance(root: Path):
                 # the same file — a dangling endpoint never leaves the build.
                 node_ids: set = set()
                 zone_ids: set = set()
-                node_types: dict = {}
                 for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
                         continue
@@ -787,9 +790,6 @@ def validate_instance(root: Path):
                             f"{path}: duplicate node id {node_id} (§10.1)"
                         )
                     node_ids.add(node_id)
-                    node_types[node_id] = (node.get("type")
-                                           if isinstance(node.get("type"), str)
-                                           else None)
                     if node.get("type") == "zone":
                         zone_ids.add(node_id)
                     # §10.1/§10.4: a part id carries its owning material's
@@ -861,12 +861,9 @@ def validate_instance(root: Path):
                             f"{path}: edges[{index}] related_to provenance "
                             "must include an authoring endpoint (§10.3)"
                         )
-                    elif etype == "moved_to" and prov and "trail_segment" not in {
-                            node_types.get(ref) for ref in prov}:
-                        errors.append(
-                            f"{path}: edges[{index}] moved_to provenance must "
-                            "include the deriving trail segment (§9.9/§10.3)"
-                        )
+                    # moved_to's owning segment is not an endpoint: its
+                    # provenance is checked against the segments recording
+                    # the pair, in the payload-backing pass below.
                 # §9.4/§10.3: a route-context role edge's step must be one of
                 # that route's own step_of_route edges.
                 route_steps = {
@@ -1054,7 +1051,10 @@ def validate_instance(root: Path):
                 # never recorded (no-fork rule, §31.8).
                 payload_visits: set = set()
                 payload_parts: set = set()
-                payload_movements: set = set()
+                # pair -> the segment ids recording it: moved_to's owning
+                # segment is not an endpoint, so its §10.3 provenance is
+                # checked against this map.
+                payload_movements: dict = {}
                 payload_via: set = set()
                 payload_produced: set = set()
                 for node in _as_list(instance.get("nodes")):
@@ -1091,7 +1091,8 @@ def validate_instance(root: Path):
                             if not (isinstance(ref, str)
                                     and isinstance(destination, str)):
                                 continue
-                            payload_movements.add((ref, destination))
+                            payload_movements.setdefault(
+                                (ref, destination), set()).add(nid)
                             if (ref in node_ids and destination in node_ids
                                     and (ref, destination) not in moved_pairs):
                                 errors.append(
@@ -1167,6 +1168,18 @@ def validate_instance(root: Path):
                                 f"{path}: edges[{index}] {etype} {pair[0]} "
                                 f"-> {pair[1]} is not backed by a {noun} "
                                 "(§10.2/§10.4)"
+                            )
+                    if (edge.get("type") == "moved_to"
+                            and pair in payload_movements):
+                        # §10.3: the derivation basis is the recording row —
+                        # naming another segment misattributes the movement.
+                        prov = {ref for ref in _as_list(edge.get("provenance"))
+                                if isinstance(ref, str)}
+                        if prov and not (prov & payload_movements[pair]):
+                            errors.append(
+                                f"{path}: edges[{index}] moved_to provenance "
+                                f"names no segment recording {pair[0]} -> "
+                                f"{pair[1]} (§9.9/§10.3)"
                             )
                     if (edge.get("type") == "suggested_next"
                             and isinstance(edge.get("context"), str)):
