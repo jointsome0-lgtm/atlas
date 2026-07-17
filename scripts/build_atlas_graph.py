@@ -732,7 +732,11 @@ def main() -> int:
     # .atlas-lock at the instance root, acquire-if-absent (O_CREAT|O_EXCL),
     # and refuses when it is already held; stale locks are removed by hand.
     lock_fd = None
-    lock = curated / ".atlas-lock"
+    # §8/§25.6: the lock lives at the instance root — with the normal
+    # layout the curated tree is INSTANCE/atlas, so lock its parent; a
+    # bare curated tree (fixtures) is its own root.
+    instance_root = curated.parent if curated.name == "atlas" else curated
+    lock = instance_root / ".atlas-lock"
     if not check_only:
         try:
             lock_fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)

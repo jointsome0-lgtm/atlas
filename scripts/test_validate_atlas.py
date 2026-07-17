@@ -554,6 +554,44 @@ INVALID_INSTANCES = {
             '"version": 1,\n  "generated_at": "2026-07-16T12:34:56Z",',
         ),
     },
+    "bad-graph-artifact-fields": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "artifact:a", "type": "artifact", "title": "A",'
+            ' "fields": [], "kind": "note", "path": "p",'
+            ' "observed_at": "2026-07-16", "summary": "s",'
+            ' "evidence_strength": "weak"},'
+            ' {"id": "concept:c", "type": "concept", "title": "C",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "artifact:a", "target": "concept:c",'
+            ' "type": "influences", "provenance": ["artifact:a"]}],',
+        ),
+    },
+    "bad-graph-role-overlap": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": ["knowledge"], "kind": "docs", "url": "",'
+            ' "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1},'
+            ' {"source": "material:m", "target": "suggested-route:r",'
+            ' "type": "primary_for", "provenance": ["suggested-route:r"],'
+            ' "step": "concept:a", "weight": "unassessed"},'
+            ' {"source": "material:m", "target": "suggested-route:r",'
+            ' "type": "supporting_for", "provenance": ["suggested-route:r"],'
+            ' "step": "concept:a", "weight": "unassessed"}],',
+        ),
+    },
     "bad-graph-fields-mismatch": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',
@@ -716,7 +754,7 @@ class SchemaValidatorTests(unittest.TestCase):
             ' "fields": [], "date": "2026-07-16", "target": "material:m",'
             ' "depth": "skim", "mode": "background"},'
             ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
-            ' "title": "", "fields": [], "date": "2026-07-16",'
+            ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
             ' "direction": "direction:d", "to": "concept:a",'
             ' "via": ["material:m"], "reason": "r"}],',
         )

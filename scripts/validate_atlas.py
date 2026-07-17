@@ -415,7 +415,8 @@ _ZONE_ID_RE = re.compile(rf"^zone:{_SLUG}$")
 _REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
                     "pattern": {"body"}}
 _FIELD_DERIVED_KINDS = {"material", "material_part", "suggested_route",
-                        "direction", "probe"}
+                        "direction", "probe", "question", "artifact",
+                        "encounter", "trail_segment", "plan"}
 _PART_EDGE_ROLES = {"prerequisite_of", "extends", "contradicts", "implements",
                     "explains", "demonstrates", "critiques", "mentions"}
 
@@ -442,8 +443,27 @@ def _graph_field_errors(instance: dict, path: Path) -> list[str]:
         elif (kind in _PART_EDGE_ROLES
                 and types.get(src) == "material_part"):
             refs.setdefault(src, []).append(tgt)
-        elif kind in ("step_of_route", "part_of_direction", "probed_by"):
+        elif kind in ("step_of_route", "part_of_direction", "probed_by",
+                      "pulled_by"):
             refs.setdefault(tgt, []).append(src)
+        elif kind in ("influences", "updates_state", "visited"):
+            refs.setdefault(src, []).append(tgt)
+
+    for node in _as_list(instance.get("nodes")):
+        if not (isinstance(node, dict) and isinstance(node.get("id"), str)):
+            continue
+        # §10.4 payload-held refs: trail segments derive from ∪ to; a plan
+        # derives its routes' fields through their source_plan.
+        if types.get(node["id"]) == "trail_segment":
+            origin = node.get("from")
+            origins = origin if isinstance(origin, list) else [origin]
+            for ref in origins + [node.get("to")]:
+                if isinstance(ref, str):
+                    refs.setdefault(node["id"], []).append(ref)
+        source_plan = node.get("source_plan")
+        if (types.get(node["id"]) == "suggested_route"
+                and isinstance(source_plan, str)):
+            refs.setdefault(source_plan, []).append(node["id"])
 
     def fields_of(node_id, seen=frozenset()):
         if node_id in seen:
@@ -843,6 +863,7 @@ def validate_instance(root: Path):
                                 f"{position}/{position + 1} have no "
                                 "suggested_next edge (§10.2)"
                             )
+                role_edges: dict = {}
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue
@@ -868,6 +889,24 @@ def validate_instance(root: Path):
                             f"{path}: edges[{index}].step {step} is not a "
                             f"step of {edge.get('target')} (§9.4)"
                         )
+                    # §9.4/§20.3: per (route, step, material) the two role
+                    # sets stay disjoint in the persisted graph too.
+                    if (edge.get("type") in ("primary_for", "supporting_for")
+                            and isinstance(edge.get("source"), str)
+                            and isinstance(edge.get("target"), str)):
+                        role_key = (edge.get("target"), step
+                                    if isinstance(step, str) else None,
+                                    edge.get("source"))
+                        previous = role_edges.get(role_key)
+                        if (previous is not None
+                                and previous != edge.get("type")):
+                            errors.append(
+                                f"{path}: {edge.get('source')} is both "
+                                f"primary and supporting for "
+                                f"{edge.get('target')} step {step} "
+                                "(§9.4/§20.3)"
+                            )
+                        role_edges[role_key] = edge.get("type")
                 # §10/§32.1: projections are the curated zone → figure_region
                 # mapping; the schema subset cannot constrain map keys, so
                 # the zone-id shape of each key is checked here (values are
