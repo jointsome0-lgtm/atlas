@@ -22,3 +22,4 @@ secrets/
 .codex/
 .agents/
 .atlas-lock
+__pycache__/
