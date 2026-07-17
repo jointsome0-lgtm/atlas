@@ -999,6 +999,26 @@ def validate_instance(root: Path):
                                 f"{position}/{position + 1} have no "
                                 "suggested_next edge (§10.2)"
                             )
+                # §20.3 determinism: the edge array emits in canonical
+                # identity order — type, source, target, then the meta
+                # discriminant; a shuffled array breaks the §20.1
+                # byte-identical promise.
+                def _edge_key(edge):
+                    def _s(value):
+                        return value if isinstance(value, str) else ""
+                    order = edge.get("order")
+                    return (_s(edge.get("type")), _s(edge.get("source")),
+                            _s(edge.get("target")), _s(edge.get("context")),
+                            order if isinstance(order, int) else 0,
+                            _s(edge.get("step")))
+                edge_keys = [_edge_key(edge)
+                             for edge in _as_list(instance.get("edges"))
+                             if isinstance(edge, dict)]
+                if edge_keys != sorted(edge_keys):
+                    errors.append(
+                        f"{path}: edges are not in canonical identity "
+                        "order (§20.3)"
+                    )
                 role_edges: dict = {}
                 edge_identities: set = set()
                 for index, edge in enumerate(_as_list(instance.get("edges"))):

@@ -122,6 +122,16 @@ MATERIAL_KINDS = {"article", "docs", "paper", "book", "repo", "video",
 # §32.6/§33.2 sensitivity classes, transcribed verbatim.
 SENSITIVITY_CLASSES = {"medical"}
 
+# §9.7 — encounter scales, transcribed verbatim.
+ENCOUNTER_DEPTHS = {"skim", "read", "summarized", "applied", "taught"}
+ENCOUNTER_MODES = {"plan-driven", "question-driven", "artifact-driven",
+                   "background"}
+# §11.2 — deep use folds a question-context material primary.
+DEEP_USE_DEPTHS = {"applied", "taught"}
+# §9.6 — artifact evidence strengths, transcribed verbatim.
+EVIDENCE_STRENGTHS = {"noticed", "read", "summarized", "applied",
+                      "explained", "reviewed", "performed", "drilled"}
+
 # §9.4 — route lifecycle vocabulary; task-state words are §4 leakage.
 ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archived"}
 FORBIDDEN_ROUTE_STATUSES = {"done", "failed", "late", "blocked"}
@@ -154,6 +164,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     edges: list[dict] = []
     projections: dict[str, str] = {}  # zone -> figure region (§20 step 12, §32)
     field_refs: dict[str, list] = {}  # node -> refs its §10.4 fields derive from
+    segments: list = []  # (id, via list, origin) — §11.3 role derivation
+    encounter_records: list = []  # (id, target, depth, ctx question/artifact, origin)
 
     def add_node(node_id, node_type, title, source, extra=None):
         if node_id is None:
@@ -179,12 +191,14 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         if not shape.match(node_id):
             errors.append(f"{source}: id {node_id!r} is not the canonical §10.1 shape "
                           f"({'part:material-slug/part-slug' if node_type == 'material_part' else 'prefix:kebab-case-slug'})")
-        node = {"id": node_id, "type": node_type, "title": title}
+        node = {"id": node_id, "type": node_type, "title": title,
+                "_origin": str(source)}
         if extra:
             node.update(extra)
         nodes[node_id] = node
 
-    def add_edge(source_id, target_id, edge_type, origin, provenance, **meta):
+    def add_edge(source_id, target_id, edge_type, origin, provenance,
+                 lenient=False, **meta):
         # Endpoints must be id strings before any membership or prefix
         # check hashes them — malformed curated refs fail closed (§25.8).
         if not (isinstance(source_id, str) and isinstance(target_id, str)):
@@ -199,9 +213,14 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         edge.update({k: v for k, v in meta.items() if v is not None})
         if edge_type in AUTHORED_ROLES | {"supports"} and "weight" not in edge:
             edge["weight"] = "unassessed"
+        if lenient:
+            # §20 step 11 origin rule: a journal- or segment-derived edge
+            # downgrades broken refs and off-matrix kinds to warnings —
+            # deletion is the owner's right (§5.2, §34.2).
+            edge["_lenient"] = True
         try:
             edge["_origin"] = str(origin.relative_to(ROOT))
-        except ValueError:
+        except (AttributeError, ValueError):
             edge["_origin"] = str(origin)
         edges.append(edge)
 
@@ -307,7 +326,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     for subdir, expected in (
         ("concepts", "concept"), ("zones", "zone"), ("patterns", "pattern"),
         ("materials", "material"), ("directions", "direction"),
-        ("suggested-routes", "suggested_route"), ("probes", "probe"),
+        ("suggested-routes", "suggested_route"), ("trails", "trail_segment"),
+        ("probes", "probe"),
     ):
         for meta, body, path in load_dir(curated, subdir):
             declared = meta.get("type", expected)
@@ -323,9 +343,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 errors.append(f"{path}: status {status!r} is not a string "
                               f"(§9.2/§9.4/§9.11)")
                 status = None
-            if status is not None and expected in ("concept", "zone", "pattern"):
+            if status is not None and expected in ("concept", "zone",
+                                                   "pattern", "trail_segment"):
                 # §9.1/§32.1: concept-kind files carry identity, links, and
-                # content only — every state dimension is derived (§31.8).
+                # content only — every state dimension is derived (§31.8);
+                # §10.4 embeds no lifecycle on a trail segment either.
                 errors.append(f"{path}: {expected} files do not author status "
                               f"(state is derived, §9.1)")
                 status = None
@@ -373,11 +395,39 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     extra["source_plan"] = source_plan
             if expected == "probe":
                 extra["body"] = body  # the check itself (§9.11)
+            if expected == "trail_segment":
+                # §9.9 (#31): the record payload and its typed edges are two
+                # faces of one record (§10.4) — embed the row verbatim.
+                origin_ref = meta.get("from")
+                if isinstance(origin_ref, list):
+                    trail_origins = id_list(origin_ref, path, "from")
+                elif origin_ref is None or isinstance(origin_ref, str):
+                    trail_origins = [origin_ref] if origin_ref else []
+                else:
+                    errors.append(f"{path}: from {origin_ref!r} is not an id "
+                                  f"or list of ids (§9.9)")
+                    origin_ref, trail_origins = None, []
+                trail_via = id_list(meta.get("via"), path, "via")
+                extra["date"] = str_field(meta.get("date"), path, "date")
+                extra["direction"] = str_field(meta.get("direction"), path,
+                                               "direction")
+                extra["to"] = str_field(meta.get("to"), path, "to")
+                extra["via"] = trail_via
+                extra["reason"] = str_field(meta.get("reason"), path,
+                                            "reason")
+                if origin_ref is not None:
+                    extra["from"] = origin_ref
+                if meta.get("resulting_questions") is not None:
+                    extra["resulting_questions"] = id_list(
+                        meta.get("resulting_questions"), path,
+                        "resulting_questions")
             # §10.4/§25.7: these authored payload fields are required on the
             # emitted node — a missing one fails the build here rather than
             # emitting a graph the boundary validator rejects.
             for field in {"material": ("kind", "url", "status"),
                           "direction": ("attractor", "status"),
+                          "trail_segment": ("date", "direction", "to", "via",
+                                            "reason"),
                           "probe": ("status",)}.get(expected, ()):
                 if meta.get(field) is None:
                     errors.append(
@@ -404,6 +454,25 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 # authors concept_edges — same species, same gated weight.
                 add_concept_edges(node_id, "pattern",
                                   meta.get("concept_edges"), path)
+
+            if expected == "trail_segment":
+                # §10.2: one moved_to per from-origin -> to; material(part)
+                # via entries derive via, artifact entries produced_artifact.
+                # Segment-derived edges are lenient — deletion elsewhere
+                # downgrades them, never fails the trail (§5.2, §34.2).
+                destination = extra.get("to")
+                if isinstance(destination, str):
+                    for origin_id in trail_origins:
+                        add_edge(origin_id, destination, "moved_to", path,
+                                 [node_id], lenient=True)
+                for ref in trail_via:
+                    edge_kind = ("produced_artifact"
+                                 if ref.startswith("artifact:") else "via")
+                    add_edge(node_id, ref, edge_kind, path, [node_id],
+                             lenient=True)
+                field_refs[node_id] = trail_origins + (
+                    [destination] if isinstance(destination, str) else [])
+                segments.append((node_id, trail_via, path))
 
             if expected == "zone":
                 # §20 step 12: the silhouette mapping rides in the graph so
@@ -568,6 +637,161 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         f"{path}: source_plan {meta['source_plan']!r} kept as metadata "
                         "(plan nodes land with the §12 importer)")
 
+    # §20 step 8 (#31): the structural journal projection — artifact,
+    # encounter, and question rows become nodes plus their §10.2 derived
+    # edges. State folds and influence/frontier (§20 steps 9-10) stay
+    # §29 Phase 3/4; no as-of bound is claimed here (#29).
+    state_dir = (curated.parent / "state"
+                 if curated.name == "atlas" else curated / "state")
+
+    def journal_rows(stem):
+        paths = []
+        direct = state_dir / f"{stem}.jsonl"
+        if direct.is_file():
+            paths.append(direct)
+        rotated = state_dir / stem
+        if rotated.is_dir():
+            # §8: per-year rotation concatenates lexicographically (§20.1).
+            paths.extend(sorted(rotated.glob("*.jsonl")))
+        for path in paths:
+            data = path.read_bytes()
+            chunks = data.split(b"\n")
+            seen_rows: set = set()
+            for number, raw in enumerate(chunks, 1):
+                if not raw:
+                    if number == len(chunks):
+                        continue  # trailing newline
+                    errors.append(f"{path}:{number}: blank journal row")
+                    continue
+                if raw in seen_rows:
+                    # §20.1: a byte-identical row repeated within a journal
+                    # folds once, with a WARNING.
+                    warnings.append(f"{path}:{number}: byte-identical "
+                                    "duplicate row folded once (§20.1)")
+                    continue
+                seen_rows.add(raw)
+                try:
+                    row = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    errors.append(f"{path}:{number}: invalid JSONL row")
+                    continue
+                if not isinstance(row, dict):
+                    errors.append(f"{path}:{number}: journal row is not an "
+                                  "object")
+                    continue
+                yield f"{path}:{number}", row
+
+    for origin, row in journal_rows("artifacts"):
+        # §9.6/§10.4: the authored type: embeds as kind (type is §10.1's).
+        touches = id_list(row.get("touches"), origin, "touches")
+        supports_updates = id_list(row.get("supports_state_updates"), origin,
+                                   "supports_state_updates")
+        extra = {
+            "kind": str_field(row.get("type"), origin, "type"),
+            "path": str_field(row.get("path"), origin, "path"),
+            "observed_at": str_field(row.get("observed_at"), origin,
+                                     "observed_at"),
+            "summary": str_field(row.get("summary"), origin, "summary"),
+            "evidence_strength": str_field(row.get("evidence_strength"),
+                                           origin, "evidence_strength",
+                                           EVIDENCE_STRENGTHS),
+            "probe": str_field(row.get("probe"), origin, "probe"),
+            "sensitivity": str_field(row.get("sensitivity"), origin,
+                                     "sensitivity", SENSITIVITY_CLASSES),
+        }
+        for field in ("kind", "path", "observed_at", "summary",
+                      "evidence_strength"):
+            if extra[field] is None:
+                errors.append(f"{origin}: artifact row requires "
+                              f"{'type' if field == 'kind' else field} "
+                              "(§9.6/§10.4)")
+        add_node(row.get("id"), "artifact", "", origin,
+                 {k: v for k, v in extra.items() if v is not None})
+        aid = row.get("id")
+        if not isinstance(aid, str):
+            continue
+        for target in touches:
+            add_edge(aid, target, "influences", origin, [aid], lenient=True)
+        for target in supports_updates:
+            add_edge(aid, target, "updates_state", origin, [aid],
+                     lenient=True)
+        field_refs[aid] = touches + supports_updates
+
+    for origin, row in journal_rows("encounters"):
+        # §9.7/§10.4: the journal row embeds whole — date, target, depth,
+        # mode, context — and derives the visited edge.
+        context = row.get("context")
+        if context is not None and not isinstance(context, dict):
+            errors.append(f"{origin}: context {context!r} is not a §9.7 "
+                          "context object")
+            context = None
+        if isinstance(context, dict):
+            context = {key: value for key, value in context.items()
+                       if key in ("question", "artifact")
+                       and isinstance(value, str)} or None
+        extra = {
+            "date": str_field(row.get("date"), origin, "date"),
+            "target": str_field(row.get("target"), origin, "target"),
+            "depth": str_field(row.get("depth"), origin, "depth",
+                               ENCOUNTER_DEPTHS),
+            "mode": str_field(row.get("mode"), origin, "mode",
+                              ENCOUNTER_MODES),
+            "context": context,
+            "sensitivity": str_field(row.get("sensitivity"), origin,
+                                     "sensitivity", SENSITIVITY_CLASSES),
+        }
+        for field in ("date", "target", "depth", "mode"):
+            if extra[field] is None:
+                errors.append(f"{origin}: encounter row requires {field} "
+                              "(§9.7/§10.4)")
+        add_node(row.get("id"), "encounter", "", origin,
+                 {k: v for k, v in extra.items() if v is not None})
+        eid = row.get("id")
+        if not isinstance(eid, str):
+            continue
+        if isinstance(extra["target"], str):
+            add_edge(eid, extra["target"], "visited", origin, [eid],
+                     lenient=True)
+            field_refs[eid] = [extra["target"]]
+        encounter_records.append(
+            (eid, extra["target"], extra["depth"],
+             (context or {}).get("question"), (context or {}).get("artifact"),
+             origin))
+
+    for origin, row in journal_rows("questions"):
+        # §9.8/§10.4: text, created_at, source embed; pulls derive the
+        # pulled_by edges; status is derived, never stored (§31.8).
+        pulls = id_list(row.get("pulls"), origin, "pulls")
+        source_ref = row.get("source")
+        if source_ref is not None and not isinstance(source_ref, dict):
+            errors.append(f"{origin}: source {source_ref!r} is not a §9.8 "
+                          "source object")
+            source_ref = None
+        if isinstance(source_ref, dict):
+            source_ref = {key: value for key, value in source_ref.items()
+                          if key in ("artifact", "encounter")
+                          and isinstance(value, str)} or None
+        extra = {
+            "text": str_field(row.get("text"), origin, "text"),
+            "created_at": str_field(row.get("created_at"), origin,
+                                    "created_at"),
+            "source": source_ref,
+            "sensitivity": str_field(row.get("sensitivity"), origin,
+                                     "sensitivity", SENSITIVITY_CLASSES),
+        }
+        for field in ("text", "created_at", "source"):
+            if extra[field] is None:
+                errors.append(f"{origin}: question row requires {field} "
+                              "(§9.8/§10.4)")
+        add_node(row.get("id"), "question", "", origin,
+                 {k: v for k, v in extra.items() if v is not None})
+        qid = row.get("id")
+        if not isinstance(qid, str):
+            continue
+        for region in pulls:
+            add_edge(region, qid, "pulled_by", origin, [qid], lenient=True)
+        field_refs[qid] = pulls
+
     # §34.4: the retired→living map — every retired id lives in exactly one
     # living formerly list, and a retired id that is also living, or present
     # in two lists, is a build error (a 1→n redirect is unrepresentable).
@@ -625,6 +849,89 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     for refs in field_refs.values():
         refs[:] = [retired.get(ref, ref) if isinstance(ref, str) else ref
                    for ref in refs]
+
+    # Journal payload refs resolve like edge refs: the embedded row and its
+    # typed edges are two faces of one record (§10.4) — §34.4 resolution
+    # must not fork them.
+    def quietly(ref):
+        return retired.get(ref, ref) if isinstance(ref, str) else ref
+
+    for node in nodes.values():
+        origin = node.get("_origin", node["id"])
+        if node["type"] == "encounter":
+            if isinstance(node.get("target"), str):
+                node["target"] = resolve_ref(node["target"], origin)
+            if isinstance(node.get("context"), dict):
+                node["context"] = {key: resolve_ref(value, origin)
+                                   for key, value in node["context"].items()}
+        if node["type"] == "trail_segment":
+            for key in ("to", "from"):
+                if isinstance(node.get(key), str):
+                    node[key] = resolve_ref(node[key], origin)
+            for key in ("from", "via", "resulting_questions"):
+                if isinstance(node.get(key), list):
+                    node[key] = [resolve_ref(ref, origin)
+                                 for ref in node[key]]
+        if node["type"] == "artifact" and isinstance(node.get("probe"), str):
+            node["probe"] = resolve_ref(node["probe"], origin)
+        if node["type"] == "question" and isinstance(node.get("source"), dict):
+            node["source"] = {key: resolve_ref(value, origin)
+                              for key, value in node["source"].items()}
+
+    # §11.2 (#31): question roles derive from encounters citing the question
+    # — the target folds primary when any citing encounter is deep use
+    # (applied|taught), else supporting; nothing is stored (§31.8), and
+    # provenance lists every deriving encounter (§10.3).
+    question_citing: dict = {}
+    for eid, target, depth, ctx_question, _ctx_artifact, origin in (
+            encounter_records):
+        target, ctx_question = quietly(target), quietly(ctx_question)
+        if isinstance(ctx_question, str) and isinstance(target, str):
+            question_citing.setdefault((target, ctx_question), []).append(
+                (eid, depth, origin))
+    for (material, question), citing in sorted(question_citing.items()):
+        role = ("primary_for"
+                if any(depth in DEEP_USE_DEPTHS for _, depth, _ in citing)
+                else "supporting_for")
+        add_edge(material, question, role, citing[0][2],
+                 sorted({eid for eid, _, _ in citing}), lenient=True)
+
+    # §11.3 (#31): a material cited in a segment's via is primary for the
+    # segment — the movement went through it; the target of an encounter
+    # citing one of the segment's via artifacts, not itself in via, is
+    # supporting. Provenance lists the segment, and for the supporting
+    # join the deriving encounters too (§10.3).
+    for seg_id, seg_via, origin in segments:
+        seg_via = [quietly(ref) for ref in seg_via]
+        via_materials = {ref for ref in seg_via
+                         if not ref.startswith("artifact:")}
+        via_artifacts = {ref for ref in seg_via
+                         if ref.startswith("artifact:")}
+        for material in sorted(via_materials):
+            add_edge(material, seg_id, "primary_for", origin, [seg_id],
+                     lenient=True)
+        supporting: dict = {}
+        for eid, target, _depth, _ctx_q, ctx_artifact, _enc_origin in (
+                encounter_records):
+            target = quietly(target)
+            if (isinstance(target, str)
+                    and quietly(ctx_artifact) in via_artifacts
+                    and target not in via_materials):
+                supporting.setdefault(target, set()).add(eid)
+        for material in sorted(supporting):
+            add_edge(material, seg_id, "supporting_for", origin,
+                     [seg_id] + sorted(supporting[material]), lenient=True)
+
+    # §20 step 12 / §32.6: a trail segment with classed via is emitted with
+    # the class — the union reads the resolved refs.
+    for node in nodes.values():
+        if node["type"] == "trail_segment" and "sensitivity" not in node:
+            for ref in node.get("via") or []:
+                marked = (nodes.get(ref, {}).get("sensitivity")
+                          if isinstance(ref, str) else None)
+                if marked:
+                    node["sensitivity"] = marked
+                    break
 
     # §20.3 normalization: related_to is the one symmetric type — endpoints
     # sort lexicographically before anything else sees the edge, so
@@ -728,10 +1035,13 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 f"supporting for step {step} (§9.4/§20.3)")
         role_seen[key] = edge["type"]
 
-    # §20 step 11: broken curated links are errors; only references to
-    # user-deletable records (trail segments, artifacts, encounters, §5.2)
-    # may downgrade to warnings — none of those kinds is curated in Phase 1.
+    # §20 step 11: a broken reference classifies by the ref's ORIGIN — a
+    # journal- or segment-derived edge (lenient) downgrades to a warning
+    # and is skipped, whatever it targets (§5.2, §34.2); a ref authored in
+    # living curation is an error, unless it targets a user-deletable
+    # record kind (trail segments, artifacts, encounters).
     DELETABLE = {"trail_segment", "artifact", "encounter"}
+    dropped: set = set()
     for edge in edges:
         if edge["type"] not in EDGE_TYPES:
             errors.append(
@@ -742,9 +1052,18 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             for endpoint, allowed in zip(("source", "target"), rule):
                 kind = id_type(edge[endpoint]) if edge[endpoint] else None
                 if kind is not None and kind not in allowed:
-                    errors.append(
-                        f"{edge['_origin']}: {edge['type']} {endpoint} "
-                        f"{edge[endpoint]!r} must be {'/'.join(sorted(allowed))}")
+                    if edge.get("_lenient"):
+                        # §20.3: a journal-derived edge whose ref resolves
+                        # outside the matrix row is skipped with a warning.
+                        warnings.append(
+                            f"{edge['_origin']}: {edge['type']} {endpoint} "
+                            f"{edge[endpoint]!r} outside the §10.2 row — "
+                            "skipped")
+                        dropped.add(id(edge))
+                    else:
+                        errors.append(
+                            f"{edge['_origin']}: {edge['type']} {endpoint} "
+                            f"{edge[endpoint]!r} must be {'/'.join(sorted(allowed))}")
         for endpoint in ("source", "target"):
             ref = edge[endpoint]
             if ref in nodes:
@@ -752,7 +1071,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             kind = id_type(ref) if ref else None
             if kind is None:
                 errors.append(f"{edge['_origin']}: reference {ref!r} has no §10.1 prefix")
-            elif kind in DELETABLE:
+            elif edge.get("_lenient") or kind in DELETABLE:
                 warnings.append(
                     f"{edge['_origin']}: {ref} missing — skipped (deletion is the owner's right)")
             else:
@@ -761,9 +1080,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     f"-[{edge['type']}]-> {edge['target']} ({ref} not found)")
 
     edges = [e for e in edges
-             if e["source"] in nodes and e["target"] in nodes]
+             if e["source"] in nodes and e["target"] in nodes
+             and id(e) not in dropped]
     for edge in edges:
         edge.pop("_origin", None)
+        edge.pop("_lenient", None)
 
     # §10.4: fields = union of the fields of the region nodes reachable
     # through the kind's listed refs; chains bottom out at the §10.1
@@ -787,6 +1108,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
 
     for node_id, node in nodes.items():
         node["fields"] = sorted(fields_of(node_id))
+        node.pop("_origin", None)
 
     # §20.1: generated_at is the fold's as-of date at UTC midnight, never
     # the wall clock (determinism: same inputs ⇒ byte-identical output).
@@ -796,7 +1118,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         "format": "atlas-graph",
         "version": 1,
         "nodes": sorted(nodes.values(), key=lambda n: n["id"]),
-        "edges": sorted(edges, key=lambda e: (e["source"], e["target"], e["type"])),
+        # §20.3 determinism: canonical identity order — type, source,
+        # target, then the meta discriminant.
+        "edges": sorted(edges, key=lambda e: (
+            e["type"], e["source"], e["target"], e.get("context") or "",
+            e.get("order") or 0, e.get("step") or "")),
         "trails": [],       # §29 Phase 3
         "state": {},        # §29 Phase 3 (fold, §14.5-14.8)
         "influence": {},    # §29 Phase 4 (§9.10)

@@ -690,6 +690,24 @@ INVALID_INSTANCES = {
             ' "type": "primary_for", "provenance": ["question:q"]}],',
         ),
     },
+    "bad-graph-unordered-edges": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": ["knowledge"], "kind": "docs", "url": "",'
+            ' "status": "active"},'
+            ' {"id": "part:m/x", "type": "material_part", "title": "X",'
+            ' "fields": [], "material": "material:m"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"]},'
+            ' {"source": "material:m", "target": "part:m/x",'
+            ' "type": "has_part", "provenance": ["material:m"]}],',
+        ),
+    },
     "bad-graph-unsorted-related-to": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',
@@ -1080,11 +1098,11 @@ class SchemaValidatorTests(unittest.TestCase):
         )
         graph = graph.replace(
             '"edges": [],',
-            '"edges": [{"source": "encounter:e", "target": "material:m",'
-            ' "type": "visited", "provenance": ["encounter:e"]},'
-            ' {"source": "trail-segment:2026-07-16-001",'
+            '"edges": [{"source": "trail-segment:2026-07-16-001",'
             ' "target": "material:m", "type": "via",'
-            ' "provenance": ["trail-segment:2026-07-16-001"]}],',
+            ' "provenance": ["trail-segment:2026-07-16-001"]},'
+            ' {"source": "encounter:e", "target": "material:m",'
+            ' "type": "visited", "provenance": ["encounter:e"]}],',
         )
         with tempfile.TemporaryDirectory() as directory:
             materialize({"graph/atlas-graph.json": graph}, Path(directory))

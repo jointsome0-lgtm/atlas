@@ -764,5 +764,244 @@ class BuilderIntegrationTests(unittest.TestCase):
             self.assertEqual([], list(Path(directory).glob("*.tmp")))
 
 
+def _materialize(tree: dict) -> tempfile.TemporaryDirectory:
+    directory = tempfile.TemporaryDirectory()
+    for rel, content in tree.items():
+        path = Path(directory.name) / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return directory
+
+
+_CONCEPT = ("---\nid: concept:%s\ntype: concept\n"
+            "title: %s (Vera Example)\n---\n")
+_MATERIAL = ("---\nid: material:%s\ntype: material\n"
+             "title: %s (Vera Example)\nkind: docs\nurl: \"\"\n"
+             "status: active\noverall_concepts:\n  - concept:c\n"
+             "parts: []\n---\n")
+_ARTIFACT_ROW = json.dumps({
+    "id": "artifact:2026-07-16-001", "type": "note", "path": "p",
+    "observed_at": "2026-07-16", "summary": "s (Vera Example)",
+    "touches": ["concept:c"], "supports_state_updates": [],
+    "evidence_strength": "applied",
+})
+_QUESTION_ROW = json.dumps({
+    "id": "question:q", "type": "question", "text": "Vera Example?",
+    "created_at": "2026-07-16", "pulls": ["concept:c"],
+    "source": {"artifact": "artifact:2026-07-16-001"},
+})
+
+
+def _encounter_row(depth="applied", target="material:m", context=None):
+    row = {"id": "encounter:2026-07-16-001", "date": "2026-07-16",
+           "target": target, "depth": depth, "mode": "question-driven"}
+    if context is not None:
+        row["context"] = context
+    return json.dumps(row)
+
+
+class JournalProjectionTests(unittest.TestCase):
+    # §20 step 8 (#31): the structural journal projection — rows become
+    # nodes plus their §10.2 derived edges and §11.2-§11.3 role edges;
+    # state folds stay §29 Phase 3/4.
+
+    def _edges(self, graph, kind):
+        return [e for e in graph["edges"] if e["type"] == kind]
+
+    def test_journal_rows_become_nodes_and_derived_edges(self):
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+            "state/questions.jsonl": _QUESTION_ROW + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                context={"question": "question:q"}) + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        kinds = {n["id"]: n["type"] for n in graph["nodes"]}
+        self.assertEqual("artifact", kinds["artifact:2026-07-16-001"])
+        self.assertEqual("question", kinds["question:q"])
+        self.assertEqual("encounter", kinds["encounter:2026-07-16-001"])
+        self.assertEqual(1, len(self._edges(graph, "visited")))
+        self.assertEqual(1, len(self._edges(graph, "pulled_by")))
+        self.assertEqual(1, len(self._edges(graph, "influences")))
+        # §11.2: deep use (applied) folds the encounter target primary
+        # for the cited question, provenance = the deriving encounter.
+        primary = self._edges(graph, "primary_for")
+        self.assertEqual(1, len(primary))
+        self.assertEqual("material:m", primary[0]["source"])
+        self.assertEqual("question:q", primary[0]["target"])
+        self.assertEqual(["encounter:2026-07-16-001"],
+                         primary[0]["provenance"])
+        # §10.4: an encounter's fields are its target's fields.
+        encounter = next(n for n in graph["nodes"]
+                         if n["type"] == "encounter")
+        self.assertEqual(["knowledge"], encounter["fields"])
+
+    def test_shallow_question_context_folds_supporting(self):
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+            "state/questions.jsonl": _QUESTION_ROW + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                depth="read", context={"question": "question:q"}) + "\n",
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], self._edges(graph, "primary_for"))
+        supporting = self._edges(graph, "supporting_for")
+        self.assertEqual(1, len(supporting))
+        self.assertEqual("material:m", supporting[0]["source"])
+        self.assertEqual("question:q", supporting[0]["target"])
+
+    def test_trail_segment_derives_movement_and_roles(self):
+        # §9.9/§11.3: via materials are primary; the target of an
+        # encounter citing a via artifact, not itself in via, supports —
+        # provenance lists segment and encounter (§10.3).
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "materials/n.md": _MATERIAL % ("n", "N"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\ncore_concepts:\n  - concept:a\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - material:m\n  - artifact:2026-07-16-001\n"
+                "reason: momentum (Vera Example)\n---\n"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                target="material:n",
+                context={"artifact": "artifact:2026-07-16-001"}) + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        seg = "trail-segment:2026-07-16-001"
+        moved = self._edges(graph, "moved_to")
+        self.assertEqual([("concept:a", "concept:b", [seg])],
+                         [(e["source"], e["target"], e["provenance"])
+                          for e in moved])
+        self.assertEqual([(seg, "material:m")],
+                         [(e["source"], e["target"])
+                          for e in self._edges(graph, "via")])
+        self.assertEqual([(seg, "artifact:2026-07-16-001")],
+                         [(e["source"], e["target"])
+                          for e in self._edges(graph, "produced_artifact")])
+        primary = self._edges(graph, "primary_for")
+        self.assertEqual([("material:m", seg, [seg])],
+                         [(e["source"], e["target"], e["provenance"])
+                          for e in primary])
+        supporting = self._edges(graph, "supporting_for")
+        self.assertEqual(
+            [("material:n", seg,
+              ["encounter:2026-07-16-001", seg])],
+            [(e["source"], e["target"], e["provenance"])
+             for e in supporting])
+        # §10.4: segment fields = from ∪ to.
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual(["knowledge"], segment["fields"])
+
+    def test_dangling_journal_ref_warns_and_skips(self):
+        # §20 step 11: a journal-row ref classifies by origin — missing
+        # target is a warning and the edge is skipped, never a failure.
+        with _materialize({
+            "state/encounters.jsonl": _encounter_row(
+                target="material:gone") + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(any("material:gone missing" in w for w in warnings),
+                        warnings)
+        self.assertEqual([], graph["edges"])
+        self.assertEqual(1, len(graph["nodes"]))
+
+    def test_byte_identical_row_folds_once_with_warning(self):
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n"
+                                     + _ARTIFACT_ROW + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(any("folded once (§20.1)" in w for w in warnings),
+                        warnings)
+        self.assertEqual(1, len([n for n in graph["nodes"]
+                                 if n["type"] == "artifact"]))
+
+    def test_malformed_journal_row_fails_the_build(self):
+        with _materialize({
+            "state/artifacts.jsonl": "not json\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(any("invalid JSONL row" in e for e in errors), errors)
+
+    def test_edges_emit_in_canonical_identity_order(self):
+        # §20.3 determinism: type, source, target, then meta discriminant.
+        graph, errors, _ = build_atlas_graph.build(DEMO)
+        self.assertEqual([], errors)
+        keys = [(e["type"], e["source"], e["target"],
+                 e.get("context") or "", e.get("order") or 0,
+                 e.get("step") or "") for e in graph["edges"]]
+        self.assertEqual(sorted(keys), keys)
+
+    def test_built_journal_instance_passes_the_boundary(self):
+        # Roundtrip: the builder's own emission over a journal-bearing
+        # instance must satisfy the persisted-format boundary (V1).
+        import validate_atlas
+        with _materialize({
+            "atlas/concepts/c.md": _CONCEPT % ("c", "C"),
+            "atlas/materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+            "state/questions.jsonl": _QUESTION_ROW + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                context={"question": "question:q"}) + "\n",
+        }) as directory:
+            root = Path(directory)
+            graph, errors, _ = build_atlas_graph.build(root / "atlas")
+            self.assertEqual([], errors)
+            (root / "graph").mkdir()
+            (root / "graph" / "atlas-graph.json").write_text(
+                json.dumps(graph, indent=2) + "\n", encoding="utf-8")
+            errors, warnings, _ = validate_atlas.validate_instance(root)
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+
+    def test_trail_with_classed_via_is_emitted_classed(self):
+        # §20 step 12/§32.6: a segment whose via cites a classed material
+        # carries the class.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": (_MATERIAL % ("m", "M")).replace(
+                "status: active\n", "status: active\nsensitivity: medical\n"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - material:m\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual("medical", segment["sensitivity"])
+
+
 if __name__ == "__main__":
     unittest.main()
