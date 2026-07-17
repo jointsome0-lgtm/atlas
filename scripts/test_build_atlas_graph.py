@@ -877,7 +877,11 @@ class JournalProjectionTests(unittest.TestCase):
                 "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
                 "via:\n  - material:m\n  - artifact:2026-07-16-001\n"
                 "reason: momentum (Vera Example)\n---\n"),
-            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+            # §9.9: the via artifact co-touches the origin — the movement
+            # is evidenced by the segment's own context.
+            "state/artifacts.jsonl": _ARTIFACT_ROW.replace(
+                '"touches": ["concept:c"]',
+                '"touches": ["concept:a", "concept:c"]') + "\n",
             "state/encounters.jsonl": _encounter_row(
                 target="material:n",
                 context={"artifact": "artifact:2026-07-16-001"}) + "\n",
@@ -1208,6 +1212,114 @@ class JournalProjectionTests(unittest.TestCase):
                         if n["type"] == "question")
         self.assertEqual({"artifact": "artifact:missing"},
                          question["source"])
+
+    def test_unevidenced_trail_origin_warns(self):
+        # §9.9/§13.2 step 9: every listed origin must be evidenced by the
+        # segment's own via context — a from with no artifact evidence is
+        # a proposed correction (warning), never a build failure (§5.2).
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - material:m\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("from concept:a is not evidenced" in w for w in warnings),
+            warnings)
+        # The trail stays sacred: the segment and its edges still emit.
+        self.assertEqual(1, len(self._edges(graph, "moved_to")))
+
+    def test_question_pull_evidences_trail_origin(self):
+        # §9.9's second clause: the origin is the concept whose question
+        # the via artifact answers — pulled by a question sourced from it.
+        row = _ARTIFACT_ROW.replace('"touches": ["concept:c"]',
+                                    '"touches": []')
+        question = _QUESTION_ROW.replace('"pulls": ["concept:c"]',
+                                         '"pulls": ["concept:a"]')
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - artifact:2026-07-16-001\n"
+                "reason: momentum (Vera Example)\n---\n"),
+            "state/artifacts.jsonl": row + "\n",
+            "state/questions.jsonl": question + "\n",
+        }) as directory:
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], [w for w in warnings if "not evidenced" in w])
+
+    def test_deleted_via_evidence_stays_quiet(self):
+        # §34.2: when a via artifact was deleted the origin is
+        # unverifiable — retained history keeps its dangling warning but
+        # never gains an unevidenced-origin complaint.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - artifact:2026-07-15-009\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], [w for w in warnings if "not evidenced" in w])
+
+    def test_artifact_row_requires_relation_arrays(self):
+        # §9.6: touches and supports_state_updates are required — an
+        # absent array is a malformed row, never an artifact silently
+        # projected as touching nothing.
+        row = json.loads(_ARTIFACT_ROW)
+        del row["touches"], row["supports_state_updates"]
+        with _materialize({
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("artifact row requires touches (§9.6)" in e
+                for e in errors), errors)
+        self.assertTrue(
+            any("artifact row requires supports_state_updates (§9.6)" in e
+                for e in errors), errors)
+
+    def test_question_row_requires_pulls(self):
+        # §9.8: pulls is required — a question that pulls nothing is a
+        # malformed row, not an empty-field node.
+        row = json.loads(_QUESTION_ROW)
+        del row["pulls"]
+        with _materialize({
+            "state/questions.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("question row requires pulls (§9.8)" in e for e in errors),
+            errors)
 
     def test_trail_with_classed_via_is_emitted_classed(self):
         # §20 step 12/§32.6: a segment whose via cites a classed material

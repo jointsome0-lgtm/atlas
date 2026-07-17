@@ -164,7 +164,9 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     edges: list[dict] = []
     projections: dict[str, str] = {}  # zone -> figure region (§20 step 12, §32)
     field_refs: dict[str, list] = {}  # node -> refs its §10.4 fields derive from
-    segments: list = []  # (id, via list, origin) — §11.3 role derivation
+    segments: list = []  # (id, origins, via, path) — §9.9/§11.3 derivation
+    artifact_touches: dict = {}  # artifact id -> touched region ids (§9.9)
+    question_records: dict = {}  # question id -> (source object, pulls)
     encounter_records: list = []  # (id, target, depth, ctx question/artifact, origin)
     activity_dates: list = []  # §20.1 — the dated-input universe
 
@@ -543,7 +545,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                              lenient=True)
                 field_refs[node_id] = trail_origins + (
                     [destination] if isinstance(destination, str) else [])
-                segments.append((node_id, trail_via, path))
+                segments.append((node_id, trail_origins, trail_via,
+                                 path))
 
             if expected == "zone":
                 # §20 step 12: the silhouette mapping rides in the graph so
@@ -785,6 +788,14 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         aid = row.get("id")
         if not isinstance(aid, str):
             continue
+        for field in ("touches", "supports_state_updates"):
+            # §9.6: both relation arrays are required on every evidence
+            # row — an absent one is a malformed row, never an artifact
+            # silently projected as touching nothing.
+            if row.get(field) is None:
+                errors.append(f"{origin}: artifact row requires {field} "
+                              "(§9.6)")
+        artifact_touches[aid] = set(touches)
         for target in touches:
             add_edge(aid, target, "influences", origin, [aid], lenient=True)
         for target in supports_updates:
@@ -870,11 +881,16 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             if row.get(field) is None:
                 errors.append(f"{origin}: question row requires {field} "
                               "(§9.8/§10.4)")
+        if row.get("pulls") is None:
+            # §9.8: pulls is required — a question that pulls nothing is a
+            # malformed row, not an empty-field node.
+            errors.append(f"{origin}: question row requires pulls (§9.8)")
         add_node(row.get("id"), "question", "", origin,
                  {k: v for k, v in extra.items() if v is not None})
         qid = row.get("id")
         if not isinstance(qid, str):
             continue
+        question_records[qid] = (source_ref or {}, pulls)
         for region in pulls:
             add_edge(region, qid, "pulled_by", origin, [qid], lenient=True)
         field_refs[qid] = pulls
@@ -1007,12 +1023,33 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     # citing one of the segment's via artifacts, not itself in via, is
     # supporting. Provenance lists the segment, and for the supporting
     # join the deriving encounters too (§10.3).
-    for seg_id, seg_via, origin in segments:
+    for seg_id, seg_origins, seg_via, origin in segments:
         seg_via = [quietly(ref) for ref in seg_via]
         via_materials = {ref for ref in seg_via
                          if not ref.startswith("artifact:")}
         via_artifacts = {ref for ref in seg_via
                          if ref.startswith("artifact:")}
+
+        # §9.9/§13.2 step 9: every listed origin must be evidenced by the
+        # segment's own context — co-touched in a via artifact, or the
+        # concept whose question the artifact answers. An unevidenced
+        # origin is a proposed correction, never a build failure (§5.2),
+        # and deleted evidence rows keep history quiet (§34.2).
+        emitted_via_artifacts = {aid for aid in via_artifacts
+                                 if aid in artifact_touches}
+        if emitted_via_artifacts == via_artifacts:
+            evidenced: set = set()
+            for aid in sorted(emitted_via_artifacts):
+                evidenced |= {quietly(ref)
+                              for ref in artifact_touches[aid]}
+                for _qid, (source_ref, pulls) in question_records.items():
+                    if quietly(source_ref.get("artifact")) == aid:
+                        evidenced |= {quietly(ref) for ref in pulls}
+            for raw in seg_origins:
+                if quietly(raw) not in evidenced:
+                    warnings.append(
+                        f"{origin}: from {raw} is not evidenced by the "
+                        "segment's own via context (§9.9/§13.2 step 9)")
         for material in sorted(via_materials):
             add_edge(material, seg_id, "primary_for", origin, [seg_id],
                      lenient=True)
