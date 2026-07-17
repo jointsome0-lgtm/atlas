@@ -6,13 +6,15 @@ reference validation, deterministic graph JSON. Journal folding, influence and
 frontier are later phases — their §10 keys are emitted empty so the output
 shape is final from the first build.
 
-stdlib only (§20): json, pathlib, re.
+stdlib only (§20): json, os, pathlib, re, time.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+import time
 from pathlib import Path
 
 from frontmatter import FrontmatterError, frontmatter_body, parse_frontmatter
@@ -726,6 +728,32 @@ def main() -> int:
 
     curated = Path(args[0]).resolve()
     output = Path(args[1]).resolve()
+    # §25.6 (#36): the instance is single-writer — every writing flow takes
+    # .atlas-lock at the instance root, acquire-if-absent (O_CREAT|O_EXCL),
+    # and refuses when it is already held; stale locks are removed by hand.
+    lock_fd = None
+    lock = curated / ".atlas-lock"
+    if not check_only:
+        try:
+            lock_fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            print(f"ERROR: {lock} is already held — the instance is "
+                  f"single-writer (§25.6); if its holder crashed, inspect "
+                  f"and remove the lock by hand", file=sys.stderr)
+            return 1
+        os.write(lock_fd, (json.dumps({
+            "pid": os.getpid(),
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }) + "\n").encode("utf-8"))
+    try:
+        return _run(curated, output, check_only)
+    finally:
+        if lock_fd is not None:
+            os.close(lock_fd)
+            lock.unlink(missing_ok=True)
+
+
+def _run(curated: Path, output: Path, check_only: bool) -> int:
     try:
         graph, errors, warnings = build(curated)
     except FrontmatterError as exc:

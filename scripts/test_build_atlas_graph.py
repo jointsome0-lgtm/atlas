@@ -502,6 +502,30 @@ class BuilderIntegrationTests(unittest.TestCase):
             any("changes kind" in error for error in errors), errors
         )
 
+    def test_second_writer_refuses_on_the_instance_lock(self):
+        # §25.6 (#36): a writing run takes .atlas-lock at the instance root
+        # and a second concurrent writer refuses with exit 1.
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / ".atlas-lock").write_text(
+                '{"pid": 1, "started_at": "2026-07-17T00:00:00Z"}\n',
+                encoding="utf-8",
+            )
+            output = Path(directory) / "out" / "atlas-graph.json"
+            argv = ["build_atlas_graph.py", directory, str(output)]
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(build_atlas_graph.sys, "argv", argv),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+            ):
+                code = build_atlas_graph.main()
+            self.assertEqual(1, code)
+            self.assertIn(".atlas-lock", stderr.getvalue())
+            self.assertFalse(output.exists())
+            # the loser must not have removed the holder's lock
+            self.assertTrue((Path(directory) / ".atlas-lock").exists())
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.

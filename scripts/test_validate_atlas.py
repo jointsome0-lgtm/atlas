@@ -554,6 +554,20 @@ INVALID_INSTANCES = {
             '"version": 1,\n  "generated_at": "2026-07-16T12:34:56Z",',
         ),
     },
+    "bad-graph-fields-mismatch": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"],'
+            ' "weight": "unassessed"}],',
+        ),
+    },
     "bad-graph-missing-suggested-next": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

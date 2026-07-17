@@ -412,6 +412,66 @@ _ZONE_ID_RE = re.compile(rf"^zone:{_SLUG}$")
 
 
 
+_REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
+                    "pattern": {"body"}}
+_FIELD_DERIVED_KINDS = {"material", "material_part", "suggested_route",
+                        "direction", "probe"}
+_PART_EDGE_ROLES = {"prerequisite_of", "extends", "contradicts", "implements",
+                    "explains", "demonstrates", "critiques", "mentions"}
+
+
+def _graph_field_errors(instance: dict, path: Path) -> list[str]:
+    """§10.4: fields membership is derivable from the emitted edges —
+    recompute it for the derived kinds and require the persisted value to
+    match (region kinds are pinned by the schema itself)."""
+    errors: list[str] = []
+    types = {}
+    for node in _as_list(instance.get("nodes")):
+        if isinstance(node, dict) and isinstance(node.get("id"), str):
+            types[node["id"]] = node.get("type")
+    refs: dict = {}
+    for edge in _as_list(instance.get("edges")):
+        if not isinstance(edge, dict):
+            continue
+        src, tgt = edge.get("source"), edge.get("target")
+        kind = edge.get("type")
+        if not (isinstance(src, str) and isinstance(tgt, str)):
+            continue
+        if kind in ("overall_concept", "has_part"):
+            refs.setdefault(src, []).append(tgt)
+        elif (kind in _PART_EDGE_ROLES
+                and types.get(src) == "material_part"):
+            refs.setdefault(src, []).append(tgt)
+        elif kind in ("step_of_route", "part_of_direction", "probed_by"):
+            refs.setdefault(tgt, []).append(src)
+
+    def fields_of(node_id, seen=frozenset()):
+        if node_id in seen:
+            return set()
+        registry = _REGISTRY_FIELDS.get(types.get(node_id))
+        if registry is not None:
+            return set(registry)
+        result = set()
+        for ref in refs.get(node_id, []):
+            result |= fields_of(ref, seen | {node_id})
+        return result
+
+    for node in _as_list(instance.get("nodes")):
+        if not (isinstance(node, dict) and isinstance(node.get("id"), str)):
+            continue
+        if types.get(node["id"]) not in _FIELD_DERIVED_KINDS:
+            continue
+        expected = sorted(fields_of(node["id"]))
+        found = node.get("fields")
+        if (isinstance(found, list)
+                and sorted(x for x in found if isinstance(x, str)) != expected):
+            errors.append(
+                f"{path}: node {node['id']} fields {found!r} do not match "
+                f"the §10.4 derivation {expected!r}"
+            )
+    return errors
+
+
 def _as_dict(value):
     return value if isinstance(value, dict) else {}
 
@@ -672,6 +732,7 @@ def validate_instance(root: Path):
                 errors.extend(_snapshot_dangling_refs(instance, path))
                 errors.extend(_snapshot_state_kind_errors(instance, path))
             if schema_name == "atlas-graph" and isinstance(instance, dict):
+                errors.extend(_graph_field_errors(instance, path))
                 # §10: edge endpoints are node ids consumers resolve inside
                 # the same file — a dangling endpoint never leaves the build.
                 node_ids: set = set()
