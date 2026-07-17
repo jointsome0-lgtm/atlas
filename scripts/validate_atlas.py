@@ -929,6 +929,16 @@ def validate_instance(root: Path):
                     and isinstance(edge.get("source"), str)
                     and isinstance(edge.get("target"), str)
                 }
+                # §10.2/§10.4: an embedded part's parent material owns the
+                # has_part edge — if both nodes are emitted, so is the edge.
+                has_part_pairs = {
+                    (edge.get("source"), edge.get("target"))
+                    for edge in _as_list(instance.get("edges"))
+                    if isinstance(edge, dict)
+                    and edge.get("type") == "has_part"
+                    and isinstance(edge.get("source"), str)
+                    and isinstance(edge.get("target"), str)
+                }
                 # §34.4 at the boundary: formerly is per-kind, never a
                 # living id, and one retired id has one survivor.
                 formerly_survivors: dict = {}
@@ -946,6 +956,14 @@ def validate_instance(root: Path):
                             f"{path}: encounter {nid} target "
                             f"{node['target']} has no visited edge "
                             "(§10.2/§10.4)"
+                        )
+                    if (node.get("type") == "material_part"
+                            and isinstance(node.get("material"), str)
+                            and node["material"] in node_ids
+                            and (node["material"], nid) not in has_part_pairs):
+                        errors.append(
+                            f"{path}: part {nid} has no has_part edge from "
+                            f"{node['material']} (§10.2/§10.4)"
                         )
                     for old_id in _as_list(node.get("formerly")):
                         if not isinstance(old_id, str):
