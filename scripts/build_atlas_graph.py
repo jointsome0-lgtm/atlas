@@ -247,21 +247,24 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             add_edge(helper_id, owner_id, "supports", path, [owner_id],
                      note=note)
 
-    def id_list(value, origin, field):
-        # Curated id lists fail closed (§25.8): a scalar value or a
+    def id_list(value, origin, field, noun="id"):
+        # Curated string lists fail closed (§25.8): a scalar value or a
         # non-string item is a build error, never char iteration or an
         # unhashable ref downstream.
         if value is None:
             return []
         if not isinstance(value, list):
-            errors.append(f"{origin}: {field} must be a list of ids")
+            errors.append(f"{origin}: {field} must be a list of {noun}s")
             return []
         result = []
         for item in value:
             if isinstance(item, str):
                 result.append(item)
             else:
-                errors.append(f"{origin}: {field} item {item!r} is not an id")
+                errors.append(
+                    f"{origin}: {field} item {item!r} is not a {noun}"
+                    if noun != "id" else
+                    f"{origin}: {field} item {item!r} is not an id")
         return result
 
     # §20 steps 1-2, 4-5: curated kinds. Zones/patterns dirs are read the same
@@ -299,7 +302,10 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             if meta.get("sensitivity") is not None:
                 extra["sensitivity"] = meta["sensitivity"]
             if expected in ("concept", "pattern"):
-                extra["aliases"] = meta.get("aliases") or []
+                # §10.4: aliases embed as an array of strings — gate the
+                # authored shape before it reaches the emitted node.
+                extra["aliases"] = id_list(meta.get("aliases"), path,
+                                           "aliases", noun="string")
             if expected == "zone":
                 extra["notes"] = body  # file body: care notes (§32.2)
             if expected == "material":
@@ -328,8 +334,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             add_node(meta.get("id"), expected, meta.get("title", ""), path,
                      extra or None)
             node_id = meta.get("id")
-            if node_id is None:
-                continue
+            if not isinstance(node_id, str):
+                continue  # add_node already recorded the shape error
 
             if expected == "concept":
                 for rel in meta.get("related_concepts") or []:
