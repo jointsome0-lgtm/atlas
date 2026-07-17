@@ -3,7 +3,6 @@ import io
 import json
 import tempfile
 import unittest
-from datetime import datetime as RealDateTime
 from pathlib import Path
 from unittest import mock
 
@@ -15,20 +14,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEMO = ROOT / "fixtures" / "demo-instance"
 
 
-class FixedDateTime:
-    @classmethod
-    def now(cls, tz=None):
-        return RealDateTime(2026, 7, 16, 12, 0, 0, tzinfo=tz)
-
-
 class BuilderIntegrationTests(unittest.TestCase):
     def test_builder_uses_shared_parser(self):
         self.assertIs(parse_frontmatter, build_atlas_graph.parse_frontmatter)
 
     def test_graph_envelope_is_first_and_build_is_deterministic(self):
-        with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-            first, first_errors, first_warnings = build_atlas_graph.build(DEMO)
-            second, second_errors, second_warnings = build_atlas_graph.build(DEMO)
+        first, first_errors, first_warnings = build_atlas_graph.build(DEMO)
+        second, second_errors, second_warnings = build_atlas_graph.build(DEMO)
         self.assertEqual([], first_errors)
         self.assertEqual([], second_errors)
         self.assertEqual(first_warnings, second_warnings)
@@ -36,14 +28,16 @@ class BuilderIntegrationTests(unittest.TestCase):
         self.assertEqual(["format", "version"], list(first)[:2])
         self.assertEqual("atlas-graph", first["format"])
         self.assertEqual(1, first["version"])
+        # §20.1: no dated inputs are read in this phase, so generated_at is
+        # absent — never the wall clock.
+        self.assertNotIn("generated_at", first)
 
     def test_built_graph_validates_against_schema(self):
         # The builder's own emission must pass the persisted-format boundary
         # (§25.7): schema plus the validator's graph cross-checks.
         import validate_atlas
 
-        with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-            graph, errors, _ = build_atlas_graph.build(DEMO)
+        graph, errors, _ = build_atlas_graph.build(DEMO)
         self.assertEqual([], errors)
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory) / "graph" / "atlas-graph.json"
@@ -66,8 +60,7 @@ class BuilderIntegrationTests(unittest.TestCase):
                 "title: Bad (Vera Example)\n---\n",
                 encoding="utf-8",
             )
-            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-                _, errors, _ = build_atlas_graph.build(Path(directory))
+            _, errors, _ = build_atlas_graph.build(Path(directory))
         for field in ("kind", "url", "status"):
             self.assertTrue(
                 any(f"material requires {field}" in error for error in errors),
@@ -88,8 +81,7 @@ class BuilderIntegrationTests(unittest.TestCase):
                 "    primary_materials:\n      - id: material:x\n---\n",
                 encoding="utf-8",
             )
-            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-                _, errors, _ = build_atlas_graph.build(Path(directory))
+            _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
             any("is not a material id" in error for error in errors), errors
         )
@@ -107,8 +99,7 @@ class BuilderIntegrationTests(unittest.TestCase):
                 "      - part:docs/old-intro\n---\n",
                 encoding="utf-8",
             )
-            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-                graph, errors, _ = build_atlas_graph.build(Path(directory))
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertEqual([], errors)
         part = next(n for n in graph["nodes"] if n["id"] == "part:docs/intro")
         self.assertEqual(["part:docs/old-intro"], part["formerly"])
@@ -126,8 +117,7 @@ class BuilderIntegrationTests(unittest.TestCase):
                 "material_roles:\n  - material:m\n---\n",
                 encoding="utf-8",
             )
-            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-                _, errors, _ = build_atlas_graph.build(Path(directory))
+            _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
             any("is not a role mapping" in error for error in errors), errors
         )
@@ -150,8 +140,7 @@ class BuilderIntegrationTests(unittest.TestCase):
             base.mkdir(parents=True)
             for name, content in concepts.items():
                 (base / name).write_text(content, encoding="utf-8")
-            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-                _, errors, _ = build_atlas_graph.build(Path(directory))
+            _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
             any("is still a living id" in error for error in errors), errors
         )
@@ -170,8 +159,7 @@ class BuilderIntegrationTests(unittest.TestCase):
                 "title: A (Vera Example)\nformerly: concept:gone\n---\n",
                 encoding="utf-8",
             )
-            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-                _, errors, _ = build_atlas_graph.build(Path(directory))
+            _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
             any("must be a list of ids" in error for error in errors), errors
         )
@@ -188,8 +176,7 @@ class BuilderIntegrationTests(unittest.TestCase):
                 "status: active\n---\n",
                 encoding="utf-8",
             )
-            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
-                _, errors, _ = build_atlas_graph.build(Path(directory))
+            _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
             any("outside the §9.2 vocabulary" in error for error in errors),
             errors,
@@ -202,7 +189,6 @@ class BuilderIntegrationTests(unittest.TestCase):
             stderr = io.StringIO()
             argv = ["build_atlas_graph.py", str(DEMO), str(output)]
             with (
-                mock.patch.object(build_atlas_graph, "datetime", FixedDateTime),
                 mock.patch.object(build_atlas_graph.sys, "argv", argv),
                 contextlib.redirect_stdout(stdout),
                 contextlib.redirect_stderr(stderr),

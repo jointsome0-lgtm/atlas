@@ -6,14 +6,13 @@ reference validation, deterministic graph JSON. Journal folding, influence and
 frontier are later phases — their §10 keys are emitted empty so the output
 shape is final from the first build.
 
-stdlib only (§20): json, pathlib, datetime, re.
+stdlib only (§20): json, pathlib, re.
 """
 from __future__ import annotations
 
 import json
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 from frontmatter import FrontmatterError, frontmatter_body, parse_frontmatter
@@ -519,10 +518,13 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             else:
                 retired[old] = node_id
 
+    # §20.1: generated_at is the fold's as-of date at UTC midnight, never
+    # the wall clock (determinism: same inputs ⇒ byte-identical output).
+    # This phase reads no dated records, so the key is absent — consumers
+    # must tolerate that (§10).
     graph = {
         "format": "atlas-graph",
         "version": 1,
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "nodes": sorted(nodes.values(), key=lambda n: n["id"]),
         "edges": sorted(edges, key=lambda e: (e["source"], e["target"], e["type"])),
         "trails": [],       # §29 Phase 3

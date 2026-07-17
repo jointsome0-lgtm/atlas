@@ -748,8 +748,17 @@ def validate_instance(root: Path):
                             and isinstance(edge.get("target"), str)
                             and isinstance(edge.get("source"), str)
                             and isinstance(edge.get("order"), int)):
-                        step_orders.setdefault(
-                            edge["target"], {})[edge["order"]] = edge["source"]
+                        orders = step_orders.setdefault(edge["target"], {})
+                        if edge["order"] in orders:
+                            # §9.4/§10.3: order positions define the route
+                            # path — a duplicate makes it ambiguous.
+                            errors.append(
+                                f"{path}: duplicate step order "
+                                f"{edge['order']} on {edge['target']} "
+                                "(§9.4/§10.3)"
+                            )
+                            continue
+                        orders[edge["order"]] = edge["source"]
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue

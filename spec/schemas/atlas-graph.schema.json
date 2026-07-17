@@ -6,7 +6,7 @@
   "properties": {
     "format": {"const": "atlas-graph"},
     "version": {"type": "integer", "const": 1},
-    "generated_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "generated_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$", "description": "The fold's as-of date at UTC midnight (§20.1); absent in a build with no dated input."},
     "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
     "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}},
     "trails": {"type": "array"},
