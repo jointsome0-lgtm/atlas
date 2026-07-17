@@ -628,6 +628,27 @@ INVALID_INSTANCES = {
             ' "provenance": ["encounter:e"]}],',
         ),
     },
+    "bad-curated-two-survivor-formerly": {
+        "atlas/concepts/example.md": VALID_CONCEPT.replace(
+            "aliases: []",
+            "aliases: []\nformerly:\n  - concept:old",
+        ),
+        "atlas/concepts/other.md": VALID_CONCEPT.replace(
+            "concept:example", "concept:other",
+        ).replace(
+            "aliases: []",
+            "aliases: []\nformerly:\n  - concept:old",
+        ),
+    },
+    "bad-curated-living-formerly": {
+        "atlas/concepts/example.md": VALID_CONCEPT.replace(
+            "aliases: []",
+            "aliases: []\nformerly:\n  - concept:other",
+        ),
+        "atlas/concepts/other.md": VALID_CONCEPT.replace(
+            "concept:example", "concept:other",
+        ),
+    },
     "bad-graph-off-type-discriminant": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

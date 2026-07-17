@@ -657,8 +657,21 @@ def validate_instance(root: Path):
     # id checks run after the whole curated pass — a stale curated ref
     # resolves through the map (a warning, never an error), mirroring
     # the builder.
-    retired: dict = {}
+    retired: dict = {}  # old id -> (survivor id, declaring path)
+    living: set = set()
     route_checks: list = []
+
+    def _claim_retired(old, survivor, origin):
+        # §34.4: one retired id has one survivor — a 1->n redirect is
+        # unrepresentable and the builder rejects it.
+        prior = retired.get(old)
+        if prior is not None and prior[0] != survivor:
+            errors.append(
+                f"{origin}: retired id {old} redirects to both "
+                f"{prior[0]} and {survivor} (§34.4)")
+            return
+        retired[old] = (survivor, origin)
+
     for dirname, schema_name in CURATED_DIRS.items():
         directory = curated / dirname
         if not directory.is_dir():
@@ -671,16 +684,20 @@ def validate_instance(root: Path):
                 errors.extend(_schema_errors(instance, schemas[schema_name], path))
                 if isinstance(instance, dict):
                     doc_id = instance.get("id")
+                    if isinstance(doc_id, str):
+                        living.add(doc_id)
                     for old in _as_list(instance.get("formerly")):
                         if isinstance(old, str) and isinstance(doc_id, str):
-                            retired.setdefault(old, doc_id)
+                            _claim_retired(old, doc_id, path)
                     for part in _as_list(instance.get("parts")):
                         if not isinstance(part, dict):
                             continue
                         part_id = part.get("id")
+                        if isinstance(part_id, str):
+                            living.add(part_id)
                         for old in _as_list(part.get("formerly")):
                             if isinstance(old, str) and isinstance(part_id, str):
-                                retired.setdefault(old, part_id)
+                                _claim_retired(old, part_id, path)
                 # §9.4: each material_roles entry names a member of steps —
                 # deferred until the retired map is complete (§34.4).
                 if schema_name == "suggested-route" and isinstance(instance, dict):
@@ -703,13 +720,22 @@ def validate_instance(root: Path):
             except FrontmatterError as exc:
                 errors.append(str(exc))
 
+    # §34.4: a retired id is never a living one — curation keeping both
+    # cannot build, so the boundary rejects it like the builder does.
+    for old in sorted(set(retired) & living):
+        survivor, origin = retired[old]
+        errors.append(
+            f"{origin}: formerly {old} on {survivor} is still a "
+            "living id (§34.4)")
+
     def _resolved(ref, origin):
-        survivor = retired.get(ref) if isinstance(ref, str) else None
-        if survivor is None:
+        entry = retired.get(ref) if isinstance(ref, str) else None
+        if entry is None:
             return ref
         warnings.append(
-            f"{origin}: stale curated ref {ref} resolved to {survivor} (§34.4)")
-        return survivor
+            f"{origin}: stale curated ref {ref} resolved to "
+            f"{entry[0]} (§34.4)")
+        return entry[0]
 
     # §9.4 on §34.4-resolved ids: each material_roles entry names a member
     # of steps, and per step the two lists are disjoint — a stale spelling
