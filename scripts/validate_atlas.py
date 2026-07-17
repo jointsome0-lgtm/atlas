@@ -12,6 +12,7 @@ import re
 import sys
 from pathlib import Path
 
+import build_atlas_graph as _builder
 from frontmatter import (
     FrontmatterError,
     MAX_DOCUMENT_BYTES,
@@ -454,6 +455,9 @@ def _graph_field_errors(instance: dict, path: Path) -> list[str]:
             continue
         # §10.4 payload-held refs: trail segments derive from ∪ to; a plan
         # derives its routes' fields through their source_plan.
+        if (types.get(node["id"]) == "encounter"
+                and isinstance(node.get("target"), str)):
+            refs.setdefault(node["id"], []).append(node["target"])
         if types.get(node["id"]) == "trail_segment":
             origin = node.get("from")
             origins = origin if isinstance(origin, list) else [origin]
@@ -907,6 +911,55 @@ def validate_instance(root: Path):
                                 "(§9.4/§20.3)"
                             )
                         role_edges[role_key] = edge.get("type")
+                # §10.2/§10.4: an encounter's journal target derives the
+                # typed visited edge — if the target is emitted, the edge
+                # must be too.
+                visited_pairs = {
+                    (edge.get("source"), edge.get("target"))
+                    for edge in _as_list(instance.get("edges"))
+                    if isinstance(edge, dict)
+                    and edge.get("type") == "visited"
+                }
+                # §34.4 at the boundary: formerly is per-kind, never a
+                # living id, and one retired id has one survivor.
+                formerly_survivors: dict = {}
+                for node in _as_list(instance.get("nodes")):
+                    if not isinstance(node, dict):
+                        continue
+                    nid = node.get("id")
+                    if not isinstance(nid, str):
+                        continue
+                    if (node.get("type") == "encounter"
+                            and isinstance(node.get("target"), str)
+                            and node["target"] in node_ids
+                            and (nid, node["target"]) not in visited_pairs):
+                        errors.append(
+                            f"{path}: encounter {nid} target "
+                            f"{node['target']} has no visited edge "
+                            "(§10.2/§10.4)"
+                        )
+                    for old_id in _as_list(node.get("formerly")):
+                        if not isinstance(old_id, str):
+                            continue
+                        prefix = old_id.split(":", 1)[0]
+                        if _builder.ID_PREFIXES.get(prefix) != node.get("type"):
+                            errors.append(
+                                f"{path}: formerly {old_id} on {nid} changes "
+                                "kind (§34.4)"
+                            )
+                        if old_id in node_ids:
+                            errors.append(
+                                f"{path}: formerly {old_id} on {nid} is "
+                                "still a living id (§34.4)"
+                            )
+                        survivor = formerly_survivors.get(old_id)
+                        if survivor is not None:
+                            errors.append(
+                                f"{path}: retired id {old_id} redirects to "
+                                f"both {survivor} and {nid} (§34.4)"
+                            )
+                        else:
+                            formerly_survivors[old_id] = nid
                 # §10/§32.1: projections are the curated zone → figure_region
                 # mapping; the schema subset cannot constrain map keys, so
                 # the zone-id shape of each key is checked here (values are

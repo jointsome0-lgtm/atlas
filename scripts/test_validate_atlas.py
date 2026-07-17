@@ -592,6 +592,24 @@ INVALID_INSTANCES = {
             ' "step": "concept:a", "weight": "unassessed"}],',
         ),
     },
+    "bad-graph-encounter-without-visited": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "material:m",'
+            ' "depth": "skim", "mode": "background"}],',
+        ),
+    },
+    "bad-graph-formerly-cross-kind": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active",'
+            ' "formerly": ["part:old/x"]}],',
+        ),
+    },
     "bad-graph-fields-mismatch": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',
@@ -757,6 +775,11 @@ class SchemaValidatorTests(unittest.TestCase):
             ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
             ' "direction": "direction:d", "to": "concept:a",'
             ' "via": ["material:m"], "reason": "r"}],',
+        )
+        graph = graph.replace(
+            '"edges": [],',
+            '"edges": [{"source": "encounter:e", "target": "material:m",'
+            ' "type": "visited", "provenance": ["encounter:e"]}],',
         )
         with tempfile.TemporaryDirectory() as directory:
             materialize({"graph/atlas-graph.json": graph}, Path(directory))
