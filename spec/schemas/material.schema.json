@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://atlas-sdd.local/schemas/material.schema.json",
-  "description": "Atlas curated Material frontmatter with embedded MaterialParts, transcribing §9.2–§9.3, §9.14, §10.1–§10.2, §14.9, and §34.4.",
+  "description": "Atlas curated Material frontmatter with embedded MaterialParts, transcribing §9.2–§9.3, §9.14, §10.1–§10.2, §14.9, §32.6, and §34.4.",
   "type": "object",
   "properties": {
     "id": {"$ref": "#/$defs/materialId"},
@@ -13,12 +13,18 @@
     "overall_concepts": {"type": "array", "items": {"$ref": "#/$defs/conceptId"}},
     "parts": {"type": "array", "items": {"$ref": "#/$defs/materialPart"}},
     "supported_by": {"type": "array", "items": {"$ref": "#/$defs/supportRef"}},
+    "sensitivity": {"$ref": "#/$defs/sensitivity"},
     "formerly": {"type": "array", "items": {"$ref": "#/$defs/materialId"}}
   },
   "required": ["id", "type", "title", "kind", "url", "status", "overall_concepts", "parts"],
   "additionalProperties": false,
   "$defs": {
     "slug": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "sensitivity": {
+      "type": "string",
+      "enum": ["medical"],
+      "description": "Sensitivity classes transcribed verbatim from §32.6 and §33.2."
+    },
     "materialId": {"type": "string", "pattern": "^material:[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "partId": {"type": "string", "pattern": "^part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "materialRef": {"type": "string", "pattern": "^(?:material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},

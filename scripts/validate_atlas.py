@@ -28,7 +28,7 @@ from frontmatter import (
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "spec" / "schemas"
 GRAMMAR_DIR = ROOT / "fixtures" / "grammar"
-JOURNAL_ROW_BYTES = 16_384
+JOURNAL_ROW_BYTES = _builder.JOURNAL_ROW_BYTES  # §25.8 — one source
 
 SCHEMA_NAMES = {
     "concept",
@@ -999,6 +999,26 @@ def validate_instance(root: Path):
                                 f"{position}/{position + 1} have no "
                                 "suggested_next edge (§10.2)"
                             )
+                # §20.3 determinism: the edge array emits in canonical
+                # identity order — type, source, target, then the meta
+                # discriminant; a shuffled array breaks the §20.1
+                # byte-identical promise.
+                def _edge_key(edge):
+                    def _s(value):
+                        return value if isinstance(value, str) else ""
+                    order = edge.get("order")
+                    return (_s(edge.get("type")), _s(edge.get("source")),
+                            _s(edge.get("target")), _s(edge.get("context")),
+                            order if isinstance(order, int) else 0,
+                            _s(edge.get("step")))
+                edge_keys = [_edge_key(edge)
+                             for edge in _as_list(instance.get("edges"))
+                             if isinstance(edge, dict)]
+                if edge_keys != sorted(edge_keys):
+                    errors.append(
+                        f"{path}: edges are not in canonical identity "
+                        "order (§20.3)"
+                    )
                 role_edges: dict = {}
                 edge_identities: set = set()
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
@@ -1029,15 +1049,24 @@ def validate_instance(root: Path):
                                     f"carries {key} — not this type's §10.2 "
                                     "meta discriminant (§20.3)"
                                 )
-                        # NOTE: related_to's symmetric endpoint-sort joins
-                        # this identity with the builder-side §20.3
-                        # canonicalization in PR E1 (#31) — enforcing it
-                        # here first would reject V1's own emission.
-                        identity = tuple(
+                        # §20.3: related_to is the one symmetric type —
+                        # persisted edges carry the canonical sorted
+                        # endpoints, and identity uses the sorted pair so a
+                        # reversed duplicate cannot sit beside the canonical
+                        # spelling.
+                        source, target = edge["source"], edge["target"]
+                        if edge["type"] == "related_to":
+                            if target < source:
+                                errors.append(
+                                    f"{path}: edges[{index}] related_to "
+                                    f"endpoints {source} -> {target} are "
+                                    "not sorted (§20.3)"
+                                )
+                                source, target = target, source
+                        identity = (edge["type"], source, target) + tuple(
                             edge.get(key) if isinstance(
                                 edge.get(key), (str, int)) else None
-                            for key in ("type", "source", "target",
-                                        "context", "order", "step"))
+                            for key in ("context", "order", "step"))
                         if identity in edge_identities:
                             errors.append(
                                 f"{path}: edges[{index}] duplicates edge "

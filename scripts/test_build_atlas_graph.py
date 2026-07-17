@@ -572,6 +572,144 @@ class BuilderIntegrationTests(unittest.TestCase):
         self.assertEqual(1, len(extends))
         self.assertEqual("high", extends[0]["weight"])
 
+    def test_concept_authored_concept_edges_are_emitted(self):
+        # §9.1 (#31): concepts are the authored species' third author —
+        # a concept_edges block on a concept reaches the graph.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: prerequisite_of\n"
+                "    weight: high\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\n---\n",
+                encoding="utf-8",
+            )
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        prereqs = [e for e in graph["edges"]
+                   if e["type"] == "prerequisite_of"]
+        self.assertEqual(1, len(prereqs))
+        self.assertEqual("concept:a", prereqs[0]["source"])
+        self.assertEqual("concept:b", prereqs[0]["target"])
+        self.assertEqual("high", prereqs[0]["weight"])
+        self.assertEqual(["concept:a"], prereqs[0]["provenance"])
+
+    def test_concept_cannot_author_part_voice_roles(self):
+        # §10.2: mentions is part-voice — not authorable from a concept.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: mentions\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("not authorable from a concept source" in error
+                for error in errors), errors)
+
+    def test_part_cannot_author_related_to(self):
+        # §10.2: related_to sources are concept-kind only.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "materials"
+            base.mkdir(parents=True)
+            (base / "m.md").write_text(
+                "---\nid: material:m\ntype: material\n"
+                "title: M (Vera Example)\nkind: docs\nurl: \"\"\n"
+                "status: active\nparts:\n  - id: part:m/x\n    title: X\n"
+                "    concept_edges:\n      - to: concept:c\n"
+                "        role: related_to\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("not authorable from a material_part source" in error
+                for error in errors), errors)
+
+    def test_two_sided_related_to_collapses_sorted_with_union(self):
+        # §20.3: related_to is symmetric — endpoints sort and two-sided
+        # authoring becomes one identity with unioned provenance.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nrelated_concepts:\n"
+                "  - concept:b\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\nrelated_concepts:\n"
+                "  - concept:a\n---\n",
+                encoding="utf-8",
+            )
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        related = [e for e in graph["edges"] if e["type"] == "related_to"]
+        self.assertEqual(1, len(related))
+        self.assertEqual("concept:a", related[0]["source"])
+        self.assertEqual("concept:b", related[0]["target"])
+        self.assertEqual(["concept:a", "concept:b"],
+                         related[0]["provenance"])
+
+    def test_two_sided_related_to_weight_conflict_errors(self):
+        # §20.3: after canonicalization, two authored hypotheses that
+        # disagree on one identity are a build ERROR.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: related_to\n"
+                "    weight: high\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:a\n    role: related_to\n"
+                "    weight: low\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("conflicting weights" in error for error in errors), errors)
+
+    def test_prerequisite_cycle_warns_with_path(self):
+        # §20.3: a prerequisite_of cycle is a WARNING carrying the cycle
+        # path — never a build failure.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: prerequisite_of\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:a\n    role: prerequisite_of\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("prerequisite_of cycle" in warning
+                and "concept:a -> concept:b -> concept:a" in warning
+                for warning in warnings), warnings)
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.
@@ -624,6 +762,785 @@ class BuilderIntegrationTests(unittest.TestCase):
             self.assertEqual(1, graph["version"])
             # §20.2: the write is temp-file + atomic rename — nothing left.
             self.assertEqual([], list(Path(directory).glob("*.tmp")))
+
+
+def _materialize(tree: dict) -> tempfile.TemporaryDirectory:
+    directory = tempfile.TemporaryDirectory()
+    for rel, content in tree.items():
+        path = Path(directory.name) / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return directory
+
+
+_CONCEPT = ("---\nid: concept:%s\ntype: concept\n"
+            "title: %s (Vera Example)\n---\n")
+_MATERIAL = ("---\nid: material:%s\ntype: material\n"
+             "title: %s (Vera Example)\nkind: docs\nurl: \"\"\n"
+             "status: active\noverall_concepts:\n  - concept:c\n"
+             "parts: []\n---\n")
+_ARTIFACT_ROW = json.dumps({
+    "id": "artifact:2026-07-16-001", "type": "note", "path": "p",
+    "observed_at": "2026-07-16", "summary": "s (Vera Example)",
+    "touches": ["concept:c"], "supports_state_updates": [],
+    "evidence_strength": "applied",
+})
+_QUESTION_ROW = json.dumps({
+    "id": "question:q", "type": "question", "text": "Vera Example?",
+    "created_at": "2026-07-16", "pulls": ["concept:c"],
+    "source": {"artifact": "artifact:2026-07-16-001"},
+})
+
+
+def _encounter_row(depth="applied", target="material:m", context=None):
+    row = {"id": "encounter:2026-07-16-001", "date": "2026-07-16",
+           "target": target, "depth": depth, "mode": "question-driven"}
+    if context is not None:
+        row["context"] = context
+    return json.dumps(row)
+
+
+class JournalProjectionTests(unittest.TestCase):
+    # §20 step 8 (#31): the structural journal projection — rows become
+    # nodes plus their §10.2 derived edges and §11.2-§11.3 role edges;
+    # state folds stay §29 Phase 3/4.
+
+    def _edges(self, graph, kind):
+        return [e for e in graph["edges"] if e["type"] == kind]
+
+    def test_journal_rows_become_nodes_and_derived_edges(self):
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+            "state/questions.jsonl": _QUESTION_ROW + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                context={"question": "question:q"}) + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        kinds = {n["id"]: n["type"] for n in graph["nodes"]}
+        self.assertEqual("artifact", kinds["artifact:2026-07-16-001"])
+        self.assertEqual("question", kinds["question:q"])
+        self.assertEqual("encounter", kinds["encounter:2026-07-16-001"])
+        self.assertEqual(1, len(self._edges(graph, "visited")))
+        self.assertEqual(1, len(self._edges(graph, "pulled_by")))
+        self.assertEqual(1, len(self._edges(graph, "influences")))
+        # §11.2: deep use (applied) folds the encounter target primary
+        # for the cited question, provenance = the deriving encounter.
+        primary = self._edges(graph, "primary_for")
+        self.assertEqual(1, len(primary))
+        self.assertEqual("material:m", primary[0]["source"])
+        self.assertEqual("question:q", primary[0]["target"])
+        self.assertEqual(["encounter:2026-07-16-001"],
+                         primary[0]["provenance"])
+        # §10.4: an encounter's fields are its target's fields.
+        encounter = next(n for n in graph["nodes"]
+                         if n["type"] == "encounter")
+        self.assertEqual(["knowledge"], encounter["fields"])
+
+    def test_shallow_question_context_folds_supporting(self):
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+            "state/questions.jsonl": _QUESTION_ROW + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                depth="read", context={"question": "question:q"}) + "\n",
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], self._edges(graph, "primary_for"))
+        supporting = self._edges(graph, "supporting_for")
+        self.assertEqual(1, len(supporting))
+        self.assertEqual("material:m", supporting[0]["source"])
+        self.assertEqual("question:q", supporting[0]["target"])
+
+    def test_trail_segment_derives_movement_and_roles(self):
+        # §9.9/§11.3: via materials are primary; the target of an
+        # encounter citing a via artifact, not itself in via, supports —
+        # provenance lists segment and encounter (§10.3).
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "materials/n.md": _MATERIAL % ("n", "N"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\ncore_concepts:\n  - concept:a\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - material:m\n  - artifact:2026-07-16-001\n"
+                "reason: momentum (Vera Example)\n---\n"),
+            # §9.9: the via artifact co-touches the origin — the movement
+            # is evidenced by the segment's own context.
+            "state/artifacts.jsonl": _ARTIFACT_ROW.replace(
+                '"touches": ["concept:c"]',
+                '"touches": ["concept:a", "concept:c"]') + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                target="material:n",
+                context={"artifact": "artifact:2026-07-16-001"}) + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        seg = "trail-segment:2026-07-16-001"
+        moved = self._edges(graph, "moved_to")
+        self.assertEqual([("concept:a", "concept:b", [seg])],
+                         [(e["source"], e["target"], e["provenance"])
+                          for e in moved])
+        self.assertEqual([(seg, "material:m")],
+                         [(e["source"], e["target"])
+                          for e in self._edges(graph, "via")])
+        self.assertEqual([(seg, "artifact:2026-07-16-001")],
+                         [(e["source"], e["target"])
+                          for e in self._edges(graph, "produced_artifact")])
+        primary = self._edges(graph, "primary_for")
+        self.assertEqual([("material:m", seg, [seg])],
+                         [(e["source"], e["target"], e["provenance"])
+                          for e in primary])
+        supporting = self._edges(graph, "supporting_for")
+        self.assertEqual(
+            [("material:n", seg,
+              ["encounter:2026-07-16-001", seg])],
+            [(e["source"], e["target"], e["provenance"])
+             for e in supporting])
+        # §10.4: segment fields = from ∪ to.
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual(["knowledge"], segment["fields"])
+
+    def test_dangling_journal_ref_warns_and_skips(self):
+        # §20 step 11: a journal-row ref classifies by origin — missing
+        # target is a warning and the edge is skipped, never a failure.
+        with _materialize({
+            "state/encounters.jsonl": _encounter_row(
+                target="material:gone") + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(any("material:gone missing" in w for w in warnings),
+                        warnings)
+        self.assertEqual([], graph["edges"])
+        self.assertEqual(1, len(graph["nodes"]))
+
+    def test_byte_identical_row_folds_once_with_warning(self):
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n"
+                                     + _ARTIFACT_ROW + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(any("folded once (§20.1)" in w for w in warnings),
+                        warnings)
+        self.assertEqual(1, len([n for n in graph["nodes"]
+                                 if n["type"] == "artifact"]))
+
+    def test_duplicate_row_across_rotated_files_folds_once(self):
+        # §20.1: the rotated files' lexicographic concatenation is one
+        # journal — a byte-identical repeat across files folds once.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts/2025.jsonl": _ARTIFACT_ROW + "\n",
+            "state/artifacts/2026.jsonl": _ARTIFACT_ROW + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(any("folded once (§20.1)" in w for w in warnings),
+                        warnings)
+        self.assertEqual(1, len([n for n in graph["nodes"]
+                                 if n["type"] == "artifact"]))
+
+    def test_stale_trail_direction_resolves_through_formerly(self):
+        # §34.4: direction is a curated ref — a renamed direction resolves
+        # in the emitted segment payload, with the stale-ref warning.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:new\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\nformerly:\n  - direction:old\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:old\nfrom: concept:a\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual("direction:new", segment["direction"])
+        self.assertTrue(
+            any("stale curated ref direction:old resolved to direction:new"
+                in w for w in warnings), warnings)
+
+    def test_malformed_journal_row_fails_the_build(self):
+        with _materialize({
+            "state/artifacts.jsonl": "not json\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(any("invalid JSONL row" in e for e in errors), errors)
+
+    def test_edges_emit_in_canonical_identity_order(self):
+        # §20.3 determinism: type, source, target, then meta discriminant.
+        graph, errors, _ = build_atlas_graph.build(DEMO)
+        self.assertEqual([], errors)
+        keys = [(e["type"], e["source"], e["target"],
+                 e.get("context") or "", e.get("order") or 0,
+                 e.get("step") or "") for e in graph["edges"]]
+        self.assertEqual(sorted(keys), keys)
+
+    def test_built_journal_instance_passes_the_boundary(self):
+        # Roundtrip: the builder's own emission over a journal-bearing
+        # instance must satisfy the persisted-format boundary (V1).
+        import validate_atlas
+        with _materialize({
+            "atlas/concepts/c.md": _CONCEPT % ("c", "C"),
+            "atlas/materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+            "state/questions.jsonl": _QUESTION_ROW + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                context={"question": "question:q"}) + "\n",
+        }) as directory:
+            root = Path(directory)
+            graph, errors, _ = build_atlas_graph.build(root / "atlas")
+            self.assertEqual([], errors)
+            (root / "graph").mkdir()
+            (root / "graph" / "atlas-graph.json").write_text(
+                json.dumps(graph, indent=2) + "\n", encoding="utf-8")
+            errors, warnings, _ = validate_atlas.validate_instance(root)
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+
+    def test_generated_at_anchors_to_max_activity_date(self):
+        # §20.1: the default as-of is the max activity date across the
+        # dated inputs, emitted as UTC midnight.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW.replace(
+                '"2026-07-16"', '"2026-07-14"') + "\n",
+            "state/questions.jsonl": _QUESTION_ROW + "\n",
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual("2026-07-16T00:00:00Z", graph["generated_at"])
+
+    def test_trail_segment_formerly_is_rejected(self):
+        # §34.4: journal record ids get no redirect machinery — a segment
+        # authoring formerly is an error, never an identity continuation.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n"
+                "formerly:\n  - trail-segment:2026-07-15-009\n---\n"),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("no formerly redirect (§34.4)" in e for e in errors), errors)
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertNotIn("formerly", segment)
+
+    def test_malformed_activity_date_fails_the_build(self):
+        # §9/§10: a malformed observed_at must fail closed, never emit a
+        # schema-invalid graph or silently drop the row from the §20.1
+        # as-of universe.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW.replace(
+                '"2026-07-16"', '"bad-date"') + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a YYYY-MM-DD date" in e for e in errors), errors)
+
+    def test_dangling_trail_direction_warns(self):
+        # §34.2/§20 step 11: direction is payload-only — a deleted or
+        # misspelled direction in retained history warns, never fails.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:missing\nfrom: concept:a\n"
+                "to: concept:b\nvia: []\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("direction:missing missing" in w for w in warnings),
+            warnings)
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual("direction:missing", segment["direction"])
+
+    def test_malformed_question_source_fails_the_build(self):
+        # §25.8/§10.4: a present-but-malformed source object must fail
+        # closed, never emit a question node without its provenance.
+        row = _QUESTION_ROW.replace(
+            '{"artifact": "artifact:2026-07-16-001"}', '{"artifact": 5}')
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/questions.jsonl": row + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a §9.8 source object" in e for e in errors), errors)
+
+    def test_malformed_encounter_context_fails_the_build(self):
+        # §25.8: a malformed context silently dropped would silently
+        # change the §11.2 role derivation.
+        with _materialize({
+            "state/encounters.jsonl": _encounter_row(
+                context={"question": 5}) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a §9.7 context object" in e for e in errors), errors)
+
+    def test_non_via_kind_in_trail_via_fails_the_build(self):
+        # §9.9/§10.4: via holds material(part)/artifact ids only — an
+        # off-kind id fails before it is embedded in the payload.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - concept:a\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a artifact/material/part id" in e
+                for e in errors), errors)
+
+    def test_wrong_kind_trail_refs_fail_the_build(self):
+        # §9.9/§10.4: direction is a direction id, to/from concept-kind —
+        # wrong kinds fail before the payload embeds them.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: concept:a\nfrom: concept:a\nto: material:m\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("direction 'concept:a' is not a direction id" in e
+                for e in errors), errors)
+        self.assertTrue(
+            any("to 'material:m' is not a concept/pattern id" in e
+                for e in errors), errors)
+
+    def test_non_material_encounter_target_fails_the_build(self):
+        # §9.7/§10.4: an encounter targets a material(part) — a wrong-kind
+        # target fails closed, never an invalid emitted payload.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "state/encounters.jsonl": _encounter_row(
+                target="concept:a") + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("target 'concept:a' is not a material/part id" in e
+                for e in errors), errors)
+
+    def test_wrong_prefix_question_source_fails_the_build(self):
+        # §9.8/§10.4: source values carry their key's prefix.
+        row = _QUESTION_ROW.replace(
+            '"artifact:2026-07-16-001"', '"concept:c"')
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/questions.jsonl": row + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a §9.8 source object" in e for e in errors), errors)
+
+    def test_bare_prefix_payload_ref_fails_the_build(self):
+        # §10.1/§25.8: a bare prefix word is not an id — the full
+        # canonical shape gates the payload, never just the prefix.
+        with _materialize({
+            "state/encounters.jsonl": _encounter_row(
+                target="material") + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("target 'material' is not a material/part id" in e
+                for e in errors), errors)
+
+    def test_dangling_question_source_warns(self):
+        # §20 step 11/§34.2: a retained question citing a deleted
+        # artifact keeps the payload ref, warns, and never fails.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/questions.jsonl": _QUESTION_ROW.replace(
+                "artifact:2026-07-16-001", "artifact:missing") + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("artifact:missing missing" in w for w in warnings), warnings)
+        question = next(n for n in graph["nodes"]
+                        if n["type"] == "question")
+        self.assertEqual({"artifact": "artifact:missing"},
+                         question["source"])
+
+    def test_null_journal_value_fails_the_build(self):
+        # §25.7: no journal schema admits null — an explicit null must
+        # fail closed, never collapse to an absent optional field.
+        row = json.loads(_ARTIFACT_ROW)
+        row["intake"] = None
+        row["probe"] = None
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("null journal value(s) for intake, probe (§25.7)" in e
+                for e in errors), errors)
+
+    def test_malformed_intake_key_fails_the_build(self):
+        # §25.7/§33.2: a present-but-malformed intake provenance fails
+        # closed; a well-formed one projects cleanly.
+        bad = json.loads(_ARTIFACT_ROW)
+        bad["intake"] = {}
+        good = json.loads(_QUESTION_ROW)
+        good["intake"] = "batch-1/entry-2#3"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(bad) + "\n",
+            "state/questions.jsonl": json.dumps(good) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("intake {} is not an intake key (§33.2)" in e
+                for e in errors), errors)
+        self.assertEqual([], [e for e in errors if "question" in e])
+
+    def test_empty_from_landing_dangling_to_warns(self):
+        # §9.9 allows from: [] (a landing) — no moved_to edge carries to,
+        # so a deleted destination must still warn (§20 step 11).
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: []\nto: concept:gone\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("concept:gone missing" in w for w in warnings), warnings)
+
+    def test_off_region_journal_ref_fails_the_build(self):
+        # §9.6/§9.8: touches and pulls hold region ids (concept/pattern/
+        # zone) — an off-kind ref fails closed, never a lenient drop that
+        # loses evidence.
+        artifact = _ARTIFACT_ROW.replace('"touches": ["concept:c"]',
+                                         '"touches": ["material:m"]')
+        question = _QUESTION_ROW.replace('"pulls": ["concept:c"]',
+                                         '"pulls": ["material:m"]')
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": artifact + "\n",
+            "state/questions.jsonl": question + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("touches 'material:m' is not a concept/pattern/zone id"
+                in e for e in errors), errors)
+        self.assertTrue(
+            any("pulls 'material:m' is not a concept/pattern/zone id"
+                in e for e in errors), errors)
+
+    def test_unknown_journal_key_fails_the_build(self):
+        # §25.7: the journal schemas close their key sets — a typo like
+        # sensitivty must fail, never silently drop a privacy marking.
+        row = json.loads(_ARTIFACT_ROW)
+        row["sensitivty"] = "medical"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("unknown journal key(s) sensitivty (§25.7)" in e
+                for e in errors), errors)
+
+    def test_oversize_journal_row_fails_the_build(self):
+        # §25.8: the boundary reader enforces a 16,384-byte row ceiling —
+        # the builder must never project a row the boundary refuses.
+        row = json.loads(_ARTIFACT_ROW)
+        row["summary"] = "s (Vera Example) " + "x" * 17000
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("journal row exceeds 16384 bytes" in e for e in errors),
+            errors)
+
+    def test_question_row_requires_question_type(self):
+        # §9.8: type: "question" is the schema's fixed discriminant.
+        row = json.loads(_QUESTION_ROW)
+        row["type"] = "note"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/questions.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any('question row requires type "question"' in e
+                for e in errors), errors)
+
+    def test_crlf_journal_row_fails_the_build(self):
+        # §25.7: the builder reads the journal as strictly as the
+        # boundary — CR/CRLF never projects.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\r\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("CR/CRLF is unsupported; use LF" in e for e in errors),
+            errors)
+
+    def test_duplicate_json_key_journal_row_fails_the_build(self):
+        # §25.7/§25.8: duplicate keys silently keep-last under a bare
+        # json.loads — they must fail like the boundary reader.
+        row = _ARTIFACT_ROW[:-1] + ', "touches": ["concept:c"]}'
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": row + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("duplicate JSON key 'touches'" in e for e in errors),
+            errors)
+
+    def test_dangling_destination_without_from_warns(self):
+        # §20 step 11: a segment with no from derives no moved_to, so a
+        # deleted destination is payload-only — it warns, never fails.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nto: concept:gone\nvia: []\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("concept:gone missing" in w for w in warnings), warnings)
+
+    def test_unevidenced_trail_origin_warns(self):
+        # §9.9/§13.2 step 9: every listed origin must be evidenced by the
+        # segment's own via context — a from with no artifact evidence is
+        # a proposed correction (warning), never a build failure (§5.2).
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - material:m\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("from concept:a is not evidenced" in w for w in warnings),
+            warnings)
+        # The trail stays sacred: the segment and its edges still emit.
+        self.assertEqual(1, len(self._edges(graph, "moved_to")))
+
+    def test_question_pull_evidences_trail_origin(self):
+        # §9.9's second clause: the origin is the concept whose question
+        # the via artifact answers — pulled by a question sourced from it.
+        row = _ARTIFACT_ROW.replace('"touches": ["concept:c"]',
+                                    '"touches": []')
+        question = _QUESTION_ROW.replace('"pulls": ["concept:c"]',
+                                         '"pulls": ["concept:a"]')
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - artifact:2026-07-16-001\n"
+                "reason: momentum (Vera Example)\n---\n"),
+            "state/artifacts.jsonl": row + "\n",
+            "state/questions.jsonl": question + "\n",
+        }) as directory:
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], [w for w in warnings if "not evidenced" in w])
+
+    def test_deleted_via_evidence_stays_quiet(self):
+        # §34.2: when a via artifact was deleted the origin is
+        # unverifiable — retained history keeps its dangling warning but
+        # never gains an unevidenced-origin complaint.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - artifact:2026-07-15-009\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertEqual([], [w for w in warnings if "not evidenced" in w])
+
+    def test_artifact_row_requires_relation_arrays(self):
+        # §9.6: touches and supports_state_updates are required — an
+        # absent array is a malformed row, never an artifact silently
+        # projected as touching nothing.
+        row = json.loads(_ARTIFACT_ROW)
+        del row["touches"], row["supports_state_updates"]
+        with _materialize({
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("artifact row requires touches (§9.6)" in e
+                for e in errors), errors)
+        self.assertTrue(
+            any("artifact row requires supports_state_updates (§9.6)" in e
+                for e in errors), errors)
+
+    def test_question_row_requires_pulls(self):
+        # §9.8: pulls is required — a question that pulls nothing is a
+        # malformed row, not an empty-field node.
+        row = json.loads(_QUESTION_ROW)
+        del row["pulls"]
+        with _materialize({
+            "state/questions.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("question row requires pulls (§9.8)" in e for e in errors),
+            errors)
+
+    def test_classed_material_part_taints_via_segment(self):
+        # §32.6: taint is union by provenance — a part of a classed
+        # material carries the class, and a segment citing it via the
+        # part unions it in.
+        material = (_MATERIAL % ("m", "M")).replace(
+            "status: active\n", "status: active\nsensitivity: medical\n"
+        ).replace(
+            "parts: []\n",
+            "parts:\n  - id: part:m/p\n    title: P (Vera Example)\n")
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": material,
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: []\nto: concept:b\n"
+                "via:\n  - part:m/p\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        part = next(n for n in graph["nodes"]
+                    if n["type"] == "material_part")
+        self.assertEqual("medical", part["sensitivity"])
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual("medical", segment["sensitivity"])
+
+    def test_trail_with_classed_via_is_emitted_classed(self):
+        # §20 step 12/§32.6: a segment whose via cites a classed material
+        # carries the class.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": (_MATERIAL % ("m", "M")).replace(
+                "status: active\n", "status: active\nsensitivity: medical\n"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via:\n  - material:m\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual("medical", segment["sensitivity"])
 
 
 if __name__ == "__main__":
