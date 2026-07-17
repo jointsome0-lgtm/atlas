@@ -113,6 +113,10 @@ ENDPOINT_RULES = {
 # §14.9 — authored edge weight is a closed scale (the import-time hypothesis).
 EDGE_WEIGHTS = {"low", "medium", "high"}
 
+# §25.8: journal row byte ceiling — a policy ceiling shared with the
+# boundary reader (validate_atlas aliases this constant).
+JOURNAL_ROW_BYTES = 16_384
+
 # §9.2/§9.11 — lifecycle vocabulary for everything that is not a route.
 LIFECYCLE_STATUSES = {"active", "archived"}
 # §9.2 material kinds, transcribed verbatim (checked by check-constants).
@@ -759,6 +763,12 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         continue  # trailing newline
                     errors.append(f"{path}:{number}: blank journal row")
                     continue
+                if len(raw) > JOURNAL_ROW_BYTES:
+                    # §25.8: the boundary reader enforces the same ceiling
+                    # — an oversize row must never project.
+                    errors.append(f"{path}:{number}: journal row exceeds "
+                                  f"{JOURNAL_ROW_BYTES} bytes")
+                    continue
                 if raw in seen_rows:
                     # §20.1: a byte-identical row repeated within a journal
                     # folds once, with a WARNING.
@@ -913,6 +923,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             # §9.8: pulls is required — a question that pulls nothing is a
             # malformed row, not an empty-field node.
             errors.append(f"{origin}: question row requires pulls (§9.8)")
+        if row.get("type") != "question":
+            # §9.8: type is the schema's fixed discriminant — an off-type
+            # row must never project as a question node.
+            errors.append(f"{origin}: question row requires "
+                          "type \"question\" (§9.8)")
         add_node(row.get("id"), "question", "", origin,
                  {k: v for k, v in extra.items() if v is not None})
         qid = row.get("id")

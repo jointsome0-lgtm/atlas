@@ -28,7 +28,7 @@ from frontmatter import (
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "spec" / "schemas"
 GRAMMAR_DIR = ROOT / "fixtures" / "grammar"
-JOURNAL_ROW_BYTES = 16_384
+JOURNAL_ROW_BYTES = _builder.JOURNAL_ROW_BYTES  # §25.8 — one source
 
 SCHEMA_NAMES = {
     "concept",

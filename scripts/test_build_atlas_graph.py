@@ -1213,6 +1213,33 @@ class JournalProjectionTests(unittest.TestCase):
         self.assertEqual({"artifact": "artifact:missing"},
                          question["source"])
 
+    def test_oversize_journal_row_fails_the_build(self):
+        # §25.8: the boundary reader enforces a 16,384-byte row ceiling —
+        # the builder must never project a row the boundary refuses.
+        row = json.loads(_ARTIFACT_ROW)
+        row["summary"] = "s (Vera Example) " + "x" * 17000
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("journal row exceeds 16384 bytes" in e for e in errors),
+            errors)
+
+    def test_question_row_requires_question_type(self):
+        # §9.8: type: "question" is the schema's fixed discriminant.
+        row = json.loads(_QUESTION_ROW)
+        row["type"] = "note"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/questions.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any('question row requires type "question"' in e
+                for e in errors), errors)
+
     def test_crlf_journal_row_fails_the_build(self):
         # §25.7: the builder reads the journal as strictly as the
         # boundary — CR/CRLF never projects.
