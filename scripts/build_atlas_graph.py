@@ -154,6 +154,9 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         if node_id is None:
             errors.append(f"{source}: record without id")
             return
+        if not isinstance(node_id, str):
+            errors.append(f"{source}: id {node_id!r} is not a string (§10.1)")
+            return
         if node_id in nodes:
             errors.append(f"{source}: duplicate id {node_id}")
             return
@@ -173,6 +176,12 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         nodes[node_id] = node
 
     def add_edge(source_id, target_id, edge_type, origin, provenance, **meta):
+        # Endpoints must be id strings before any membership or prefix
+        # check hashes them — malformed curated refs fail closed (§25.8).
+        if not (isinstance(source_id, str) and isinstance(target_id, str)):
+            errors.append(f"{origin}: {edge_type} endpoint {source_id!r} -> "
+                          f"{target_id!r} is not an id (§10.2)")
+            return
         # §10.3: provenance is required on every edge — the direct derivation
         # basis, sorted; the authored species always carry the §14.9 fold
         # value, unassessed when nothing was authored.

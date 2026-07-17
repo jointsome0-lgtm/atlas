@@ -234,6 +234,30 @@ class BuilderIntegrationTests(unittest.TestCase):
             any("is not an edge mapping" in error for error in errors), errors
         )
 
+    def test_non_string_id_and_edge_ref_fail_the_build(self):
+        # §25.8: a list-valued id or concept_edges target must be an ERROR,
+        # never an unhashable-type traceback.
+        files = {
+            "concepts/bad-id.md": "---\nid:\n  - concept:a\ntype: concept\n"
+                                  "title: Bad (Vera Example)\n---\n",
+            "patterns/bad-to.md": "---\nid: pattern:p\ntype: pattern\n"
+                                  "title: P (Vera Example)\nconcept_edges:\n"
+                                  "  - to:\n      - concept:a\n"
+                                  "    role: loads\n---\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for relative, content in files.items():
+                target = Path(directory) / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a string" in error for error in errors), errors
+        )
+        self.assertTrue(
+            any("is not an id" in error for error in errors), errors
+        )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.
