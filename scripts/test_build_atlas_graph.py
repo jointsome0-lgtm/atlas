@@ -217,6 +217,23 @@ class BuilderIntegrationTests(unittest.TestCase):
             warnings,
         )
 
+    def test_malformed_concept_edges_fail_the_build(self):
+        # §25.8: a scalar concept_edges item (or scalar field) must produce
+        # an ERROR, not an AttributeError traceback.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "patterns"
+            base.mkdir(parents=True)
+            (base / "p.md").write_text(
+                "---\nid: pattern:p\ntype: pattern\n"
+                "title: P (Vera Example)\nconcept_edges:\n"
+                "  - concept:a\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not an edge mapping" in error for error in errors), errors
+        )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.

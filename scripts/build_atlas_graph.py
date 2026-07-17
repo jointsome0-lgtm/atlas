@@ -190,7 +190,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     def add_concept_edges(owner_id, entries, path):
         # One authored-edge species (§9.3): material parts and body patterns
         # (§32.1) alike; weight is the §14.9 closed scale.
+        if entries is not None and not isinstance(entries, list):
+            errors.append(f"{path}: concept_edges on {owner_id} must be a "
+                          f"list of edge mappings (§9.3)")
+            return
         for ce in entries or []:
+            if not isinstance(ce, dict):
+                errors.append(f"{path}: concept_edges item {ce!r} on "
+                              f"{owner_id} is not an edge mapping (§9.3)")
+                continue
             weight = ce.get("weight")
             if weight is not None and weight not in EDGE_WEIGHTS:
                 errors.append(f"{path}: weight {weight!r} on {owner_id} -> "
@@ -205,10 +213,26 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     def add_supports(owner_id, entries, path):
         # §9.14: helper -> receiver; endpoint kinds enforced by ENDPOINT_RULES.
         # Authored on the receiving side — the receiver is the authoring node.
+        if entries is not None and not isinstance(entries, list):
+            errors.append(f"{path}: supported_by on {owner_id} must be a "
+                          f"list of entries (§9.14)")
+            return
         for helper in entries or []:
-            helper_id = helper["id"] if isinstance(helper, dict) else helper
+            if isinstance(helper, dict):
+                helper_id = helper.get("id")
+                if helper_id is None:
+                    errors.append(f"{path}: supported_by entry on {owner_id} "
+                                  f"has no id (§9.14)")
+                    continue
+                note = helper.get("note")
+            elif isinstance(helper, str):
+                helper_id, note = helper, None
+            else:
+                errors.append(f"{path}: supported_by entry {helper!r} on "
+                              f"{owner_id} is not an id or mapping (§9.14)")
+                continue
             add_edge(helper_id, owner_id, "supports", path, [owner_id],
-                     note=helper.get("note") if isinstance(helper, dict) else None)
+                     note=note)
 
     # §20 steps 1-2, 4-5: curated kinds. Zones/patterns dirs are read the same
     # way and are simply empty until the body domain lands (§32).
