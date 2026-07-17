@@ -653,6 +653,12 @@ def validate_instance(root: Path):
         return errors, warnings, counts
 
     curated = root / "atlas" if (root / "atlas").is_dir() else root
+    # §34.4: the retired -> living map spans the instance, so cross-file
+    # id checks run after the whole curated pass — a stale curated ref
+    # resolves through the map (a warning, never an error), mirroring
+    # the builder.
+    retired: dict = {}
+    route_checks: list = []
     for dirname, schema_name in CURATED_DIRS.items():
         directory = curated / dirname
         if not directory.is_dir():
@@ -663,34 +669,22 @@ def validate_instance(root: Path):
             try:
                 instance = parse_frontmatter(path.read_bytes(), path)
                 errors.extend(_schema_errors(instance, schemas[schema_name], path))
-                # §9.4: each material_roles entry names a member of steps —
-                # the step discriminator must be part of the route.
-                if schema_name == "suggested-route" and isinstance(instance, dict):
-                    steps = instance.get("steps")
-                    members = {step for step in steps
-                               if isinstance(step, str)} if isinstance(
-                                   steps, list) else set()
-                    for index, role in enumerate(_as_list(instance.get("material_roles"))):
-                        if not isinstance(role, dict):
+                if isinstance(instance, dict):
+                    doc_id = instance.get("id")
+                    for old in _as_list(instance.get("formerly")):
+                        if isinstance(old, str) and isinstance(doc_id, str):
+                            retired.setdefault(old, doc_id)
+                    for part in _as_list(instance.get("parts")):
+                        if not isinstance(part, dict):
                             continue
-                        step = role.get("step")
-                        if isinstance(step, str) and step not in members:
-                            errors.append(
-                                f"{path}: material_roles[{index}].step {step} "
-                                "is not a member of steps (§9.4)"
-                            )
-                        # §9.4: per step the two lists are disjoint — the
-                        # same material in both is an error (§20.3).
-                        primary = {m for m in _as_list(role.get("primary_materials"))
-                                   if isinstance(m, str)}
-                        supporting = {m for m in _as_list(role.get("supporting_materials"))
-                                      if isinstance(m, str)}
-                        for shared in sorted(primary & supporting):
-                            errors.append(
-                                f"{path}: material_roles[{index}] lists "
-                                f"{shared} as both primary and supporting "
-                                "(§9.4)"
-                            )
+                        part_id = part.get("id")
+                        for old in _as_list(part.get("formerly")):
+                            if isinstance(old, str) and isinstance(part_id, str):
+                                retired.setdefault(old, part_id)
+                # §9.4: each material_roles entry names a member of steps —
+                # deferred until the retired map is complete (§34.4).
+                if schema_name == "suggested-route" and isinstance(instance, dict):
+                    route_checks.append((path, instance))
                 # §10.1: an embedded part id carries its material's slug.
                 if schema_name == "material" and isinstance(instance, dict):
                     material_id = instance.get("id")
@@ -708,6 +702,44 @@ def validate_instance(root: Path):
                 counts["frontmatter"] += 1
             except FrontmatterError as exc:
                 errors.append(str(exc))
+
+    def _resolved(ref, origin):
+        survivor = retired.get(ref) if isinstance(ref, str) else None
+        if survivor is None:
+            return ref
+        warnings.append(
+            f"{origin}: stale curated ref {ref} resolved to {survivor} (§34.4)")
+        return survivor
+
+    # §9.4 on §34.4-resolved ids: each material_roles entry names a member
+    # of steps, and per step the two lists are disjoint — a stale spelling
+    # converges on the survivor first instead of failing builder-valid
+    # curation.
+    for path, instance in route_checks:
+        steps = instance.get("steps")
+        members = {_resolved(step, path) for step in steps
+                   if isinstance(step, str)} if isinstance(steps, list) else set()
+        for index, role in enumerate(_as_list(instance.get("material_roles"))):
+            if not isinstance(role, dict):
+                continue
+            step = _resolved(role.get("step"), path)
+            if isinstance(step, str) and step not in members:
+                errors.append(
+                    f"{path}: material_roles[{index}].step {step} "
+                    "is not a member of steps (§9.4)"
+                )
+            primary = {_resolved(m, path)
+                       for m in _as_list(role.get("primary_materials"))
+                       if isinstance(m, str)}
+            supporting = {_resolved(m, path)
+                          for m in _as_list(role.get("supporting_materials"))
+                          if isinstance(m, str)}
+            for shared in sorted(primary & supporting):
+                errors.append(
+                    f"{path}: material_roles[{index}] lists "
+                    f"{shared} as both primary and supporting "
+                    "(§9.4)"
+                )
 
     extracted = root / "plans" / "extracted"
     if extracted.is_dir():

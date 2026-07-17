@@ -995,6 +995,29 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertIn("0 errors", stdout)
         self.assertEqual("", stderr)
 
+    def test_stale_route_step_resolves_through_formerly(self):
+        # §34.4: steps already use the survivor while material_roles[].step
+        # still names the retired id — the ref resolves through the map
+        # with a warning, never a membership error (the builder accepts
+        # exactly this curation).
+        instance = {
+            **VALID_INSTANCE,
+            "atlas/concepts/example.md": VALID_CONCEPT.replace(
+                "aliases: []",
+                "aliases: []\nformerly:\n  - concept:old-example",
+            ),
+            "atlas/suggested-routes/example-default.md": VALID_ROUTE.replace(
+                "  - step: concept:example",
+                "  - step: concept:old-example",
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("stale curated ref concept:old-example resolved "
+                      "to concept:example (§34.4)", stdout + stderr)
+
     def test_optional_row_fields_stay_optional_in_the_graph(self):
         # §10.4 embeds the row fields: a background encounter has no
         # context (§9.7) and a landing segment has no resulting_questions
