@@ -449,6 +449,23 @@ class BuilderIntegrationTests(unittest.TestCase):
             errors,
         )
 
+    def test_zone_without_figure_region_fails_the_build(self):
+        # §32.1/§20 step 12: every zone authors its figure_region — a zone
+        # the silhouette cannot place never leaves the build.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "zones"
+            base.mkdir(parents=True)
+            (base / "z.md").write_text(
+                "---\nid: zone:shoulder\ntype: zone\n"
+                "title: Shoulder (Vera Example)\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("zone requires figure_region" in error for error in errors),
+            errors,
+        )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.

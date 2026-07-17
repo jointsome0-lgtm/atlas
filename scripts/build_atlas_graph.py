@@ -387,10 +387,21 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 # authors concept_edges — same species, same gated weight.
                 add_concept_edges(node_id, meta.get("concept_edges"), path)
 
-            if expected == "zone" and meta.get("figure_region"):
+            if expected == "zone":
                 # §20 step 12: the silhouette mapping rides in the graph so
-                # the viewer's single input stays single (§16.4).
-                projections[node_id] = meta["figure_region"]
+                # the viewer's single input stays single (§16.4); every zone
+                # authors its figure_region (§32.1) — a zone the silhouette
+                # cannot place never leaves the build.
+                figure_region = meta.get("figure_region")
+                if figure_region is None:
+                    errors.append(
+                        f"{path}: zone requires figure_region (§32.1)")
+                elif (not isinstance(figure_region, str)
+                        or not re.fullmatch(_SLUG, figure_region)):
+                    errors.append(f"{path}: figure_region {figure_region!r} "
+                                  f"is not a slug (§32.1)")
+                else:
+                    projections[node_id] = figure_region
 
             if expected == "probe":
                 # §9.11/§20 step 7: a probe targets concepts; the reference

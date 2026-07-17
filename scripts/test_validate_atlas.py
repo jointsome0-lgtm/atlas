@@ -610,6 +610,21 @@ INVALID_INSTANCES = {
             "generated_at": "2026-07-16T12:34:56Z",
         }) + "\n",
     },
+    "bad-graph-zone-without-projection": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "zone:shoulder", "type": "zone",'
+            ' "title": "Shoulder", "fields": ["body"], "notes": ""}],',
+        ),
+    },
+    "bad-snapshot-closed-question": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "questions": [{"id": "question:q", "text": "Vera Example?",
+                           "status": "resolved", "pulls": [],
+                           "source": ["artifact:2026-07-16-001"]}],
+        }) + "\n",
+    },
     "bad-snapshot-evidence-type": {
         "graph/atlas-snapshot.json": json.dumps({
             **json.loads(VALID_SNAPSHOT),

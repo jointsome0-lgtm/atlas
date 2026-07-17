@@ -675,6 +675,7 @@ def validate_instance(root: Path):
                 # §10: edge endpoints are node ids consumers resolve inside
                 # the same file — a dangling endpoint never leaves the build.
                 node_ids: set = set()
+                zone_ids: set = set()
                 for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
                         continue
@@ -686,6 +687,8 @@ def validate_instance(root: Path):
                             f"{path}: duplicate node id {node_id} (§10.1)"
                         )
                     node_ids.add(node_id)
+                    if node.get("type") == "zone":
+                        zone_ids.add(node_id)
                     # §10.1/§10.4: a part id carries its owning material's
                     # slug, and the embedded material is that parent.
                     parent = node.get("material")
@@ -794,6 +797,15 @@ def validate_instance(root: Path):
                             f"{path}: projections key {key!r} is not a "
                             "zone id (§10/§32.1)"
                         )
+                # §20 step 12: every emitted zone carries its curated
+                # figure_region — a zone the silhouette cannot place never
+                # leaves the build.
+                for zone_id in sorted(
+                        zone_ids - set(_as_dict(instance.get("projections")))):
+                    errors.append(
+                        f"{path}: zone {zone_id} has no projections entry "
+                        "(§20 step 12, §32.1)"
+                    )
                 redacted = filename.endswith(".redacted.json")
                 if redacted and "withheld" not in instance:
                     errors.append(

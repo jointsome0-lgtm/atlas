@@ -164,7 +164,7 @@
       "properties": {
         "id": {"type": "string", "pattern": "^question:[a-z0-9]+(?:-[a-z0-9]+)*$"},
         "text": {"type": "string"},
-        "status": {"type": "string", "enum": ["open", "clarified", "resolved", "stale"], "description": "Question states transcribed verbatim from §9.8."},
+        "status": {"type": "string", "const": "open", "description": "The snapshot exports open questions only (§33.4); other §9.8 states never leave the instance."},
         "pulls": {"type": "array", "items": {"$ref": "#/$defs/regionId"}},
         "source": {"type": "array", "items": {"$ref": "#/$defs/evidenceId"}}
       },
