@@ -610,6 +610,15 @@ INVALID_INSTANCES = {
             ' "formerly": ["part:old/x"]}],',
         ),
     },
+    "bad-graph-container-edge-meta": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"edges": [],',
+            '"edges": [{"source": [], "target": {}, "type": "suggested_next",'
+            ' "provenance": ["suggested-route:r"], "context": []},'
+            ' {"source": [], "target": [], "type": "visited",'
+            ' "provenance": ["encounter:e"]}],',
+        ),
+    },
     "bad-graph-fields-mismatch": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

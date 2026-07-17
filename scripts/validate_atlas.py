@@ -855,6 +855,9 @@ def validate_instance(root: Path):
                     for edge in _as_list(instance.get("edges"))
                     if isinstance(edge, dict)
                     and edge.get("type") == "suggested_next"
+                    and isinstance(edge.get("context"), str)
+                    and isinstance(edge.get("source"), str)
+                    and isinstance(edge.get("target"), str)
                 }
                 for route, orders in sorted(step_orders.items()):
                     for position in sorted(orders):
@@ -919,6 +922,8 @@ def validate_instance(root: Path):
                     for edge in _as_list(instance.get("edges"))
                     if isinstance(edge, dict)
                     and edge.get("type") == "visited"
+                    and isinstance(edge.get("source"), str)
+                    and isinstance(edge.get("target"), str)
                 }
                 # §34.4 at the boundary: formerly is per-kind, never a
                 # living id, and one retired id has one survivor.
