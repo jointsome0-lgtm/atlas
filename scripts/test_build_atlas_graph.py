@@ -148,6 +148,33 @@ class BuilderIntegrationTests(unittest.TestCase):
             any("redirects to both" in error for error in errors), errors
         )
 
+    def test_stale_curated_ref_resolves_through_formerly(self):
+        # §34.4: curated refs resolve through the retired→living map and are
+        # listed in the build report — never failed as broken links.
+        materials = {
+            "new.md": "---\nid: material:new\ntype: material\n"
+                      "title: New (Vera Example)\nkind: docs\nurl: \"\"\n"
+                      "status: active\nformerly:\n  - material:old\n---\n",
+            "other.md": "---\nid: material:other\ntype: material\n"
+                        "title: Other (Vera Example)\nkind: docs\nurl: \"\"\n"
+                        "status: active\nsupported_by:\n"
+                        "  - material:old\n---\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "materials"
+            base.mkdir(parents=True)
+            for name, content in materials.items():
+                (base / name).write_text(content, encoding="utf-8")
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("stale curated ref material:old" in w for w in warnings),
+            warnings,
+        )
+        supports = [e for e in graph["edges"] if e["type"] == "supports"]
+        self.assertEqual(1, len(supports))
+        self.assertEqual("material:new", supports[0]["source"])
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.

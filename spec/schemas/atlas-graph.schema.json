@@ -197,7 +197,7 @@
         "date": {"$ref": "#/$defs/date"},
         "target": {"type": "string", "pattern": "^(?:material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$", "description": "Encounters are contact with a material(part) (§9.7); the embedded target mirrors the journal row."},
         "depth": {"$ref": "#/$defs/encounterDepth"},
-        "mode": {"type": "string"},
+        "mode": {"type": "string", "enum": ["plan-driven", "question-driven", "artifact-driven", "background"], "description": "Encounter modes transcribed verbatim from the §9.7 record shape."},
         "context": {
           "type": "object",
           "properties": {

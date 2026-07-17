@@ -432,6 +432,53 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         f"{path}: source_plan {meta['source_plan']!r} kept as metadata "
                         "(plan nodes land with the §12 importer)")
 
+    # §34.4: the retired→living map — every retired id lives in exactly one
+    # living formerly list, and a retired id that is also living, or present
+    # in two lists, is a build error (a 1→n redirect is unrepresentable).
+    retired: dict[str, str] = {}
+    for node_id in sorted(nodes):
+        redirects = nodes[node_id].get("formerly")
+        if redirects is not None and not isinstance(redirects, list):
+            errors.append(
+                f"formerly on {node_id} must be a list of ids (§34.4)")
+            continue
+        for old in redirects or []:
+            if not isinstance(old, str):
+                errors.append(
+                    f"formerly entry {old!r} on {node_id} is not an id (§34.4)")
+                continue
+            if old in nodes:
+                errors.append(
+                    f"formerly {old} on {node_id} is still a living id (§34.4)")
+            survivor = retired.get(old)
+            if survivor is not None:
+                errors.append(
+                    f"retired id {old} redirects to both {survivor} and "
+                    f"{node_id} (§34.4)")
+            else:
+                retired[old] = node_id
+
+    # §34.4: curated refs resolve through the map — stale refs converge on
+    # the survivor and are listed in the build report, never failed.
+    def resolve_ref(ref, origin):
+        survivor = retired.get(ref) if isinstance(ref, str) else None
+        if survivor is None:
+            return ref
+        warnings.append(
+            f"{origin}: stale curated ref {ref} resolved to {survivor} (§34.4)")
+        return survivor
+
+    for edge in edges:
+        for key in ("source", "target", "context", "step"):
+            if key in edge:
+                edge[key] = resolve_ref(edge[key], edge["_origin"])
+        if isinstance(edge.get("provenance"), list):
+            edge["provenance"] = sorted(
+                resolve_ref(ref, edge["_origin"]) for ref in edge["provenance"])
+    for refs in field_refs.values():
+        refs[:] = [retired.get(ref, ref) if isinstance(ref, str) else ref
+                   for ref in refs]
+
     # §20 step 11: broken curated links are errors; only references to
     # user-deletable records (trail segments, artifacts, encounters, §5.2)
     # may downgrade to warnings — none of those kinds is curated in Phase 1.
@@ -491,32 +538,6 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
 
     for node_id, node in nodes.items():
         node["fields"] = sorted(fields_of(node_id))
-
-    # §34.4: the retired→living map — every retired id lives in exactly one
-    # living formerly list, and a retired id that is also living, or present
-    # in two lists, is a build error (a 1→n redirect is unrepresentable).
-    retired: dict[str, str] = {}
-    for node_id in sorted(nodes):
-        redirects = nodes[node_id].get("formerly")
-        if redirects is not None and not isinstance(redirects, list):
-            errors.append(
-                f"formerly on {node_id} must be a list of ids (§34.4)")
-            continue
-        for old in redirects or []:
-            if not isinstance(old, str):
-                errors.append(
-                    f"formerly entry {old!r} on {node_id} is not an id (§34.4)")
-                continue
-            if old in nodes:
-                errors.append(
-                    f"formerly {old} on {node_id} is still a living id (§34.4)")
-            survivor = retired.get(old)
-            if survivor is not None:
-                errors.append(
-                    f"retired id {old} redirects to both {survivor} and "
-                    f"{node_id} (§34.4)")
-            else:
-                retired[old] = node_id
 
     # §20.1: generated_at is the fold's as-of date at UTC midnight, never
     # the wall clock (determinism: same inputs ⇒ byte-identical output).

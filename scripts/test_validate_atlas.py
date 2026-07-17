@@ -594,6 +594,22 @@ INVALID_INSTANCES = {
             ' "depth": "skim", "mode": "reading", "context": "solo"}],',
         ),
     },
+    "bad-graph-encounter-mode": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "material:m",'
+            ' "depth": "skim", "mode": "solo"}],',
+        ),
+    },
+    "bad-snapshot-wall-clock-generated-at": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "generated_at": "2026-07-16T12:34:56Z",
+        }) + "\n",
+    },
     "bad-snapshot-evidence-type": {
         "graph/atlas-snapshot.json": json.dumps({
             **json.loads(VALID_SNAPSHOT),
