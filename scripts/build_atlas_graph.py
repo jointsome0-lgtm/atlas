@@ -177,13 +177,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             activity_dates.append(value)
 
     def kinded_ref(value, origin, field, prefixes, cite):
-        # §25.8: a payload ref embeds only in its contract kind — a
-        # wrong-kind ref fails the build here, never as a graph the
-        # boundary rejects after a successful exit.
+        # §25.8: a payload ref embeds only in its contract kind and full
+        # §10.1 shape — a wrong-kind or bare-prefix ref fails the build
+        # here, never as a graph the boundary rejects after exit 0.
         value = str_field(value, origin, field)
         if value is None:
             return None
-        if value.split(":", 1)[0] not in prefixes:
+        prefix = value.split(":", 1)[0]
+        shape = PART_ID_RE if prefix == "part" else NODE_ID_RE
+        if prefix not in prefixes or not shape.fullmatch(value):
             errors.append(f"{origin}: {field} {value!r} is not a "
                           f"{'/'.join(sorted(prefixes))} id ({cite})")
             return None
@@ -456,16 +458,16 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         for ref in raw_origins)
                     if ref is not None]
                 # §9.9/§10.4: via holds material(part) and artifact ids
-                # only — an off-kind id must fail before it is embedded,
-                # not merely lose its derived edge in the lenient pass.
-                trail_via = []
-                for ref in id_list(meta.get("via"), path, "via"):
-                    if ref.split(":", 1)[0] in ("material", "part",
-                                                "artifact"):
-                        trail_via.append(ref)
-                    else:
-                        errors.append(f"{path}: via item {ref!r} is not a "
-                                      "material(part) or artifact id (§9.9)")
+                # only — an off-kind or malformed id must fail before it
+                # is embedded, not merely lose its derived edge in the
+                # lenient pass.
+                trail_via = [
+                    ref for ref in (
+                        kinded_ref(ref, path, "via",
+                                   {"material", "part", "artifact"},
+                                   "§9.9/§10.4")
+                        for ref in id_list(meta.get("via"), path, "via"))
+                    if ref is not None]
                 extra["date"] = date_field(meta.get("date"), path, "date")
                 note_activity(extra["date"])
                 extra["direction"] = kinded_ref(meta.get("direction"), path,
@@ -799,6 +801,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 or any(key not in ("question", "artifact")
                        or not isinstance(value, str)
                        or value.split(":", 1)[0] != key
+                       or not NODE_ID_RE.fullmatch(value)
                        for key, value in context.items())):
             # Fail closed (§25.8): a malformed context silently dropped
             # would silently change the §11.2 derivation.
@@ -846,6 +849,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 or any(key not in ("artifact", "encounter")
                        or not isinstance(value, str)
                        or value.split(":", 1)[0] != key
+                       or not NODE_ID_RE.fullmatch(value)
                        for key, value in source_ref.items())):
             # Fail closed (§25.8): a present-but-malformed source must be
             # a build error, never a question node emitted without its
@@ -939,6 +943,13 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     def quietly(ref):
         return retired.get(ref, ref) if isinstance(ref, str) else ref
 
+    def warn_dangling(ref, origin):
+        # §20 step 11: a payload-only journal ref that survived a deletion
+        # dangles with a warning, never fails retained history (§34.2).
+        if isinstance(ref, str) and ref not in nodes:
+            warnings.append(f"{origin}: {ref} missing — kept dangling "
+                            "(deletion is the owner's right)")
+
     for node in nodes.values():
         origin = node.get("_origin", node["id"])
         if node["type"] == "encounter":
@@ -947,6 +958,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             if isinstance(node.get("context"), dict):
                 node["context"] = {key: resolve_ref(value, origin)
                                    for key, value in node["context"].items()}
+                for value in node["context"].values():
+                    warn_dangling(value, origin)
         if node["type"] == "trail_segment":
             for key in ("to", "from", "direction"):
                 if isinstance(node.get(key), str):
@@ -955,19 +968,21 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 if isinstance(node.get(key), list):
                     node[key] = [resolve_ref(ref, origin)
                                  for ref in node[key]]
-            # direction is payload-only (no derived edge carries it), so
-            # its resolution is checked here — a dangling ref in retained
-            # history warns, never fails (§34.2, §20 step 11).
-            direction = node.get("direction")
-            if isinstance(direction, str) and direction not in nodes:
-                warnings.append(
-                    f"{origin}: {direction} missing — kept dangling "
-                    "(deletion is the owner's right)")
+            # direction and resulting_questions are payload-only (no
+            # derived edge carries them), so their resolution is checked
+            # here — a dangling ref in retained history warns, never
+            # fails (§34.2, §20 step 11).
+            warn_dangling(node.get("direction"), origin)
+            for ref in node.get("resulting_questions") or []:
+                warn_dangling(ref, origin)
         if node["type"] == "artifact" and isinstance(node.get("probe"), str):
             node["probe"] = resolve_ref(node["probe"], origin)
+            warn_dangling(node["probe"], origin)
         if node["type"] == "question" and isinstance(node.get("source"), dict):
             node["source"] = {key: resolve_ref(value, origin)
                               for key, value in node["source"].items()}
+            for value in node["source"].values():
+                warn_dangling(value, origin)
 
     # §11.2 (#31): question roles derive from encounters citing the question
     # — the target folds primary when any citing encounter is deep use

@@ -1131,7 +1131,7 @@ class JournalProjectionTests(unittest.TestCase):
         }) as directory:
             _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
-            any("is not a material(part) or artifact id" in e
+            any("is not a artifact/material/part id" in e
                 for e in errors), errors)
 
     def test_wrong_kind_trail_refs_fail_the_build(self):
@@ -1179,6 +1179,35 @@ class JournalProjectionTests(unittest.TestCase):
             _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
             any("is not a §9.8 source object" in e for e in errors), errors)
+
+    def test_bare_prefix_payload_ref_fails_the_build(self):
+        # §10.1/§25.8: a bare prefix word is not an id — the full
+        # canonical shape gates the payload, never just the prefix.
+        with _materialize({
+            "state/encounters.jsonl": _encounter_row(
+                target="material") + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("target 'material' is not a material/part id" in e
+                for e in errors), errors)
+
+    def test_dangling_question_source_warns(self):
+        # §20 step 11/§34.2: a retained question citing a deleted
+        # artifact keeps the payload ref, warns, and never fails.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/questions.jsonl": _QUESTION_ROW.replace(
+                "artifact:2026-07-16-001", "artifact:missing") + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("artifact:missing missing" in w for w in warnings), warnings)
+        question = next(n for n in graph["nodes"]
+                        if n["type"] == "question")
+        self.assertEqual({"artifact": "artifact:missing"},
+                         question["source"])
 
     def test_trail_with_classed_via_is_emitted_classed(self):
         # §20 step 12/§32.6: a segment whose via cites a classed material
