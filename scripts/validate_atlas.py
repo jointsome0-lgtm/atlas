@@ -864,6 +864,15 @@ def validate_instance(root: Path):
                     and isinstance(edge.get("target"), str)
                 }
                 for route, orders in sorted(step_orders.items()):
+                    # §9.4: steps is an ordered array — the builder emits
+                    # contiguous orders 1..n, so a gapped or shifted set
+                    # has lost part of the route.
+                    if sorted(orders) != list(range(1, len(orders) + 1)):
+                        errors.append(
+                            f"{path}: route {route} step orders "
+                            f"{sorted(orders)} are not contiguous from 1 "
+                            "(§9.4)"
+                        )
                     for position in sorted(orders):
                         follower = orders.get(position + 1)
                         if follower is not None and (
