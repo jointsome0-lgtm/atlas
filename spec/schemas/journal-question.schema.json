@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/journal-question.schema.json",
+  "description": "Atlas questions.jsonl creation row, transcribing §9.8, §33.2 provenance, and §32.6 sensitivity.",
+  "type": "object",
+  "properties": {
+    "id": {"type": "string", "pattern": "^question:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "type": {"const": "question"},
+    "text": {"type": "string"},
+    "created_at": {"$ref": "#/$defs/date"},
+    "pulls": {"type": "array", "items": {"$ref": "#/$defs/regionId"}},
+    "source": {
+      "type": "object",
+      "properties": {
+        "artifact": {"type": "string", "pattern": "^artifact:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        "encounter": {"type": "string", "pattern": "^encounter:[a-z0-9]+(?:-[a-z0-9]+)*$"}
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
+    "intake": {"$ref": "#/$defs/intakeKey"},
+    "sensitivity": {"$ref": "#/$defs/sensitivity"}
+  },
+  "required": ["id", "type", "text", "created_at", "pulls", "source"],
+  "additionalProperties": false,
+  "$defs": {
+    "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "regionId": {"type": "string", "pattern": "^(?:concept|pattern|zone):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "intakeKey": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*#[0-9]+$"},
+    "sensitivity": {
+      "type": "string",
+      "enum": ["medical"],
+      "description": "Sensitivity classes transcribed verbatim from §32.6 and §33.2."
+    }
+  }
+}

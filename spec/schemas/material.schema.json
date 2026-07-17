@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/material.schema.json",
+  "description": "Atlas curated Material frontmatter with embedded MaterialParts, transcribing §9.2–§9.3, §9.14, §10.1–§10.2, §14.9, and §34.4.",
+  "type": "object",
+  "properties": {
+    "id": {"$ref": "#/$defs/materialId"},
+    "type": {"const": "material"},
+    "title": {"type": "string"},
+    "kind": {"$ref": "#/$defs/materialKind"},
+    "url": {"type": "string"},
+    "status": {"$ref": "#/$defs/lifecycleStatus"},
+    "overall_concepts": {"type": "array", "items": {"$ref": "#/$defs/conceptId"}},
+    "parts": {"type": "array", "items": {"$ref": "#/$defs/materialPart"}},
+    "supported_by": {"type": "array", "items": {"$ref": "#/$defs/supportRef"}},
+    "formerly": {"type": "array", "items": {"$ref": "#/$defs/materialId"}}
+  },
+  "required": ["id", "type", "title", "kind", "url", "status", "overall_concepts", "parts"],
+  "additionalProperties": false,
+  "$defs": {
+    "slug": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "materialId": {"type": "string", "pattern": "^material:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "partId": {"type": "string", "pattern": "^part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "materialRef": {"type": "string", "pattern": "^(?:material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
+    "conceptId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "materialKind": {
+      "type": "string",
+      "enum": ["article", "docs", "paper", "book", "repo", "video", "course", "spec", "tutorial", "internal"],
+      "description": "Material kinds transcribed verbatim from §9.2."
+    },
+    "lifecycleStatus": {
+      "type": "string",
+      "enum": ["active", "archived"],
+      "description": "Material lifecycle values transcribed verbatim from §9.2."
+    },
+    "edgeRole": {
+      "type": "string",
+      "enum": ["prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions"],
+      "description": "MaterialPart-source authored roles transcribed verbatim from the §10.2 matrix."
+    },
+    "edgeWeight": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Authored edge-weight hypotheses transcribed verbatim from §14.9."
+    },
+    "conceptEdge": {
+      "type": "object",
+      "properties": {
+        "to": {"$ref": "#/$defs/conceptId"},
+        "role": {"$ref": "#/$defs/edgeRole"},
+        "weight": {"$ref": "#/$defs/edgeWeight"}
+      },
+      "required": ["to", "role"],
+      "additionalProperties": false
+    },
+    "supportRef": {
+      "oneOf": [
+        {"$ref": "#/$defs/materialRef"},
+        {
+          "type": "object",
+          "properties": {"id": {"$ref": "#/$defs/materialRef"}, "note": {"type": "string"}},
+          "required": ["id"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "materialPart": {
+      "type": "object",
+      "properties": {
+        "id": {"$ref": "#/$defs/partId"},
+        "title": {"type": "string"},
+        "concept_edges": {"type": "array", "items": {"$ref": "#/$defs/conceptEdge"}},
+        "supported_by": {"type": "array", "items": {"$ref": "#/$defs/supportRef"}},
+        "formerly": {"type": "array", "items": {"$ref": "#/$defs/partId"}}
+      },
+      "required": ["id", "title"],
+      "additionalProperties": false
+    }
+  }
+}

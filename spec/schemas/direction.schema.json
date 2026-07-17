@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/direction.schema.json",
+  "description": "Atlas curated Direction frontmatter, transcribing §9.5, §10.1, and §34.4.",
+  "type": "object",
+  "properties": {
+    "id": {"$ref": "#/$defs/directionId"},
+    "type": {"const": "direction"},
+    "title": {"type": "string"},
+    "status": {"$ref": "#/$defs/lifecycleStatus"},
+    "attractor": {"type": "string"},
+    "core_concepts": {"type": "array", "items": {"$ref": "#/$defs/conceptId"}},
+    "formerly": {"type": "array", "items": {"$ref": "#/$defs/directionId"}}
+  },
+  "required": ["id", "type", "title", "status", "attractor", "core_concepts"],
+  "additionalProperties": false,
+  "$defs": {
+    "directionId": {"type": "string", "pattern": "^direction:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "conceptId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "lifecycleStatus": {
+      "type": "string",
+      "enum": ["active", "archived"],
+      "description": "Direction lifecycle values use the active/archived vocabulary transcribed from §9.2 and §9.11."
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "material:demo",
+  "flag": "true",
+  "date": "2026-07-16",
+  "empty": "",
+  "none": [],
+  "parts": [
+    {
+      "id": "part:demo/one",
+      "title": "One by Vera Example",
+      "refs": ["concept:first", "concept:second"]
+    }
+  ]
+}

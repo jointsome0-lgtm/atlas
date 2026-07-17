@@ -1,0 +1,6 @@
+---
+mixed:
+  key: value
+  - other
+---
+Vera Example

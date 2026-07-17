@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/atlas-intake.schema.json",
+  "description": "Atlas activity-ledger intake envelope and records, transcribing §33.2–§33.3, §9.6–§9.8, and §32.6.",
+  "type": "object",
+  "properties": {
+    "format": {"const": "atlas-intake"},
+    "version": {"type": "integer", "const": 1},
+    "source": {"type": "string", "pattern": "^(?!(?:import|observe)$)[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "batch": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "sensitivity": {"$ref": "#/$defs/sensitivity"},
+    "records": {"type": "array", "items": {"$ref": "#/$defs/record"}}
+  },
+  "required": ["format", "version", "source", "batch", "records"],
+  "additionalProperties": true,
+  "$defs": {
+    "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "nodeId": {"type": "string", "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
+    "sensitivity": {
+      "type": "string",
+      "enum": ["medical"],
+      "description": "Sensitivity classes transcribed verbatim from §32.6 and §33.2."
+    },
+    "encounterDepth": {
+      "type": "string",
+      "enum": ["skim", "read", "summarized", "applied", "taught"],
+      "description": "Encounter depths transcribed verbatim from §9.7."
+    },
+    "evidenceStrength": {
+      "type": "string",
+      "enum": ["noticed", "read", "summarized", "applied", "explained", "reviewed", "performed", "drilled"],
+      "description": "Artifact evidence strengths transcribed verbatim from §9.6."
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "id": {"$ref": "#/$defs/nodeId"},
+        "url": {"type": "string"},
+        "title": {"type": "string"},
+        "text": {"type": "string"}
+      },
+      "additionalProperties": true,
+      "oneOf": [
+        {"required": ["id"]},
+        {"required": ["url"]},
+        {"required": ["title"]},
+        {"required": ["text"]}
+      ]
+    },
+    "encounterRecord": {
+      "type": "object",
+      "properties": {
+        "kind": {"const": "encounter"},
+        "date": {"$ref": "#/$defs/date"},
+        "target": {"$ref": "#/$defs/reference"},
+        "depth": {"$ref": "#/$defs/encounterDepth"},
+        "sensitivity": {"$ref": "#/$defs/sensitivity"}
+      },
+      "required": ["kind", "date", "target", "depth"],
+      "additionalProperties": true
+    },
+    "artifactRecord": {
+      "type": "object",
+      "properties": {
+        "kind": {"const": "artifact"},
+        "date": {"$ref": "#/$defs/date"},
+        "type": {"type": "string"},
+        "text": {"type": "string"},
+        "refs": {"type": "array", "items": {"$ref": "#/$defs/reference"}},
+        "evidence_strength": {"$ref": "#/$defs/evidenceStrength"},
+        "sensitivity": {"$ref": "#/$defs/sensitivity"}
+      },
+      "required": ["kind", "date", "type", "text"],
+      "additionalProperties": true
+    },
+    "questionRecord": {
+      "type": "object",
+      "properties": {
+        "kind": {"const": "question"},
+        "date": {"$ref": "#/$defs/date"},
+        "text": {"type": "string"},
+        "refs": {"type": "array", "items": {"$ref": "#/$defs/reference"}},
+        "sensitivity": {"$ref": "#/$defs/sensitivity"}
+      },
+      "required": ["kind", "date", "text"],
+      "additionalProperties": true
+    },
+    "planRecord": {
+      "type": "object",
+      "properties": {
+        "kind": {"const": "plan"},
+        "date": {"$ref": "#/$defs/date"},
+        "text": {"type": "string"},
+        "ref": {"$ref": "#/$defs/reference"},
+        "sensitivity": {"$ref": "#/$defs/sensitivity"}
+      },
+      "required": ["kind", "date"],
+      "additionalProperties": true,
+      "oneOf": [
+        {"required": ["text"]},
+        {"required": ["ref"]}
+      ]
+    },
+    "record": {
+      "oneOf": [
+        {"$ref": "#/$defs/encounterRecord"},
+        {"$ref": "#/$defs/artifactRecord"},
+        {"$ref": "#/$defs/questionRecord"},
+        {"$ref": "#/$defs/planRecord"}
+      ]
+    }
+  }
+}

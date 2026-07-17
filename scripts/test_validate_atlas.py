@@ -1,0 +1,1122 @@
+import contextlib
+import io
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import validate_atlas
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+# Instance trees are materialized into temp directories instead of being
+# committed: .gitignore deliberately blocks instance-shaped paths (atlas/,
+# state/, graph/, intake/, *.jsonl) anywhere in the public git layer.
+
+VALID_CONCEPT = """---
+id: concept:example
+type: concept
+title: Example
+updated: 2026-07-16
+aliases: []
+related_concepts: []
+concept_edges: []
+---
+
+Synthetic schema fixture authored by Vera Example.
+"""
+
+VALID_PLAN_EXTRACT = """id: plan:example
+title: Example plan
+directions: []
+concepts: []
+materials: []
+material_parts: []
+suggested_routes: []
+probes: []
+notes: []
+"""
+
+VALID_ARTIFACT_ROW = (
+    '{"id":"artifact:2026-07-16-001","type":"note","path":"notes/example.md",'
+    '"observed_at":"2026-07-16","summary":"Synthetic schema fixture.",'
+    '"touches":["concept:example"],"supports_state_updates":[],'
+    '"evidence_strength":"noticed"}\n'
+)
+
+VALID_EMPTY_GRAPH = """{
+  "format": "atlas-graph",
+  "version": 1,
+  "nodes": [],
+  "edges": [],
+  "trails": [],
+  "state": {},
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}
+"""
+
+VALID_INTAKE_BATCH = """{
+  "format": "atlas-intake",
+  "version": 1,
+  "source": "watch-sync",
+  "batch": "2026-07-16-001",
+  "records": [
+    {"kind": "question", "date": "2026-07-16", "text": "synthetic Vera Example question?"}
+  ]
+}
+"""
+
+FULL_WITHHELD = (
+    '"withheld": {"nodes": 1, "edges": 0, "trails": 0, "state": 0,'
+    ' "influence": 0, "frontier": 0, "projections": 0}'
+)
+
+VALID_REDACTED_GRAPH = VALID_EMPTY_GRAPH.replace(
+    '"nodes": [],', FULL_WITHHELD + ',\n  "nodes": [],'
+)
+
+GRAPH_WITH_NODE = VALID_EMPTY_GRAPH.replace(
+    '"nodes": [],',
+    '"nodes": [{"id": "concept:example", "type": "%s", "title": "Example",'
+    ' "fields": ["knowledge"], "aliases": []}],',
+)
+
+GRAPH_WITH_EDGE = VALID_EMPTY_GRAPH.replace(
+    '"edges": [],',
+    '"edges": [{"source": "concept:a", "target": "concept:b", "type": "loads",'
+    ' "provenance": ["pattern:p"], "weight": "unassessed"}],',
+)
+
+VALID_MATERIAL = """---
+id: material:example-docs
+type: material
+title: Example Docs (Vera Example)
+kind: docs
+url: ""
+status: active
+overall_concepts:
+  - concept:example
+parts:
+  - id: part:example-docs/intro
+    title: Intro
+    formerly:
+      - part:example-docs/old-intro
+---
+"""
+
+_LEVELS = ["unknown", "low", "medium", "high"]
+_SHARED_SCALES = {
+    "confidence": _LEVELS,
+    "clarity": ["vague", "rough", "stable", "disputed"],
+    "coverage": ["none", "partial", "broad"],
+    "freshness": ["fresh", "aging", "stale"],
+}
+
+VALID_SNAPSHOT = json.dumps({
+    "format": "atlas-snapshot",
+    "version": 1,
+    "generated_at": "2026-07-16T00:00:00Z",
+    "withheld": {"state": 0, "materials": 0, "trail": 0, "questions": 0, "evidence_refs": 0},
+    "scales": {
+        "concept": {"exposure": ["unseen", "touched", "read", "summarized", "applied", "taught"], **_SHARED_SCALES},
+        "material": {"depth_reached": ["skim", "read", "summarized", "applied", "taught"]},
+        "pattern": {"exposure": ["unseen", "touched", "studied", "tried", "drilled", "reviewed"], **_SHARED_SCALES},
+        "zone": {"contact": ["unseen", "touched", "loaded", "probed"], "strength": _LEVELS,
+                 "endurance": _LEVELS, "mobility": _LEVELS,
+                 "condition": ["unknown", "fine", "irritated", "recovering", "restricted", "chronic"],
+                 "freshness": ["fresh", "aging", "stale"]},
+    },
+    "evidence_refs": {"artifact:2026-07-16-001": {"kind": "artifact", "date": "2026-07-16"}},
+    "state": {"concept:example": {"exposure": "applied", "evidence": ["artifact:2026-07-16-001"],
+              "decisions": [{"dimension": "confidence", "date": "2026-07-16",
+                             "evidence": ["artifact:2026-07-16-001"]}]}},
+    "materials": {},
+    "trail": [],
+    "questions": [],
+}, indent=2) + "\n"
+
+VALID_ROUTE = """---
+id: suggested-route:example-default
+type: suggested_route
+title: Example route (Vera Example)
+status: available
+steps:
+  - concept:example
+material_roles:
+  - step: concept:example
+    primary_materials:
+      - material:example-docs
+---
+"""
+
+VALID_INSTANCE = {
+    "atlas/concepts/example.md": VALID_CONCEPT,
+    "atlas/suggested-routes/example-default.md": VALID_ROUTE,
+    "graph/atlas-snapshot.json": VALID_SNAPSHOT,
+    "atlas/materials/example-docs.md": VALID_MATERIAL,
+    "state/receipts.jsonl": (
+        '{"intake":"watch-sync/2026-07-16-001#0","marker":"opened","date":"2026-07-16"}\n'
+        '{"intake":"watch-sync/2026-07-16-001#0","marker":"processed","date":"2026-07-16"}\n'
+    ),
+    "plans/extracted/example.yaml": VALID_PLAN_EXTRACT,
+    "state/artifacts.jsonl": VALID_ARTIFACT_ROW,
+    "state/decisions.jsonl": (
+        '{"date":"2026-07-16","target":"supports:part:b/y->part:a/x",'
+        '"dimension":"weight","to":"high",'
+        '"evidence":["artifact:2026-07-16-001"],'
+        '"proposed_by":"user","decision":"confirmed"}\n'
+    ),
+    "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
+        "\n", "\r\n"
+    ).replace('"2026-07-16-001"', '"2026-07-16-002"'),
+    "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+        '"title": "Example", "fields": ["knowledge"], "aliases": []}],',
+        '"title": "Example", "fields": ["knowledge"], "aliases": []},'
+        ' {"id": "concept:other", "type": "concept", "title": "Other",'
+        ' "fields": ["knowledge"], "aliases": []}],',
+    ).replace(
+        '"edges": [],',
+        '"edges": [{"source": "concept:example", "target": "concept:other",'
+        ' "type": "related_to", "provenance": ["concept:example"],'
+        ' "weight": "low"}],',
+    ),
+    "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH,
+    "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH,
+}
+
+INVALID_INSTANCES = {
+    "bad-graph": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace('"version": 1', '"version": 2'),
+    },
+    "bad-journal": {
+        "state/artifacts.jsonl": VALID_ARTIFACT_ROW.replace('"noticed"', '"mastered"'),
+    },
+    "unknown-curated": {
+        "atlas/concepts/bad.md": "---\nid: concept:bad\ntype: concept\ntitle: Bad\nstray: rejected\n---\n",
+    },
+    "bad-id-trailing-newline": {
+        "atlas/concepts/bad.md": (
+            "---\nid: \"concept:bad\\n\"\ntype: concept\ntitle: Bad (Vera Example)\n"
+            "aliases: []\n---\n"
+        ),
+    },
+    "bad-graph-node-kind": {
+        "graph/atlas-graph.json": GRAPH_WITH_NODE % "material",
+    },
+    "bad-graph-edge-endpoints": {
+        "graph/atlas-graph.json": GRAPH_WITH_EDGE,
+    },
+    "bad-graph-withheld-on-full": {
+        "graph/atlas-graph.json": VALID_REDACTED_GRAPH,
+    },
+    "bad-graph-redacted-without-withheld": {
+        "graph/atlas-graph.redacted.json": VALID_EMPTY_GRAPH,
+    },
+    "bad-decision-weight-endpoints": {
+        "state/decisions.jsonl": (
+            '{"date":"2026-07-16","target":"loads:concept:a->concept:b",'
+            '"dimension":"weight","to":"high",'
+            '"evidence":["artifact:2026-07-16-001"],'
+            '"proposed_by":"user","decision":"confirmed"}\n'
+        ),
+    },
+    "bad-decision-weight-on-derived-edge": {
+        "state/decisions.jsonl": (
+            '{"date":"2026-07-16","target":"has_part:material:a->part:a/b",'
+            '"dimension":"weight","to":"high",'
+            '"evidence":["artifact:2026-07-16-001"],'
+            '"proposed_by":"user","decision":"confirmed"}\n'
+        ),
+    },
+    "bad-decision-status-target": {
+        "state/decisions.jsonl": (
+            '{"date":"2026-07-16","target":"concept:example","dimension":"status",'
+            '"to":"open","evidence":["artifact:2026-07-16-001"],'
+            '"proposed_by":"user","decision":"confirmed"}\n'
+        ),
+    },
+    "bad-pattern-loads-target": {
+        "atlas/patterns/bad.md": (
+            "---\nid: pattern:bad\ntype: pattern\ntitle: Bad (Vera Example)\n"
+            "concept_edges:\n  - to: concept:example\n    role: loads\n---\n"
+        ),
+    },
+    "bad-route-role-overlap": {
+        "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
+            "id: suggested-route:example-default",
+            "id: suggested-route:bad",
+        ).replace(
+            "    primary_materials:\n      - material:example-docs\n",
+            "    primary_materials:\n      - material:example-docs\n"
+            "    supporting_materials:\n      - material:example-docs\n",
+        ),
+    },
+    "bad-material-foreign-part-id": {
+        "atlas/materials/bad.md": VALID_MATERIAL.replace(
+            "id: material:example-docs",
+            "id: material:bad-docs",
+        ).replace(
+            "part:example-docs/old-intro",
+            "part:bad-docs/old-intro",
+        ),
+    },
+    "bad-route-material-role-step": {
+        "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
+            "id: suggested-route:example-default",
+            "id: suggested-route:bad",
+        ).replace("- step: concept:example", "- step: concept:absent"),
+    },
+    "bad-snapshot-evidence-key-shape": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "evidence_refs": {"artifact:bad/key":
+                              {"kind": "artifact", "date": "2026-07-16"}},
+            "state": {},
+        }) + "\n",
+    },
+    "bad-graph-trail-from-shape": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "trail-segment:2026-07-16-002",'
+            ' "type": "trail_segment", "title": "", "fields": [],'
+            ' "date": "2026-07-16", "direction": "direction:d",'
+            ' "from": "concept:bad/key", "to": "concept:a",'
+            ' "via": ["artifact:a"], "reason": "r",'
+            ' "resulting_questions": []}],',
+        ),
+    },
+    "bad-graph-trail-shape": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "trail-segment:2026-07-16-001",'
+            ' "type": "trail_segment", "title": "", "fields": [],'
+            ' "date": "2026-07-16", "direction": "direction:d",'
+            ' "to": "material:m", "via": ["question:q"], "reason": "r",'
+            ' "resulting_questions": []}],',
+        ),
+    },
+    "bad-graph-role-step-not-in-route": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1},'
+            ' {"source": "material:m", "target": "suggested-route:r",'
+            ' "type": "primary_for", "provenance": ["suggested-route:r"],'
+            ' "step": "concept:b"}],',
+        ),
+    },
+    "bad-snapshot-state-type": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": [1],
+        }) + "\n",
+    },
+    "bad-graph-part-parent": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "part:a/x", "type": "material_part",'
+            ' "title": "X", "fields": [], "material": "material:b"}],',
+        ),
+    },
+    "bad-graph-region-field": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"fields": ["knowledge"], "aliases": []}],',
+            '"fields": ["body"], "aliases": []}],',
+        ).replace(
+            '"fields": ["knowledge"], "aliases": []},',
+            '"fields": ["body"], "aliases": []},',
+        ),
+    },
+    "bad-graph-dangling-context": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:example", "target": "concept:other",'
+            ' "type": "suggested_next", "provenance": ["concept:example"],'
+            ' "context": "suggested-route:missing"}],',
+        ),
+    },
+    "bad-graph-duplicate-node-id": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"aliases": []}],',
+            '"aliases": []}, {"id": "concept:example", "type": "concept",'
+            ' "title": "Twin", "fields": ["knowledge"], "aliases": []}],',
+        ),
+    },
+    "bad-graph-dangling-provenance": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:example", "target": "concept:example",'
+            ' "type": "related_to", "provenance": ["concept:missing"],'
+            ' "weight": "low"}],',
+        ),
+    },
+    "bad-snapshot-state-key": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:bad/key": {
+                "evidence": ["artifact:2026-07-16-001"], "decisions": [],
+            }},
+        }) + "\n",
+    },
+    "bad-snapshot-concept-depth-reached": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "depth_reached": "read",
+                "evidence": ["artifact:2026-07-16-001"], "decisions": [],
+            }},
+        }) + "\n",
+    },
+    "bad-snapshot-evidence-kind-mismatch": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "evidence_refs": {"artifact:2026-07-16-001":
+                              {"kind": "question", "date": "2026-07-16"}},
+        }) + "\n",
+    },
+    "bad-snapshot-materials-key": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "materials": {"concept:example": {
+                "depth_reached": "skim", "last_seen": "2026-07-16",
+                "evidence": [],
+            }},
+        }) + "\n",
+    },
+    "bad-snapshot-trail-shape": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "trail": [{"id": "trail-segment:2026-07-16-001",
+                       "date": "2026-07-16", "to": "material:m",
+                       "via": ["concept:x"]}],
+        }) + "\n",
+    },
+    "bad-snapshot-question-pulls": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "questions": [{"id": "question:example", "text": "Vera Example?",
+                           "status": "open", "pulls": ["material:m"],
+                           "source": ["artifact:2026-07-16-001"]}],
+        }) + "\n",
+    },
+    "bad-snapshot-status-decision": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "evidence": ["artifact:2026-07-16-001"],
+                "decisions": [{"dimension": "status", "date": "2026-07-16",
+                               "evidence": ["artifact:2026-07-16-001"]}],
+            }},
+        }) + "\n",
+    },
+    "bad-snapshot-decision-dimension": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "evidence": ["artifact:2026-07-16-001"],
+                "decisions": [{"dimension": "condition", "date": "2026-07-16",
+                               "evidence": ["artifact:2026-07-16-001"]}],
+            }},
+        }) + "\n",
+    },
+    "bad-graph-dangling-endpoint": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "concept:b",'
+            ' "type": "related_to", "provenance": ["concept:a"],'
+            ' "weight": "low"}],',
+        ),
+    },
+    "bad-snapshot-kind-dimensions": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "condition": "chronic",
+                "evidence": ["artifact:2026-07-16-001"],
+                "decisions": [],
+            }},
+        }) + "\n",
+    },
+    "bad-snapshot-dangling-evidence": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {
+                "exposure": "applied",
+                "evidence": ["artifact:missing"],
+                "decisions": [],
+            }},
+        }) + "\n",
+    },
+    "bad-graph-weight-on-derived-edge": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "part:m/a",'
+            ' "type": "has_part", "provenance": ["material:m"],'
+            ' "weight": "high"}],',
+        ),
+    },
+    "bad-graph-suggested-next-context": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "concept:b",'
+            ' "type": "suggested_next", "provenance": ["suggested-route:r"],'
+            ' "context": "concept:a"}],',
+        ),
+    },
+    "bad-receipt-intake-key": {
+        "state/receipts.jsonl": (
+            '{"intake":"-bad/also--bad#1","marker":"opened","date":"2026-07-16"}\n'
+        ),
+    },
+    "bad-intake-path-mismatch": {
+        "intake/right/file.json": VALID_INTAKE_BATCH.replace(
+            '"watch-sync"', '"wrong"'
+        ),
+    },
+    "bad-intake": {
+        "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
+            '"atlas-intake"', '"wrong"'
+        ),
+    },
+    "bad-route-step-shape": {
+        "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
+            "id: suggested-route:example-default",
+            "id: suggested-route:bad",
+        ).replace(
+            "steps:\n  - concept:example\n",
+            "steps:\n  - id: concept:example\n",
+        ),
+    },
+    "bad-graph-node-id-type": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": [], "type": "concept", "title": "Bad",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ),
+    },
+    "bad-graph-projection-key": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"projections": {}',
+            '"projections": {"concept:a": "left shoulder"}',
+        ),
+    },
+    "bad-route-role-material-shape": {
+        "atlas/suggested-routes/bad.md": VALID_ROUTE.replace(
+            "id: suggested-route:example-default",
+            "id: suggested-route:bad",
+        ).replace(
+            "    primary_materials:\n      - material:example-docs\n",
+            "    primary_materials:\n      - id: material:example-docs\n",
+        ),
+    },
+    "bad-graph-withheld-partial": {
+        "graph/atlas-graph.redacted.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],', '"withheld": {"nodes": 1},\n  "nodes": [],'
+        ),
+    },
+    "bad-graph-withheld-foreign-key": {
+        "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH.replace(
+            '"projections": 0}', '"projections": 0, "note": 1}'
+        ),
+    },
+    "bad-graph-nodes-type": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],', '"nodes": 1,'
+        ),
+    },
+    "bad-graph-duplicate-step-order": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1},'
+            ' {"source": "concept:b", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1}],',
+        ),
+    },
+    "bad-graph-wall-clock-generated-at": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"version": 1,',
+            '"version": 1,\n  "generated_at": "2026-07-16T12:34:56Z",',
+        ),
+    },
+    "bad-graph-artifact-fields": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "artifact:a", "type": "artifact", "title": "A",'
+            ' "fields": [], "kind": "note", "path": "p",'
+            ' "observed_at": "2026-07-16", "summary": "s",'
+            ' "evidence_strength": "weak"},'
+            ' {"id": "concept:c", "type": "concept", "title": "C",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "artifact:a", "target": "concept:c",'
+            ' "type": "influences", "provenance": ["artifact:a"]}],',
+        ),
+    },
+    "bad-graph-role-overlap": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": ["knowledge"], "kind": "docs", "url": "",'
+            ' "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1},'
+            ' {"source": "material:m", "target": "suggested-route:r",'
+            ' "type": "primary_for", "provenance": ["suggested-route:r"],'
+            ' "step": "concept:a", "weight": "unassessed"},'
+            ' {"source": "material:m", "target": "suggested-route:r",'
+            ' "type": "supporting_for", "provenance": ["suggested-route:r"],'
+            ' "step": "concept:a", "weight": "unassessed"}],',
+        ),
+    },
+    "bad-graph-encounter-without-visited": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "material:m",'
+            ' "depth": "skim", "mode": "background"}],',
+        ),
+    },
+    "bad-graph-formerly-cross-kind": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active",'
+            ' "formerly": ["part:old/x"]}],',
+        ),
+    },
+    "bad-graph-container-edge-meta": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"edges": [],',
+            '"edges": [{"source": [], "target": {}, "type": "suggested_next",'
+            ' "provenance": ["suggested-route:r"], "context": []},'
+            ' {"source": [], "target": [], "type": "visited",'
+            ' "provenance": ["encounter:e"]}],',
+        ),
+    },
+    "bad-curated-two-survivor-formerly": {
+        "atlas/concepts/example.md": VALID_CONCEPT.replace(
+            "aliases: []",
+            "aliases: []\nformerly:\n  - concept:old",
+        ),
+        "atlas/concepts/other.md": VALID_CONCEPT.replace(
+            "concept:example", "concept:other",
+        ).replace(
+            "aliases: []",
+            "aliases: []\nformerly:\n  - concept:old",
+        ),
+    },
+    "bad-curated-living-formerly": {
+        "atlas/concepts/example.md": VALID_CONCEPT.replace(
+            "aliases: []",
+            "aliases: []\nformerly:\n  - concept:other",
+        ),
+        "atlas/concepts/other.md": VALID_CONCEPT.replace(
+            "concept:example", "concept:other",
+        ),
+    },
+    "bad-curated-duplicate-id": {
+        "atlas/concepts/example.md": VALID_CONCEPT,
+        "atlas/concepts/twin.md": VALID_CONCEPT.replace(
+            "title: Example", "title: Twin"),
+    },
+    "bad-graph-off-type-discriminant": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": ["knowledge"], "kind": "docs", "url": "",'
+            ' "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"]},'
+            ' {"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"],'
+            ' "order": 2}],',
+        ),
+    },
+    "bad-graph-forged-question-role": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "artifact:x", "type": "artifact", "title": "X",'
+            ' "fields": [], "kind": "note", "path": "p",'
+            ' "observed_at": "2026-07-16", "summary": "s",'
+            ' "evidence_strength": "noticed"},'
+            ' {"id": "question:q", "type": "question", "title": "Q",'
+            ' "fields": [], "text": "Vera Example?",'
+            ' "created_at": "2026-07-16",'
+            ' "source": {"artifact": "artifact:x"}}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "question:q",'
+            ' "type": "primary_for", "provenance": ["question:q"]}],',
+        ),
+    },
+    "bad-graph-duplicate-edge-identity": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": ["knowledge"], "kind": "docs", "url": "",'
+            ' "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"],'
+            ' "weight": "unassessed"},'
+            ' {"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"],'
+            ' "weight": "unassessed"}],',
+        ),
+    },
+    "bad-concept-formerly-pattern": {
+        "atlas/concepts/bad.md": (
+            "---\nid: concept:bad\ntype: concept\n"
+            "title: Bad (Vera Example)\nformerly:\n  - pattern:old\n---\n"
+        ),
+    },
+    "bad-graph-segment-without-moved-to": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": ["knowledge"], "attractor": "a", "status": "active"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
+            ' "direction": "direction:d", "from": "concept:a",'
+            ' "to": "concept:b", "via": [], "reason": "r"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]},'
+            ' {"source": "concept:b", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]}],',
+        ),
+    },
+    "bad-graph-unbacked-moved-to": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:c", "type": "concept", "title": "C",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:d", "type": "concept", "title": "D",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": ["knowledge"], "attractor": "a", "status": "active"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
+            ' "direction": "direction:d", "from": "concept:a",'
+            ' "to": "concept:b", "via": [], "reason": "r"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]},'
+            ' {"source": "concept:b", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]},'
+            ' {"source": "concept:a", "target": "concept:b",'
+            ' "type": "moved_to",'
+            ' "provenance": ["trail-segment:2026-07-16-001"]},'
+            ' {"source": "concept:c", "target": "concept:d",'
+            ' "type": "moved_to",'
+            ' "provenance": ["trail-segment:2026-07-16-001"]}],',
+        ),
+    },
+    "bad-graph-moved-to-wrong-segment": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:c", "type": "concept", "title": "C",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:d", "type": "concept", "title": "D",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": ["knowledge"], "attractor": "a", "status": "active"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
+            ' "direction": "direction:d", "from": "concept:a",'
+            ' "to": "concept:b", "via": [], "reason": "r"},'
+            ' {"id": "trail-segment:2026-07-16-002", "type": "trail_segment",'
+            ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
+            ' "direction": "direction:d", "from": "concept:c",'
+            ' "to": "concept:d", "via": [], "reason": "r"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]},'
+            ' {"source": "concept:b", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]},'
+            ' {"source": "concept:a", "target": "concept:b",'
+            ' "type": "moved_to",'
+            ' "provenance": ["trail-segment:2026-07-16-002"]},'
+            ' {"source": "concept:c", "target": "concept:d",'
+            ' "type": "moved_to",'
+            ' "provenance": ["trail-segment:2026-07-16-002"]}],',
+        ),
+    },
+    "bad-graph-artifact-via-without-produced": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "artifact:x", "type": "artifact", "title": "X",'
+            ' "fields": [], "kind": "note", "path": "p",'
+            ' "observed_at": "2026-07-16", "summary": "s",'
+            ' "evidence_strength": "weak"},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": [], "attractor": "a", "status": "active"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": [], "date": "2026-07-16",'
+            ' "direction": "direction:d", "to": "concept:absent",'
+            ' "via": ["artifact:x"], "reason": "r"}],',
+        ),
+    },
+    "bad-graph-gapped-step-orders": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1},'
+            ' {"source": "concept:b", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 3}],',
+        ),
+    },
+    "bad-graph-part-without-has-part": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "part:m/a", "type": "material_part", "title": "A",'
+            ' "fields": [], "material": "material:m"}],',
+        ),
+    },
+    "bad-graph-container-types": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": [], "title": "A",'
+            ' "fields": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "concept:a",'
+            ' "type": [], "provenance": ["concept:a"]}],',
+        ),
+    },
+    "bad-graph-fields-mismatch": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"],'
+            ' "weight": "unassessed"}],',
+        ),
+    },
+    "bad-graph-missing-suggested-next": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 1},'
+            ' {"source": "concept:b", "target": "suggested-route:r",'
+            ' "type": "step_of_route", "provenance": ["suggested-route:r"],'
+            ' "order": 2}],',
+        ),
+    },
+    "bad-graph-suggested-next-not-consecutive": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "concept:b",'
+            ' "type": "suggested_next", "provenance": ["suggested-route:r"],'
+            ' "context": "suggested-route:r"}],',
+        ),
+    },
+    "bad-graph-concept-with-status": {
+        "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
+            '"aliases": []}],',
+            '"aliases": [], "status": "active"}],',
+        ),
+    },
+    "bad-graph-supports-foreign-provenance": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:a", "type": "material", "title": "A",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "material:b", "type": "material", "title": "B",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:a", "target": "material:b",'
+            ' "type": "supports", "provenance": ["material:a"],'
+            ' "weight": "unassessed"}],',
+        ),
+    },
+    "bad-graph-question-source-shape": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "question:q", "type": "question", "title": "Q",'
+            ' "fields": ["knowledge"], "text": "Vera Example?",'
+            ' "created_at": "2026-07-16", "source": "material:m"}],',
+        ),
+    },
+    "bad-graph-encounter-target": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "concept:c",'
+            ' "depth": "skim", "mode": "reading", "context": "solo"}],',
+        ),
+    },
+    "bad-graph-encounter-context": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "material:m",'
+            ' "depth": "skim", "mode": "reading", "context": "solo"}],',
+        ),
+    },
+    "bad-graph-encounter-mode": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "material:m",'
+            ' "depth": "skim", "mode": "solo"}],',
+        ),
+    },
+    "bad-snapshot-wall-clock-generated-at": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "generated_at": "2026-07-16T12:34:56Z",
+        }) + "\n",
+    },
+    "bad-graph-zone-without-projection": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "zone:shoulder", "type": "zone",'
+            ' "title": "Shoulder", "fields": ["body"], "notes": ""}],',
+        ),
+    },
+    "bad-snapshot-closed-question": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "questions": [{"id": "question:q", "text": "Vera Example?",
+                           "status": "resolved", "pulls": [],
+                           "source": ["artifact:2026-07-16-001"]}],
+        }) + "\n",
+    },
+    "bad-snapshot-evidence-type": {
+        "graph/atlas-snapshot.json": json.dumps({
+            **json.loads(VALID_SNAPSHOT),
+            "state": {"concept:example": {"evidence": 1, "decisions": 1}},
+        }) + "\n",
+    },
+}
+
+
+def materialize(tree: dict[str, str], root: Path) -> None:
+    for relative, content in tree.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+
+class SchemaValidatorTests(unittest.TestCase):
+    def run_cli(self, *args):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = validate_atlas.main(list(args))
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_registry_is_exact_and_supported(self):
+        schemas, errors = validate_atlas._load_registry()
+        self.assertEqual([], errors)
+        self.assertEqual(validate_atlas.SCHEMA_NAMES, set(schemas))
+
+    def test_unsupported_schema_keyword_fails_closed(self):
+        with self.assertRaises(validate_atlas.SchemaSubsetError):
+            validate_atlas.SchemaValidator({"type": "string", "format": "date"})
+
+    def test_valid_instance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(VALID_INSTANCE, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("2 intake batches", stdout)
+        self.assertIn("0 errors", stdout)
+        self.assertEqual("", stderr)
+
+    def test_stale_route_step_resolves_through_formerly(self):
+        # §34.4: steps already use the survivor while material_roles[].step
+        # still names the retired id — the ref resolves through the map
+        # with a warning, never a membership error (the builder accepts
+        # exactly this curation).
+        instance = {
+            **VALID_INSTANCE,
+            "atlas/concepts/example.md": VALID_CONCEPT.replace(
+                "aliases: []",
+                "aliases: []\nformerly:\n  - concept:old-example",
+            ),
+            "atlas/suggested-routes/example-default.md": VALID_ROUTE.replace(
+                "  - step: concept:example",
+                "  - step: concept:old-example",
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("stale curated ref concept:old-example resolved "
+                      "to concept:example (§34.4)", stdout + stderr)
+
+    def test_optional_row_fields_stay_optional_in_the_graph(self):
+        # §10.4 embeds the row fields: a background encounter has no
+        # context (§9.7) and a landing segment has no resulting_questions
+        # (§9.9) — the graph boundary must accept both.
+        graph = VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": [], "attractor": "a", "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "encounter:e", "type": "encounter", "title": "E",'
+            ' "fields": [], "date": "2026-07-16", "target": "material:m",'
+            ' "depth": "skim", "mode": "background"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
+            ' "direction": "direction:d", "to": "concept:a",'
+            ' "via": ["material:m"], "reason": "r"}],',
+        )
+        graph = graph.replace(
+            '"edges": [],',
+            '"edges": [{"source": "encounter:e", "target": "material:m",'
+            ' "type": "visited", "provenance": ["encounter:e"]},'
+            ' {"source": "trail-segment:2026-07-16-001",'
+            ' "target": "material:m", "type": "via",'
+            ' "provenance": ["trail-segment:2026-07-16-001"]}],',
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({"graph/atlas-graph.json": graph}, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+
+    def test_demo_instance(self):
+        root = ROOT / "fixtures" / "demo-instance"
+        code, stdout, stderr = self.run_cli("validate", str(root))
+        self.assertEqual(0, code, stderr)
+        self.assertIn("11 frontmatter documents", stdout)
+
+    def test_each_negative_instance_emits_error(self):
+        for name, tree in sorted(INVALID_INSTANCES.items()):
+            with self.subTest(case=name):
+                with tempfile.TemporaryDirectory() as directory:
+                    materialize(tree, Path(directory))
+                    code, stdout, stderr = self.run_cli("validate", directory)
+                self.assertEqual(1, code)
+                self.assertIn("ERROR:", stderr)
+                self.assertIn("errors", stdout)
+                self.assertTrue(
+                    all(line.startswith("ERROR:") for line in stderr.splitlines())
+                )
+
+    def test_intake_schema_positive_and_negative_documents(self):
+        schemas, errors = validate_atlas._load_registry()
+        self.assertEqual([], errors)
+        directory = ROOT / "fixtures" / "schema" / "documents"
+        valid = validate_atlas._read_json(directory / "atlas-intake.valid.json")
+        invalid = validate_atlas._read_json(directory / "atlas-intake.invalid.json")
+        validator = validate_atlas.SchemaValidator(schemas["atlas-intake"])
+        self.assertEqual([], validator.validate(valid))
+        self.assertTrue(validator.validate(invalid))
+
+    def test_check_constants(self):
+        code, stdout, stderr = self.run_cli("check-constants")
+        self.assertEqual(0, code, stderr)
+        self.assertEqual("checked constants: 0 errors\n", stdout)
+
+    def test_usage_exit_code_and_diagnostic(self):
+        code, stdout, stderr = self.run_cli()
+        self.assertEqual(2, code)
+        self.assertEqual("", stdout)
+        self.assertTrue(stderr.startswith("ERROR: usage:"))
+
+
+if __name__ == "__main__":
+    unittest.main()

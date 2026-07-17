@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/atlas-snapshot.schema.json",
+  "description": "Atlas state snapshot emission, transcribing the closed §33.4 v1 surface and the §9/§14/§32 scales it carries.",
+  "type": "object",
+  "properties": {
+    "format": {"const": "atlas-snapshot"},
+    "version": {"type": "integer", "const": 1},
+    "generated_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$", "description": "The as-of date at UTC midnight (§33.4) — same shape as the graph's (§10)."},
+    "withheld": {"$ref": "#/$defs/withheld"},
+    "scales": {"$ref": "#/$defs/scales"},
+    "evidence_refs": {"type": "object", "additionalProperties": {"$ref": "#/$defs/evidenceRef"}},
+    "state": {"type": "object", "additionalProperties": {"$ref": "#/$defs/stateEntry"}},
+    "materials": {"type": "object", "additionalProperties": {"$ref": "#/$defs/materialEntry"}},
+    "trail": {"type": "array", "items": {"$ref": "#/$defs/trailEntry"}},
+    "questions": {"type": "array", "items": {"$ref": "#/$defs/questionEntry"}}
+  },
+  "required": ["format", "version", "generated_at", "withheld", "scales", "evidence_refs", "state", "materials", "trail", "questions"],
+  "additionalProperties": true,
+  "$defs": {
+    "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "nodeId": {"type": "string", "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
+    "evidenceId": {"type": "string", "pattern": "^(?:artifact|encounter|question):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "withheld": {
+      "type": "object",
+      "properties": {
+        "state": {"type": "integer", "minimum": 0},
+        "materials": {"type": "integer", "minimum": 0},
+        "trail": {"type": "integer", "minimum": 0},
+        "questions": {"type": "integer", "minimum": 0},
+        "evidence_refs": {"type": "integer", "minimum": 0}
+      },
+      "required": ["state", "materials", "trail", "questions", "evidence_refs"],
+      "additionalProperties": false
+    },
+    "conceptScales": {
+      "type": "object",
+      "properties": {
+        "exposure": {"const": ["unseen", "touched", "read", "summarized", "applied", "taught"], "description": "Concept exposure scale transcribed verbatim from §14.1."},
+        "confidence": {"const": ["unknown", "low", "medium", "high"], "description": "Confidence scale transcribed verbatim from §14.2."},
+        "clarity": {"const": ["vague", "rough", "stable", "disputed"], "description": "Clarity scale transcribed verbatim from §14.3."},
+        "coverage": {"const": ["none", "partial", "broad"], "description": "Coverage scale transcribed verbatim from §14.4."},
+        "freshness": {"const": ["fresh", "aging", "stale"], "description": "Freshness scale transcribed verbatim from §14.7."}
+      },
+      "required": ["exposure", "confidence", "clarity", "coverage", "freshness"],
+      "additionalProperties": true
+    },
+    "materialScales": {
+      "type": "object",
+      "properties": {
+        "depth_reached": {"const": ["skim", "read", "summarized", "applied", "taught"], "description": "Material encounter-depth scale transcribed verbatim from §9.7 and §14.8."}
+      },
+      "required": ["depth_reached"],
+      "additionalProperties": true
+    },
+    "patternScales": {
+      "type": "object",
+      "properties": {
+        "exposure": {"const": ["unseen", "touched", "studied", "tried", "drilled", "reviewed"], "description": "Pattern exposure scale transcribed verbatim from §32.3."},
+        "confidence": {"const": ["unknown", "low", "medium", "high"], "description": "Confidence scale transcribed verbatim from §14.2 and reused by §32.3."},
+        "clarity": {"const": ["vague", "rough", "stable", "disputed"], "description": "Clarity scale transcribed verbatim from §14.3 and reused by §32.3."},
+        "coverage": {"const": ["none", "partial", "broad"], "description": "Coverage scale transcribed verbatim from §14.4 and reused by §32.3."},
+        "freshness": {"const": ["fresh", "aging", "stale"], "description": "Freshness scale transcribed verbatim from §14.7 and reused by §32.3."}
+      },
+      "required": ["exposure", "confidence", "clarity", "coverage", "freshness"],
+      "additionalProperties": true
+    },
+    "zoneScales": {
+      "type": "object",
+      "properties": {
+        "contact": {"const": ["unseen", "touched", "loaded", "probed"], "description": "Zone contact scale transcribed verbatim from §32.2."},
+        "strength": {"const": ["unknown", "low", "medium", "high"], "description": "Zone strength scale transcribed verbatim from §32.2."},
+        "endurance": {"const": ["unknown", "low", "medium", "high"], "description": "Zone endurance scale transcribed verbatim from §32.2."},
+        "mobility": {"const": ["unknown", "low", "medium", "high"], "description": "Zone mobility scale transcribed verbatim from §32.2."},
+        "condition": {"const": ["unknown", "fine", "irritated", "recovering", "restricted", "chronic"], "description": "Zone condition scale transcribed verbatim from §32.2."},
+        "freshness": {"const": ["fresh", "aging", "stale"], "description": "Freshness scale transcribed verbatim from §14.7 and reused by §32.2."}
+      },
+      "required": ["contact", "strength", "endurance", "mobility", "condition", "freshness"],
+      "additionalProperties": true
+    },
+    "scales": {
+      "type": "object",
+      "properties": {
+        "concept": {"$ref": "#/$defs/conceptScales"},
+        "material": {"$ref": "#/$defs/materialScales"},
+        "pattern": {"$ref": "#/$defs/patternScales"},
+        "zone": {"$ref": "#/$defs/zoneScales"}
+      },
+      "required": ["concept", "material", "pattern", "zone"],
+      "additionalProperties": true
+    },
+    "evidenceRef": {
+      "type": "object",
+      "properties": {
+        "kind": {"type": "string", "enum": ["artifact", "encounter", "question"], "description": "Evidence kinds transcribed verbatim from §9.12."},
+        "date": {"$ref": "#/$defs/date"}
+      },
+      "required": ["kind", "date"],
+      "additionalProperties": true
+    },
+    "decisionRef": {
+      "type": "object",
+      "properties": {
+        "dimension": {"type": "string", "enum": ["confidence", "clarity", "coverage", "strength", "endurance", "mobility", "condition"], "description": "Snapshot node decision dimensions transcribed from §9.13 and the §32.2 Zone instantiation; question status lives on question entries and edge weight is excluded (§33.4)."},
+        "date": {"$ref": "#/$defs/date"},
+        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidenceId"}}
+      },
+      "required": ["dimension", "date", "evidence"],
+      "additionalProperties": true
+    },
+    "stateEntry": {
+      "type": "object",
+      "properties": {
+        "exposure": {"type": "string", "enum": ["unseen", "touched", "read", "summarized", "applied", "taught", "studied", "tried", "drilled", "reviewed"], "description": "Concept and pattern exposure values transcribed from §14.1 and §32.3."},
+        "contact": {"type": "string", "enum": ["unseen", "touched", "loaded", "probed"], "description": "Zone contact values transcribed verbatim from §32.2."},
+        "confidence": {"type": "string", "enum": ["unknown", "low", "medium", "high"], "description": "Confidence values transcribed verbatim from §14.2."},
+        "clarity": {"type": "string", "enum": ["vague", "rough", "stable", "disputed"], "description": "Clarity values transcribed verbatim from §14.3."},
+        "coverage": {"type": "string", "enum": ["none", "partial", "broad"], "description": "Coverage values transcribed verbatim from §14.4."},
+        "strength": {"type": "string", "enum": ["unknown", "low", "medium", "high"], "description": "Zone strength values transcribed verbatim from §32.2."},
+        "endurance": {"type": "string", "enum": ["unknown", "low", "medium", "high"], "description": "Zone endurance values transcribed verbatim from §32.2."},
+        "mobility": {"type": "string", "enum": ["unknown", "low", "medium", "high"], "description": "Zone mobility values transcribed verbatim from §32.2."},
+        "condition": {"type": "string", "enum": ["unknown", "fine", "irritated", "recovering", "restricted", "chronic"], "description": "Zone condition values transcribed verbatim from §32.2."},
+        "freshness": {"type": "string", "enum": ["fresh", "aging", "stale"], "description": "Freshness values transcribed verbatim from §14.7."},
+        "last_seen": {"$ref": "#/$defs/date"},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidenceId"}},
+        "decisions": {"type": "array", "items": {"$ref": "#/$defs/decisionRef"}}
+      },
+      "required": ["evidence", "decisions"],
+      "additionalProperties": true
+    },
+    "materialEntry": {
+      "type": "object",
+      "properties": {
+        "depth_reached": {"type": "string", "enum": ["skim", "read", "summarized", "applied", "taught"], "description": "Material encounter depths transcribed verbatim from §9.7."},
+        "last_seen": {"$ref": "#/$defs/date"},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidenceId"}}
+      },
+      "required": ["depth_reached", "last_seen", "evidence"],
+      "additionalProperties": true
+    },
+    "conceptKindId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "regionId": {"type": "string", "pattern": "^(?:concept|pattern|zone):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "viaId": {"type": "string", "pattern": "^(?:artifact:[a-z0-9]+(?:-[a-z0-9]+)*|material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
+    "trailEntry": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "pattern": "^trail-segment:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        "date": {"$ref": "#/$defs/date"},
+        "from": {
+          "oneOf": [
+            {"$ref": "#/$defs/conceptKindId"},
+            {"type": "array", "items": {"$ref": "#/$defs/conceptKindId"}}
+          ],
+          "description": "Movement origins are concept-kind ids, scalar or list (§9.9)."
+        },
+        "to": {"$ref": "#/$defs/conceptKindId"},
+        "via": {"type": "array", "items": {"$ref": "#/$defs/viaId"}}
+      },
+      "required": ["id", "date", "to", "via"],
+      "additionalProperties": true
+    },
+    "questionEntry": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "pattern": "^question:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        "text": {"type": "string"},
+        "status": {"type": "string", "const": "open", "description": "The snapshot exports open questions only (§33.4); other §9.8 states never leave the instance."},
+        "pulls": {"type": "array", "items": {"$ref": "#/$defs/regionId"}},
+        "source": {"type": "array", "items": {"$ref": "#/$defs/evidenceId"}}
+      },
+      "required": ["id", "text", "status", "pulls", "source"],
+      "additionalProperties": true
+    }
+  }
+}

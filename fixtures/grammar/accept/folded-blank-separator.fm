@@ -1,0 +1,11 @@
+---
+id: direction:vera-example
+type: direction
+title: Vera Example direction
+attractor: >
+  Folded text ending before
+  a blank separator line.
+
+status: active
+core_concepts: []
+---

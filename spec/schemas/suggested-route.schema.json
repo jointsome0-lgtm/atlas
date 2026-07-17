@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/suggested-route.schema.json",
+  "description": "Atlas curated SuggestedRoute frontmatter, transcribing §9.4, §10.1, §11.1, §33.3, and §34.4.",
+  "type": "object",
+  "properties": {
+    "id": {"$ref": "#/$defs/routeId"},
+    "type": {"const": "suggested_route"},
+    "source_plan": {"type": "string", "pattern": "^plan:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "title": {"type": "string"},
+    "status": {"$ref": "#/$defs/routeStatus"},
+    "steps": {"type": "array", "items": {"$ref": "#/$defs/conceptId"}},
+    "material_roles": {"type": "array", "items": {"$ref": "#/$defs/materialRoles"}},
+    "sensitivity": {"$ref": "#/$defs/sensitivity"},
+    "formerly": {"type": "array", "items": {"$ref": "#/$defs/routeId"}}
+  },
+  "required": ["id", "type", "title", "status", "steps"],
+  "additionalProperties": false,
+  "$defs": {
+    "routeId": {"type": "string", "pattern": "^suggested-route:[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "conceptId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "materialId": {"type": "string", "pattern": "^(?:material:[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
+    "routeStatus": {
+      "type": "string",
+      "enum": ["available", "hidden", "partially_followed", "ignored", "archived"],
+      "description": "SuggestedRoute states transcribed verbatim from §9.4."
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["medical"],
+      "description": "Sensitivity classes transcribed verbatim from §32.6 and §33.2–§33.3."
+    },
+    "materialRoles": {
+      "type": "object",
+      "properties": {
+        "step": {"$ref": "#/$defs/conceptId"},
+        "primary_materials": {"type": "array", "items": {"$ref": "#/$defs/materialId"}},
+        "supporting_materials": {"type": "array", "items": {"$ref": "#/$defs/materialId"}}
+      },
+      "required": ["step"],
+      "additionalProperties": false
+    }
+  }
+}

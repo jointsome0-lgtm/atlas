@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/zone.schema.json",
+  "description": "Atlas curated Zone frontmatter, transcribing §32.1–§32.2, §10.1, and §34.4.",
+  "type": "object",
+  "properties": {
+    "id": {"$ref": "#/$defs/zoneId"},
+    "type": {"const": "zone"},
+    "title": {"type": "string"},
+    "figure_region": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "formerly": {"type": "array", "items": {"$ref": "#/$defs/zoneId"}}
+  },
+  "required": ["id", "type", "title", "figure_region"],
+  "additionalProperties": false,
+  "$defs": {
+    "zoneId": {"type": "string", "pattern": "^zone:[a-z0-9]+(?:-[a-z0-9]+)*$"}
+  }
+}
