@@ -11,13 +11,14 @@
     "aliases": {"type": "array", "items": {"type": "string"}},
     "related_concepts": {"type": "array", "items": {"$ref": "#/$defs/conceptId"}},
     "concept_edges": {"type": "array", "items": {"$ref": "#/$defs/conceptEdge"}},
-    "formerly": {"type": "array", "items": {"$ref": "#/$defs/conceptId"}},
+    "formerly": {"type": "array", "items": {"$ref": "#/$defs/conceptOnlyId"}},
     "sensitivity": {"$ref": "#/$defs/sensitivity"}
   },
   "required": ["id", "type", "title"],
   "additionalProperties": false,
   "$defs": {
     "conceptId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "conceptOnlyId": {"type": "string", "pattern": "^concept:[a-z0-9]+(?:-[a-z0-9]+)*$", "description": "§34.4 identity continuation is per-kind — a concept's formerly holds concept ids only, unlike related_concepts' concept-kind refs."},
     "conceptEdge": {
       "type": "object",
       "properties": {

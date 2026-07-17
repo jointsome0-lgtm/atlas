@@ -963,6 +963,24 @@ def validate_instance(root: Path):
                     and isinstance(edge.get("source"), str)
                     and isinstance(edge.get("target"), str)
                 }
+                # §10.2/§9.9: a trail segment's payload movement and via
+                # list derive typed edges — payload and edges cannot fork.
+                moved_pairs = {
+                    (edge.get("source"), edge.get("target"))
+                    for edge in _as_list(instance.get("edges"))
+                    if isinstance(edge, dict)
+                    and edge.get("type") == "moved_to"
+                    and isinstance(edge.get("source"), str)
+                    and isinstance(edge.get("target"), str)
+                }
+                via_pairs = {
+                    (edge.get("source"), edge.get("target"))
+                    for edge in _as_list(instance.get("edges"))
+                    if isinstance(edge, dict)
+                    and edge.get("type") == "via"
+                    and isinstance(edge.get("source"), str)
+                    and isinstance(edge.get("target"), str)
+                }
                 # §34.4 at the boundary: formerly is per-kind, never a
                 # living id, and one retired id has one survivor.
                 formerly_survivors: dict = {}
@@ -989,6 +1007,27 @@ def validate_instance(root: Path):
                             f"{path}: part {nid} has no has_part edge from "
                             f"{node['material']} (§10.2/§10.4)"
                         )
+                    if node.get("type") == "trail_segment":
+                        origin = node.get("from")
+                        origins = origin if isinstance(origin, list) else [origin]
+                        destination = node.get("to")
+                        for ref in origins:
+                            if (isinstance(ref, str) and ref in node_ids
+                                    and isinstance(destination, str)
+                                    and destination in node_ids
+                                    and (ref, destination) not in moved_pairs):
+                                errors.append(
+                                    f"{path}: segment {nid} movement "
+                                    f"{ref} -> {destination} has no "
+                                    "moved_to edge (§10.2/§9.9)"
+                                )
+                        for ref in _as_list(node.get("via")):
+                            if (isinstance(ref, str) and ref in node_ids
+                                    and (nid, ref) not in via_pairs):
+                                errors.append(
+                                    f"{path}: segment {nid} via {ref} has "
+                                    "no via edge (§10.2/§9.9)"
+                                )
                     for old_id in _as_list(node.get("formerly")):
                         if not isinstance(old_id, str):
                             continue

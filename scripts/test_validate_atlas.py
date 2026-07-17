@@ -637,6 +637,33 @@ INVALID_INSTANCES = {
             ' "weight": "unassessed"}],',
         ),
     },
+    "bad-concept-formerly-pattern": {
+        "atlas/concepts/bad.md": (
+            "---\nid: concept:bad\ntype: concept\n"
+            "title: Bad (Vera Example)\nformerly:\n  - pattern:old\n---\n"
+        ),
+    },
+    "bad-graph-segment-without-moved-to": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "direction:d", "type": "direction", "title": "D",'
+            ' "fields": ["knowledge"], "attractor": "a", "status": "active"},'
+            ' {"id": "trail-segment:2026-07-16-001", "type": "trail_segment",'
+            ' "title": "", "fields": ["knowledge"], "date": "2026-07-16",'
+            ' "direction": "direction:d", "from": "concept:a",'
+            ' "to": "concept:b", "via": [], "reason": "r"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]},'
+            ' {"source": "concept:b", "target": "direction:d",'
+            ' "type": "part_of_direction", "provenance": ["direction:d"]}],',
+        ),
+    },
     "bad-graph-part-without-has-part": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',
@@ -826,7 +853,10 @@ class SchemaValidatorTests(unittest.TestCase):
         graph = graph.replace(
             '"edges": [],',
             '"edges": [{"source": "encounter:e", "target": "material:m",'
-            ' "type": "visited", "provenance": ["encounter:e"]}],',
+            ' "type": "visited", "provenance": ["encounter:e"]},'
+            ' {"source": "trail-segment:2026-07-16-001",'
+            ' "target": "material:m", "type": "via",'
+            ' "provenance": ["trail-segment:2026-07-16-001"]}],',
         )
         with tempfile.TemporaryDirectory() as directory:
             materialize({"graph/atlas-graph.json": graph}, Path(directory))
