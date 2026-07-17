@@ -245,7 +245,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     errors.append(f"{path}: supported_by entry on {owner_id} "
                                   f"has no id (§9.14)")
                     continue
-                note = helper.get("note")
+                note = str_field(helper.get("note"), path,
+                                 f"supported_by note on {owner_id}")
             elif isinstance(helper, str):
                 helper_id, note = helper, None
             else:
@@ -351,6 +352,12 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             if expected in ("suggested_route", "probe"):
                 source_plan = str_field(meta.get("source_plan"), path,
                                         "source_plan")
+                if source_plan is not None and not (
+                        source_plan.startswith("plan:")
+                        and NODE_ID_RE.match(source_plan)):
+                    errors.append(f"{path}: source_plan {source_plan!r} is "
+                                  f"not a plan id (§9.4/§10.4)")
+                    source_plan = None
                 if source_plan is not None:
                     extra["source_plan"] = source_plan
             if expected == "probe":
@@ -446,6 +453,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
 
             if expected == "suggested_route":
                 status = meta.get("status")
+                if status is not None and not isinstance(status, str):
+                    status = None  # the string gate above recorded the error
                 if status in FORBIDDEN_ROUTE_STATUSES:
                     errors.append(
                         f"{path}: route status {status!r} is a §9.4 forbidden task-state")

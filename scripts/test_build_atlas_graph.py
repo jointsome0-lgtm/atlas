@@ -412,6 +412,43 @@ class BuilderIntegrationTests(unittest.TestCase):
                 (needle, errors),
             )
 
+    def test_round40_gates_fail_the_build(self):
+        # §25.8: a non-plan source_plan, a container support note, and a
+        # container route status are ERRORs — no traceback, no invalid
+        # payload, no silent embed.
+        files = {
+            "suggested-routes/r.md": "---\nid: suggested-route:r\n"
+                                     "type: suggested_route\n"
+                                     "title: R (Vera Example)\n"
+                                     "status:\n  - available\n"
+                                     "steps:\n  - concept:a\n"
+                                     "source_plan: garbage\n---\n",
+            "materials/m.md": "---\nid: material:m\ntype: material\n"
+                              "title: M (Vera Example)\nkind: docs\n"
+                              "url: \"\"\nstatus: active\nsupported_by:\n"
+                              "  - id: material:x\n    note:\n      - bad\n"
+                              "---\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for relative, content in files.items():
+                target = Path(directory) / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a plan id" in error for error in errors), errors
+        )
+        self.assertTrue(
+            any("supported_by note" in error and "is not a string" in error
+                for error in errors),
+            errors,
+        )
+        self.assertTrue(
+            any("status" in error and "is not a string" in error
+                for error in errors),
+            errors,
+        )
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.
