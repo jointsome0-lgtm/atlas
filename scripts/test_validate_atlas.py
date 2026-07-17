@@ -649,6 +649,11 @@ INVALID_INSTANCES = {
             "concept:example", "concept:other",
         ),
     },
+    "bad-curated-duplicate-id": {
+        "atlas/concepts/example.md": VALID_CONCEPT,
+        "atlas/concepts/twin.md": VALID_CONCEPT.replace(
+            "title: Example", "title: Twin"),
+    },
     "bad-graph-off-type-discriminant": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

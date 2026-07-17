@@ -658,8 +658,19 @@ def validate_instance(root: Path):
     # resolves through the map (a warning, never an error), mirroring
     # the builder.
     retired: dict = {}  # old id -> (survivor id, declaring path)
-    living: set = set()
+    living: dict = {}  # id -> declaring path
     route_checks: list = []
+
+    def _claim_living(node_id, origin):
+        # §10.1: one id, one record — the builder fails on a duplicate,
+        # so the boundary rejects it too.
+        prior = living.get(node_id)
+        if prior is not None:
+            errors.append(
+                f"{origin}: duplicate id {node_id} (also declared in "
+                f"{prior}) (§10.1)")
+            return
+        living[node_id] = origin
 
     def _claim_retired(old, survivor, origin):
         # §34.4: one retired id has one survivor — a 1->n redirect is
@@ -685,7 +696,7 @@ def validate_instance(root: Path):
                 if isinstance(instance, dict):
                     doc_id = instance.get("id")
                     if isinstance(doc_id, str):
-                        living.add(doc_id)
+                        _claim_living(doc_id, path)
                     for old in _as_list(instance.get("formerly")):
                         if isinstance(old, str) and isinstance(doc_id, str):
                             _claim_retired(old, doc_id, path)
@@ -694,7 +705,7 @@ def validate_instance(root: Path):
                             continue
                         part_id = part.get("id")
                         if isinstance(part_id, str):
-                            living.add(part_id)
+                            _claim_living(part_id, path)
                         for old in _as_list(part.get("formerly")):
                             if isinstance(old, str) and isinstance(part_id, str):
                                 _claim_retired(old, part_id, path)
@@ -722,7 +733,7 @@ def validate_instance(root: Path):
 
     # §34.4: a retired id is never a living one — curation keeping both
     # cannot build, so the boundary rejects it like the builder does.
-    for old in sorted(set(retired) & living):
+    for old in sorted(set(retired) & set(living)):
         survivor, origin = retired[old]
         errors.append(
             f"{origin}: formerly {old} on {survivor} is still a "
