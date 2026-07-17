@@ -619,6 +619,24 @@ INVALID_INSTANCES = {
             ' "provenance": ["encounter:e"]}],',
         ),
     },
+    "bad-graph-duplicate-edge-identity": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": ["knowledge"], "kind": "docs", "url": "",'
+            ' "status": "active"},'
+            ' {"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"],'
+            ' "weight": "unassessed"},'
+            ' {"source": "material:m", "target": "concept:a",'
+            ' "type": "overall_concept", "provenance": ["material:m"],'
+            ' "weight": "unassessed"}],',
+        ),
+    },
     "bad-graph-part-without-has-part": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

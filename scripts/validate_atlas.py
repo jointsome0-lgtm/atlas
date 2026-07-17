@@ -875,9 +875,29 @@ def validate_instance(root: Path):
                                 "suggested_next edge (§10.2)"
                             )
                 role_edges: dict = {}
+                edge_identities: set = set()
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue
+                    # §20.3: one edge per identity — type, endpoints, and
+                    # the meta discriminants (context/order/step); dedup
+                    # unions provenance instead of repeating the edge.
+                    if (isinstance(edge.get("type"), str)
+                            and isinstance(edge.get("source"), str)
+                            and isinstance(edge.get("target"), str)):
+                        identity = tuple(
+                            edge.get(key) if isinstance(
+                                edge.get(key), (str, int)) else None
+                            for key in ("type", "source", "target",
+                                        "context", "order", "step"))
+                        if identity in edge_identities:
+                            errors.append(
+                                f"{path}: edges[{index}] duplicates edge "
+                                f"identity {edge.get('type')} "
+                                f"{edge.get('source')} -> "
+                                f"{edge.get('target')} (§20.3)"
+                            )
+                        edge_identities.add(identity)
                     context = edge.get("context")
                     if (edge.get("type") == "suggested_next"
                             and isinstance(context, str)):
