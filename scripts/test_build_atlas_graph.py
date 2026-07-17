@@ -548,6 +548,30 @@ class BuilderIntegrationTests(unittest.TestCase):
         related = [e for e in graph["edges"] if e["type"] == "related_to"]
         self.assertEqual(1, len(related))
 
+    def test_lone_authored_weight_wins_over_unassessed_duplicate(self):
+        # §14.9: one entry with a weight plus one without is a single
+        # hypothesis, not a conflict; two different authored weights are.
+        content = ("---\nid: pattern:p\ntype: pattern\n"
+                   "title: P (Vera Example)\nconcept_edges:\n"
+                   "  - to: concept:c\n    role: extends\n"
+                   "  - to: concept:c\n    role: extends\n"
+                   "    weight: high\n---\n")
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "patterns"
+            base.mkdir(parents=True)
+            (base / "p.md").write_text(content, encoding="utf-8")
+            (Path(directory) / "concepts").mkdir()
+            (Path(directory) / "concepts" / "c.md").write_text(
+                "---\nid: concept:c\ntype: concept\n"
+                "title: C (Vera Example)\n---\n",
+                encoding="utf-8",
+            )
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        extends = [e for e in graph["edges"] if e["type"] == "extends"]
+        self.assertEqual(1, len(extends))
+        self.assertEqual("high", extends[0]["weight"])
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.

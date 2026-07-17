@@ -626,12 +626,20 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             deduped.append(edge)
             continue
         if kept.get("weight") != edge.get("weight"):
-            errors.append(
-                f"{edge['_origin']}: conflicting weights "
-                f"{kept.get('weight')!r} vs {edge.get('weight')!r} on "
-                f"{edge['type']} {edge['source']} -> {edge['target']} "
-                f"(§20.3)")
-            continue
+            # §14.9: unassessed is the no-hypothesis default — a lone
+            # authored weight on the identity wins; two different
+            # authored weights are the §20.3 conflict.
+            authored = ({kept.get("weight"), edge.get("weight")}
+                        - {"unassessed"})
+            if len(authored) == 1:
+                kept["weight"] = authored.pop()
+            else:
+                errors.append(
+                    f"{edge['_origin']}: conflicting weights "
+                    f"{kept.get('weight')!r} vs {edge.get('weight')!r} on "
+                    f"{edge['type']} {edge['source']} -> {edge['target']} "
+                    f"(§20.3)")
+                continue
         kept["provenance"] = sorted(
             set(kept["provenance"]) | set(edge["provenance"]))
     edges = deduped
