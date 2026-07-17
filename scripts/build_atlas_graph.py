@@ -482,7 +482,12 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     # in two lists, is a build error (a 1→n redirect is unrepresentable).
     retired: dict[str, str] = {}
     for node_id in sorted(nodes):
-        for old in nodes[node_id].get("formerly") or []:
+        redirects = nodes[node_id].get("formerly")
+        if redirects is not None and not isinstance(redirects, list):
+            errors.append(
+                f"formerly on {node_id} must be a list of ids (§34.4)")
+            continue
+        for old in redirects or []:
             if not isinstance(old, str):
                 errors.append(
                     f"formerly entry {old!r} on {node_id} is not an id (§34.4)")

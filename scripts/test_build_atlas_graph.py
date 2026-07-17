@@ -159,6 +159,23 @@ class BuilderIntegrationTests(unittest.TestCase):
             any("redirects to both" in error for error in errors), errors
         )
 
+    def test_scalar_formerly_fails_the_build(self):
+        # A parser-valid scalar formerly must be a build error, never a
+        # char-by-char redirect walk or a string payload in the graph.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nformerly: concept:gone\n---\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(build_atlas_graph, "datetime", FixedDateTime):
+                _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("must be a list of ids" in error for error in errors), errors
+        )
+
     def test_main_writes_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "atlas-graph.json"
