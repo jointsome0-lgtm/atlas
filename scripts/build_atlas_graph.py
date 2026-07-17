@@ -176,6 +176,19 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         if isinstance(value, str) and date_shape.fullmatch(value):
             activity_dates.append(value)
 
+    def date_field(value, origin, field):
+        # §9/§10: dated payloads are YYYY-MM-DD — a malformed date fails
+        # the build closed instead of emitting a schema-invalid graph or
+        # silently dropping the row from the §20.1 as-of universe.
+        value = str_field(value, origin, field)
+        if value is None:
+            return None
+        if not date_shape.fullmatch(value):
+            errors.append(f"{origin}: {field} {value!r} is not a "
+                          f"YYYY-MM-DD date (§9/§10)")
+            return None
+        return value
+
     def add_node(node_id, node_type, title, source, extra=None):
         if node_id is None:
             errors.append(f"{source}: record without id")
@@ -423,7 +436,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                                   f"or list of ids (§9.9)")
                     origin_ref, trail_origins = None, []
                 trail_via = id_list(meta.get("via"), path, "via")
-                extra["date"] = str_field(meta.get("date"), path, "date")
+                extra["date"] = date_field(meta.get("date"), path, "date")
                 note_activity(extra["date"])
                 extra["direction"] = str_field(meta.get("direction"), path,
                                                "direction")
@@ -707,8 +720,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         extra = {
             "kind": str_field(row.get("type"), origin, "type"),
             "path": str_field(row.get("path"), origin, "path"),
-            "observed_at": str_field(row.get("observed_at"), origin,
-                                     "observed_at"),
+            "observed_at": date_field(row.get("observed_at"), origin,
+                                      "observed_at"),
             "summary": str_field(row.get("summary"), origin, "summary"),
             "evidence_strength": str_field(row.get("evidence_strength"),
                                            origin, "evidence_strength",
@@ -720,7 +733,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         note_activity(extra["observed_at"])
         for field in ("kind", "path", "observed_at", "summary",
                       "evidence_strength"):
-            if extra[field] is None:
+            if row.get("type" if field == "kind" else field) is None:
                 errors.append(f"{origin}: artifact row requires "
                               f"{'type' if field == 'kind' else field} "
                               "(§9.6/§10.4)")
@@ -749,7 +762,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                        if key in ("question", "artifact")
                        and isinstance(value, str)} or None
         extra = {
-            "date": str_field(row.get("date"), origin, "date"),
+            "date": date_field(row.get("date"), origin, "date"),
             "target": str_field(row.get("target"), origin, "target"),
             "depth": str_field(row.get("depth"), origin, "depth",
                                ENCOUNTER_DEPTHS),
@@ -761,7 +774,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         }
         note_activity(extra["date"])
         for field in ("date", "target", "depth", "mode"):
-            if extra[field] is None:
+            if row.get(field) is None:
                 errors.append(f"{origin}: encounter row requires {field} "
                               "(§9.7/§10.4)")
         add_node(row.get("id"), "encounter", "", origin,
@@ -793,15 +806,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                           and isinstance(value, str)} or None
         extra = {
             "text": str_field(row.get("text"), origin, "text"),
-            "created_at": str_field(row.get("created_at"), origin,
-                                    "created_at"),
+            "created_at": date_field(row.get("created_at"), origin,
+                                     "created_at"),
             "source": source_ref,
             "sensitivity": str_field(row.get("sensitivity"), origin,
                                      "sensitivity", SENSITIVITY_CLASSES),
         }
         note_activity(extra["created_at"])
         for field in ("text", "created_at", "source"):
-            if extra[field] is None:
+            if row.get(field) is None:
                 errors.append(f"{origin}: question row requires {field} "
                               "(§9.8/§10.4)")
         add_node(row.get("id"), "question", "", origin,
@@ -893,6 +906,14 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 if isinstance(node.get(key), list):
                     node[key] = [resolve_ref(ref, origin)
                                  for ref in node[key]]
+            # direction is payload-only (no derived edge carries it), so
+            # its resolution is checked here — a dangling ref in retained
+            # history warns, never fails (§34.2, §20 step 11).
+            direction = node.get("direction")
+            if isinstance(direction, str) and direction not in nodes:
+                warnings.append(
+                    f"{origin}: {direction} missing — kept dangling "
+                    "(deletion is the owner's right)")
         if node["type"] == "artifact" and isinstance(node.get("probe"), str):
             node["probe"] = resolve_ref(node["probe"], origin)
         if node["type"] == "question" and isinstance(node.get("source"), dict):

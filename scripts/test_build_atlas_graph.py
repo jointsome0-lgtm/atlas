@@ -1053,6 +1053,41 @@ class JournalProjectionTests(unittest.TestCase):
                        if n["type"] == "trail_segment")
         self.assertNotIn("formerly", segment)
 
+    def test_malformed_activity_date_fails_the_build(self):
+        # §9/§10: a malformed observed_at must fail closed, never emit a
+        # schema-invalid graph or silently drop the row from the §20.1
+        # as-of universe.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW.replace(
+                '"2026-07-16"', '"bad-date"') + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a YYYY-MM-DD date" in e for e in errors), errors)
+
+    def test_dangling_trail_direction_warns(self):
+        # §34.2/§20 step 11: direction is payload-only — a deleted or
+        # misspelled direction in retained history warns, never fails.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: direction:missing\nfrom: concept:a\n"
+                "to: concept:b\nvia: []\n"
+                "reason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("direction:missing missing" in w for w in warnings),
+            warnings)
+        segment = next(n for n in graph["nodes"]
+                       if n["type"] == "trail_segment")
+        self.assertEqual("direction:missing", segment["direction"])
+
     def test_trail_with_classed_via_is_emitted_classed(self):
         # §20 step 12/§32.6: a segment whose via cites a classed material
         # carries the class.
