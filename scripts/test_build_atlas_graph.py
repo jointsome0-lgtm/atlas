@@ -1213,6 +1213,21 @@ class JournalProjectionTests(unittest.TestCase):
         self.assertEqual({"artifact": "artifact:missing"},
                          question["source"])
 
+    def test_null_journal_value_fails_the_build(self):
+        # §25.7: no journal schema admits null — an explicit null must
+        # fail closed, never collapse to an absent optional field.
+        row = json.loads(_ARTIFACT_ROW)
+        row["intake"] = None
+        row["probe"] = None
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("null journal value(s) for intake, probe (§25.7)" in e
+                for e in errors), errors)
+
     def test_malformed_intake_key_fails_the_build(self):
         # §25.7/§33.2: a present-but-malformed intake provenance fails
         # closed; a well-formed one projects cleanly.

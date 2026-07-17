@@ -819,6 +819,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     errors.append(f"{path}:{number}: journal row is not an "
                                   "object")
                     continue
+                nulls = sorted(k for k, v in row.items() if v is None)
+                if nulls:
+                    # §25.7: no journal schema admits null anywhere — an
+                    # explicit null must fail closed, never collapse to
+                    # an absent optional field.
+                    errors.append(f"{path}:{number}: null journal "
+                                  f"value(s) for {', '.join(nulls)} "
+                                  "(§25.7)")
+                    continue
                 intake = row.get("intake")
                 if intake is not None and (
                         not isinstance(intake, str)
