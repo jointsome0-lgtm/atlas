@@ -199,10 +199,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     def add_concept_edges(owner_id, entries, path):
         # One authored-edge species (§9.3): material parts and body patterns
         # (§32.1) alike; weight is the §14.9 closed scale.
+        targets: list[str] = []
         if entries is not None and not isinstance(entries, list):
             errors.append(f"{path}: concept_edges on {owner_id} must be a "
                           f"list of edge mappings (§9.3)")
-            return
+            return targets
         for ce in entries or []:
             if not isinstance(ce, dict):
                 errors.append(f"{path}: concept_edges item {ce!r} on "
@@ -218,6 +219,9 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                               f"{ce.get('to')} is not an authored relationship "
                               f"role (§9.3/§32.1)")
             add_edge(owner_id, ce.get("to"), role, path, [owner_id], weight=weight)
+            if isinstance(ce.get("to"), str):
+                targets.append(ce["to"])
+        return targets
 
     def add_supports(owner_id, entries, path):
         # §9.14: helper -> receiver; endpoint kinds enforced by ENDPOINT_RULES.
@@ -242,6 +246,23 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 continue
             add_edge(helper_id, owner_id, "supports", path, [owner_id],
                      note=note)
+
+    def id_list(value, origin, field):
+        # Curated id lists fail closed (§25.8): a scalar value or a
+        # non-string item is a build error, never char iteration or an
+        # unhashable ref downstream.
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            errors.append(f"{origin}: {field} must be a list of ids")
+            return []
+        result = []
+        for item in value:
+            if isinstance(item, str):
+                result.append(item)
+            else:
+                errors.append(f"{origin}: {field} item {item!r} is not an id")
+        return result
 
     # §20 steps 1-2, 4-5: curated kinds. Zones/patterns dirs are read the same
     # way and are simply empty until the body domain lands (§32).
@@ -327,15 +348,19 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             if expected == "probe":
                 # §9.11/§20 step 7: a probe targets concepts; the reference
                 # loop validates them, the edge is the §10.2 probed_by.
-                for concept in meta.get("concepts") or []:
+                probe_concepts = id_list(meta.get("concepts"), path,
+                                         "concepts")
+                for concept in probe_concepts:
                     add_edge(concept, node_id, "probed_by", path, [node_id])
-                field_refs[node_id] = list(meta.get("concepts") or [])
+                field_refs[node_id] = probe_concepts
 
             if expected == "material":
-                for concept in meta.get("overall_concepts") or []:
+                overall = id_list(meta.get("overall_concepts"), path,
+                                  "overall_concepts")
+                for concept in overall:
                     add_edge(node_id, concept, "overall_concept", path, [node_id])
                 add_supports(node_id, meta.get("supported_by"), path)
-                field_refs[node_id] = list(meta.get("overall_concepts") or [])
+                field_refs[node_id] = list(overall)
                 # §20 step 3: expand MaterialPart nodes.
                 # add_node has already recorded the shape error for a
                 # malformed id; don't let the slug derivation crash on it.
@@ -365,19 +390,19 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                             f"{path}: part id {part_id!r} does not carry its "
                             f"material's slug {material_slug!r} (§10.1)")
                     add_edge(node_id, part_id, "has_part", path, [node_id])
-                    add_concept_edges(part_id, part.get("concept_edges"), path)
-                    add_supports(part_id, part.get("supported_by"), path)
                     # §10.4: a part's fields come from its concept_edges
                     # targets; the material unions its parts' fields.
-                    field_refs[part_id] = [
-                        ce.get("to") for ce in part.get("concept_edges") or []
-                        if ce.get("to")]
+                    field_refs[part_id] = add_concept_edges(
+                        part_id, part.get("concept_edges"), path)
+                    add_supports(part_id, part.get("supported_by"), path)
                     field_refs[node_id].append(part_id)
 
             if expected == "direction":
-                for concept in meta.get("core_concepts") or []:
+                core = id_list(meta.get("core_concepts"), path,
+                               "core_concepts")
+                for concept in core:
                     add_edge(concept, node_id, "part_of_direction", path, [node_id])
-                field_refs[node_id] = list(meta.get("core_concepts") or [])
+                field_refs[node_id] = list(core)
 
             if expected == "suggested_route":
                 status = meta.get("status")
@@ -421,6 +446,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                             f"role mapping (§9.4)")
                         continue
                     step = role.get("step")
+                    if step is not None and not isinstance(step, str):
+                        errors.append(
+                            f"{path}: material_roles step {step!r} is not "
+                            f"an id (§9.4)")
+                        continue
                     # Membership and disjointness are checked post-pass on
                     # §34.4-resolved ids — a stale spelling must resolve,
                     # not fail (§34.4).
