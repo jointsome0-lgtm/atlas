@@ -1134,6 +1134,52 @@ class JournalProjectionTests(unittest.TestCase):
             any("is not a material(part) or artifact id" in e
                 for e in errors), errors)
 
+    def test_wrong_kind_trail_refs_fail_the_build(self):
+        # §9.9/§10.4: direction is a direction id, to/from concept-kind —
+        # wrong kinds fail before the payload embeds them.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "trails/2026-07-16-001.md": (
+                "---\nid: trail-segment:2026-07-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-07-16\n"
+                "direction: concept:a\nfrom: concept:a\nto: material:m\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("direction 'concept:a' is not a direction id" in e
+                for e in errors), errors)
+        self.assertTrue(
+            any("to 'material:m' is not a concept/pattern id" in e
+                for e in errors), errors)
+
+    def test_non_material_encounter_target_fails_the_build(self):
+        # §9.7/§10.4: an encounter targets a material(part) — a wrong-kind
+        # target fails closed, never an invalid emitted payload.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "state/encounters.jsonl": _encounter_row(
+                target="concept:a") + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("target 'concept:a' is not a material/part id" in e
+                for e in errors), errors)
+
+    def test_wrong_prefix_question_source_fails_the_build(self):
+        # §9.8/§10.4: source values carry their key's prefix.
+        row = _QUESTION_ROW.replace(
+            '"artifact:2026-07-16-001"', '"concept:c"')
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/questions.jsonl": row + "\n",
+        }) as directory:
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("is not a §9.8 source object" in e for e in errors), errors)
+
     def test_trail_with_classed_via_is_emitted_classed(self):
         # §20 step 12/§32.6: a segment whose via cites a classed material
         # carries the class.

@@ -176,6 +176,19 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         if isinstance(value, str) and date_shape.fullmatch(value):
             activity_dates.append(value)
 
+    def kinded_ref(value, origin, field, prefixes, cite):
+        # §25.8: a payload ref embeds only in its contract kind — a
+        # wrong-kind ref fails the build here, never as a graph the
+        # boundary rejects after a successful exit.
+        value = str_field(value, origin, field)
+        if value is None:
+            return None
+        if value.split(":", 1)[0] not in prefixes:
+            errors.append(f"{origin}: {field} {value!r} is not a "
+                          f"{'/'.join(sorted(prefixes))} id ({cite})")
+            return None
+        return value
+
     def date_field(value, origin, field):
         # §9/§10: dated payloads are YYYY-MM-DD — a malformed date fails
         # the build closed instead of emitting a schema-invalid graph or
@@ -428,13 +441,20 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 # faces of one record (§10.4) — embed the row verbatim.
                 origin_ref = meta.get("from")
                 if isinstance(origin_ref, list):
-                    trail_origins = id_list(origin_ref, path, "from")
+                    raw_origins = id_list(origin_ref, path, "from")
                 elif origin_ref is None or isinstance(origin_ref, str):
-                    trail_origins = [origin_ref] if origin_ref else []
+                    raw_origins = [origin_ref] if origin_ref else []
                 else:
                     errors.append(f"{path}: from {origin_ref!r} is not an id "
                                   f"or list of ids (§9.9)")
-                    origin_ref, trail_origins = None, []
+                    origin_ref, raw_origins = None, []
+                # §9.9: movement origins are concept-kind ids.
+                trail_origins = [
+                    ref for ref in (
+                        kinded_ref(ref, path, "from",
+                                   {"concept", "pattern"}, "§9.9")
+                        for ref in raw_origins)
+                    if ref is not None]
                 # §9.9/§10.4: via holds material(part) and artifact ids
                 # only — an off-kind id must fail before it is embedded,
                 # not merely lose its derived edge in the lenient pass.
@@ -448,18 +468,28 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                                       "material(part) or artifact id (§9.9)")
                 extra["date"] = date_field(meta.get("date"), path, "date")
                 note_activity(extra["date"])
-                extra["direction"] = str_field(meta.get("direction"), path,
-                                               "direction")
-                extra["to"] = str_field(meta.get("to"), path, "to")
+                extra["direction"] = kinded_ref(meta.get("direction"), path,
+                                                "direction", {"direction"},
+                                                "§9.9/§10.4")
+                extra["to"] = kinded_ref(meta.get("to"), path, "to",
+                                         {"concept", "pattern"},
+                                         "§9.9/§10.4")
                 extra["via"] = trail_via
                 extra["reason"] = str_field(meta.get("reason"), path,
                                             "reason")
-                if origin_ref is not None:
+                if isinstance(origin_ref, str) and trail_origins:
                     extra["from"] = origin_ref
+                elif isinstance(origin_ref, list):
+                    extra["from"] = trail_origins
                 if meta.get("resulting_questions") is not None:
-                    extra["resulting_questions"] = id_list(
-                        meta.get("resulting_questions"), path,
-                        "resulting_questions")
+                    extra["resulting_questions"] = [
+                        ref for ref in (
+                            kinded_ref(ref, path, "resulting_questions",
+                                       {"question"}, "§9.9/§10.4")
+                            for ref in id_list(
+                                meta.get("resulting_questions"), path,
+                                "resulting_questions"))
+                        if ref is not None]
             # §10.4/§25.7: these authored payload fields are required on the
             # emitted node — a missing one fails the build here rather than
             # emitting a graph the boundary validator rejects.
@@ -736,7 +766,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             "evidence_strength": str_field(row.get("evidence_strength"),
                                            origin, "evidence_strength",
                                            EVIDENCE_STRENGTHS),
-            "probe": str_field(row.get("probe"), origin, "probe"),
+            "probe": kinded_ref(row.get("probe"), origin, "probe",
+                                {"probe"}, "§9.6/§10.4"),
             "sensitivity": str_field(row.get("sensitivity"), origin,
                                      "sensitivity", SENSITIVITY_CLASSES),
         }
@@ -767,6 +798,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 not isinstance(context, dict) or not context
                 or any(key not in ("question", "artifact")
                        or not isinstance(value, str)
+                       or value.split(":", 1)[0] != key
                        for key, value in context.items())):
             # Fail closed (§25.8): a malformed context silently dropped
             # would silently change the §11.2 derivation.
@@ -775,7 +807,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             context = None
         extra = {
             "date": date_field(row.get("date"), origin, "date"),
-            "target": str_field(row.get("target"), origin, "target"),
+            "target": kinded_ref(row.get("target"), origin, "target",
+                                 {"material", "part"}, "§9.7/§10.4"),
             "depth": str_field(row.get("depth"), origin, "depth",
                                ENCOUNTER_DEPTHS),
             "mode": str_field(row.get("mode"), origin, "mode",
@@ -812,6 +845,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                 not isinstance(source_ref, dict) or not source_ref
                 or any(key not in ("artifact", "encounter")
                        or not isinstance(value, str)
+                       or value.split(":", 1)[0] != key
                        for key, value in source_ref.items())):
             # Fail closed (§25.8): a present-but-malformed source must be
             # a build error, never a question node emitted without its
