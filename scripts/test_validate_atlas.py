@@ -529,6 +529,22 @@ INVALID_INSTANCES = {
             '"nodes": [],', '"nodes": 1,'
         ),
     },
+    "bad-graph-suggested-next-not-consecutive": {
+        "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:a", "type": "concept", "title": "A",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "concept:b", "type": "concept", "title": "B",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "suggested-route:r", "type": "suggested_route",'
+            ' "title": "R", "fields": ["knowledge"], "status": "available"}],',
+        ).replace(
+            '"edges": [],',
+            '"edges": [{"source": "concept:a", "target": "concept:b",'
+            ' "type": "suggested_next", "provenance": ["suggested-route:r"],'
+            ' "context": "suggested-route:r"}],',
+        ),
+    },
     "bad-graph-question-source-shape": {
         "graph/atlas-graph.json": VALID_EMPTY_GRAPH.replace(
             '"nodes": [],',

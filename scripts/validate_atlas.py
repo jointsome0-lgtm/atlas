@@ -738,9 +738,34 @@ def validate_instance(root: Path):
                     and isinstance(edge.get("target"), str)
                     and isinstance(edge.get("source"), str)
                 }
+                # §10.2: suggested_next derives from consecutive steps of
+                # one route — the context route must hold source at some
+                # order k and target at k+1.
+                step_orders: dict = {}
+                for edge in _as_list(instance.get("edges")):
+                    if (isinstance(edge, dict)
+                            and edge.get("type") == "step_of_route"
+                            and isinstance(edge.get("target"), str)
+                            and isinstance(edge.get("source"), str)
+                            and isinstance(edge.get("order"), int)):
+                        step_orders.setdefault(
+                            edge["target"], {})[edge["order"]] = edge["source"]
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue
+                    context = edge.get("context")
+                    if (edge.get("type") == "suggested_next"
+                            and isinstance(context, str)):
+                        orders = step_orders.get(context, {})
+                        if not any(
+                                orders.get(position) == edge.get("source")
+                                and orders.get(position + 1) == edge.get("target")
+                                for position in orders):
+                            errors.append(
+                                f"{path}: edges[{index}] suggested_next "
+                                f"{edge.get('source')} -> {edge.get('target')} "
+                                f"is not consecutive steps of {context} (§10.2)"
+                            )
                     step = edge.get("step")
                     if (edge.get("type") in ("primary_for", "supporting_for")
                             and isinstance(step, str)

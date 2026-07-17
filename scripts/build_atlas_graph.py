@@ -347,7 +347,16 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         f"{path}: route status {status!r} is a §9.4 forbidden task-state")
                 elif status not in ROUTE_STATUSES:
                     errors.append(f"{path}: route status {status!r} outside §9.4 vocabulary")
-                steps = meta.get("steps") or []
+                steps = meta.get("steps")
+                if steps is not None and not isinstance(steps, list):
+                    errors.append(
+                        f"{path}: steps must be a list of ids (§9.4)")
+                    steps = []
+                for item in steps or []:
+                    if not isinstance(item, str):
+                        errors.append(
+                            f"{path}: steps item {item!r} is not an id (§9.4)")
+                steps = [s for s in steps or [] if isinstance(s, str)]
                 for order, step in enumerate(steps, 1):
                     add_edge(step, node_id, "step_of_route", path, [node_id],
                              order=order)
