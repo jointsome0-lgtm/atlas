@@ -1080,6 +1080,10 @@ class LaneBTests(unittest.TestCase):
                 directory, second)
             self.assertEqual(0, first_code, first_stderr)
             self.assertEqual(0, second_code, second_stderr)
+            # §20.1: the artifact's observed_at anchors the default as-of —
+            # identical omission or mis-stamping must not pass as identity.
+            graph = json.loads(first.read_text(encoding="utf-8"))
+            self.assertEqual("2026-07-16T00:00:00Z", graph["generated_at"])
             self.assertEqual(first.read_bytes(), second.read_bytes())
 
     def test_default_as_of_uses_max_journal_date_in_emitted_graph(self):
