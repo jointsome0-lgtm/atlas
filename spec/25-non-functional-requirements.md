@@ -125,6 +125,19 @@ naive-layout iteration, 0.65 ms per canvas frame); past 2,400
 nodes in view — the measured frame-budget crossing of the naive
 n² layout — the §27.8 list fallback engages; a smarter layout
 raises the ceiling through the Decision Log, never silently.
+Viewer acceptance ceilings (#37, §16.5) — named here, values
+pending the measured-floor process (#56/#61 wave): graph-file
+bytes, graph node count, graph edge count — checked before
+parsing; raw-fragment bytes and per-parameter decoded bytes —
+checked before use. Until a value lands through a Decision Log
+entry, the viewer refuses what it cannot bound (§24.2); the
+2,400-node line above stays a rendering fallback, never an
+acceptance bound.
+Foreign-input acceptance ceilings (#37, §24.2) — named here,
+values pending the same process: intake-batch total bytes,
+record count, per-record and per-string bytes, nesting depth
+(§33.2); imported-plan file bytes (§12); observer per-file
+bytes, manifest entries, per-session corpus bytes (§13).
 CLI contract (every script): exit 0 success, 1 failure, 2 usage;
 diagnostics to stderr, one per line, prefixed ERROR: / WARNING:;
 stdout carries the result summary.
