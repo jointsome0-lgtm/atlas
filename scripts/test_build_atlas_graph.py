@@ -836,9 +836,11 @@ class LaneBTests(unittest.TestCase):
         # and counted; a row on/before it is still read. Ids are dated
         # before the cutoff on purpose: the bound reads the row's dated
         # field, never a date embedded in the id.
+        # The kept artifact sits exactly ON the anchor day: §20.1's bound is
+        # inclusive (date ≤ as-of), a strict < must fail here.
         kept = json.loads(_ARTIFACT_ROW)
         kept["id"] = "artifact:2026-01-02-001"
-        kept["observed_at"] = "2026-01-10"
+        kept["observed_at"] = "2026-01-15"
         late = json.loads(_ARTIFACT_ROW)
         late["id"] = "artifact:2026-01-10-001"
         late["observed_at"] = "2026-01-16"
@@ -882,6 +884,8 @@ class LaneBTests(unittest.TestCase):
         self.assertIn(("visited", "encounter:2026-01-02-001", "material:m"),
                       derived)
         self.assertIn(("pulled_by", "concept:c", "question:kept"), derived)
+        self.assertIn(("influences", "artifact:2026-01-02-001", "concept:c"),
+                      derived)
         skipped = {"artifact:2026-01-10-001", "encounter:2026-01-10-001",
                    "question:late"}
         self.assertEqual(set(), ids & skipped)
@@ -930,6 +934,11 @@ class LaneBTests(unittest.TestCase):
         ids = {node["id"] for node in graph["nodes"]}
         self.assertNotIn("trail-segment:2026-01-10-001", ids)
         self.assertIn("trail-segment:2026-01-05-001", ids)
+        # §20.3: the kept segment still derives its movement edge.
+        self.assertIn(
+            ("moved_to", "concept:a", "concept:b"),
+            {(edge["type"], edge["source"], edge["target"])
+             for edge in graph["edges"]})
         # §20.3: a skipped segment derives nothing — no moved_to/via edge
         # endpoint and no provenance entry may cite it.
         for edge in graph["edges"]:
