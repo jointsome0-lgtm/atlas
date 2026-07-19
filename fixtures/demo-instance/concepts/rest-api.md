@@ -3,6 +3,8 @@ id: concept:rest-api
 type: concept
 title: REST API
 updated: 2026-07-11
+formerly:
+  - concept:restful-api
 related_concepts:
   - concept:http-methods
   - concept:idempotency

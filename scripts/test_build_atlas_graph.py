@@ -49,6 +49,32 @@ class BuilderIntegrationTests(unittest.TestCase):
                 code = validate_atlas.main(["validate", directory])
         self.assertEqual(0, code, stderr.getvalue())
 
+    def test_demo_rename_fixture_resolves_through_formerly(self):
+        # §34.4 (#49): the demo instance carries one rename — the stale
+        # related_concepts spelling concept:restful-api folds into the
+        # survivor with a report line; the retired id never emits, and the
+        # merged related_to identity unions both authors' provenance.
+        graph, errors, warnings = build_atlas_graph.build(DEMO)
+        self.assertEqual([], errors)
+        by_id = {node["id"]: node for node in graph["nodes"]}
+        self.assertNotIn("concept:restful-api", by_id)
+        self.assertEqual(["concept:restful-api"],
+                         by_id["concept:rest-api"]["formerly"])
+        edge = next(e for e in graph["edges"]
+                    if e["type"] == "related_to"
+                    and e["source"] == "concept:idempotency"
+                    and e["target"] == "concept:rest-api")
+        self.assertEqual(["concept:idempotency", "concept:rest-api"],
+                         edge["provenance"])
+        self.assertTrue(
+            any("concept:restful-api" in warning
+                and "concept:rest-api" in warning
+                and "§34.4" in warning for warning in warnings),
+            warnings)
+        for e in graph["edges"]:
+            self.assertNotIn("concept:restful-api",
+                             {e["source"], e["target"], *e["provenance"]})
+
     def test_missing_material_payload_fails_the_build(self):
         # §10.4/§25.7: kind/url/status are required on the emitted material
         # node — omitting them must fail the build, not emit an invalid graph.
