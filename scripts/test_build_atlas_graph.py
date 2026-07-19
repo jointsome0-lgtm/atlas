@@ -844,15 +844,17 @@ class LaneBTests(unittest.TestCase):
         late = json.loads(_ARTIFACT_ROW)
         late["id"] = "artifact:2026-01-10-001"
         late["observed_at"] = "2026-01-16"
+        # Kept encounter and question also sit ON the anchor day — the
+        # inclusive bound holds per journal, not just for artifacts.
         kept_encounter = json.loads(_encounter_row())
         kept_encounter["id"] = "encounter:2026-01-02-001"
-        kept_encounter["date"] = "2026-01-10"
+        kept_encounter["date"] = "2026-01-15"
         late_encounter = json.loads(_encounter_row())
         late_encounter["id"] = "encounter:2026-01-10-001"
         late_encounter["date"] = "2026-01-16"
         kept_question = json.loads(_QUESTION_ROW)
         kept_question["id"] = "question:kept"
-        kept_question["created_at"] = "2026-01-10"
+        kept_question["created_at"] = "2026-01-15"
         kept_question["source"] = {"artifact": "artifact:2026-01-02-001"}
         late_question = json.loads(_QUESTION_ROW)
         late_question["id"] = "question:late"
@@ -919,10 +921,11 @@ class LaneBTests(unittest.TestCase):
                 "type: trail_segment\ntitle: \"\"\ndate: 2026-01-16\n"
                 "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
                 "via: []\nreason: momentum (Vera Example)\n---\n"),
-            # An in-window segment (date ≤ as-of) is still read (§20.1).
+            # An in-window segment is still read — dated ON the anchor
+            # day: the bound is inclusive for segments too (§20.1).
             "trails/2026-01-05-001.md": (
                 "---\nid: trail-segment:2026-01-05-001\n"
-                "type: trail_segment\ntitle: \"\"\ndate: 2026-01-12\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-01-15\n"
                 "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
                 "via: []\nreason: momentum (Vera Example)\n---\n"),
         }) as directory:
@@ -1110,6 +1113,25 @@ class LaneBTests(unittest.TestCase):
             self.assertEqual(0, code, stderr)
             graph = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual("2026-01-18T00:00:00Z", graph["generated_at"])
+
+    def test_default_as_of_uses_max_encounter_date_in_emitted_graph(self):
+        # §20.1: every journal feeds the default anchor — here the latest
+        # dated input is an encounter row, not an artifact or a segment.
+        artifact = json.loads(_ARTIFACT_ROW)
+        artifact["observed_at"] = "2026-01-14"
+        encounter = json.loads(_encounter_row())
+        encounter["date"] = "2026-01-16"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": json.dumps(artifact) + "\n",
+            "state/encounters.jsonl": json.dumps(encounter) + "\n",
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(directory, output)
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("2026-01-16T00:00:00Z", graph["generated_at"])
 
     # expectedFailure removed by the durability PR (#60)
     @unittest.expectedFailure
