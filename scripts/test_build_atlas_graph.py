@@ -1152,6 +1152,9 @@ class LaneBTests(unittest.TestCase):
         encounter = next(node for node in graph["nodes"]
                          if node["type"] == "encounter")
         self.assertEqual("material:new", encounter["target"])
+        # §10.4: the cached field-derivation refs resolve too — the renamed
+        # target must not silently cost the encounter its field membership.
+        self.assertEqual(["knowledge"], encounter["fields"])
         visited = [edge for edge in graph["edges"]
                    if edge["type"] == "visited"]
         self.assertEqual(["material:new"],
