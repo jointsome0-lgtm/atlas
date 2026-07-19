@@ -1035,6 +1035,9 @@ class LaneBTests(unittest.TestCase):
             self.assertIn(str(curated), stderr)
             self.assertNotIn(".atlas-lock", stderr)
             self.assertEqual(held, (instance / ".atlas-lock").read_bytes())
+            # Validation precedes output handling entirely: the absent
+            # graph/ directory must not have been created on the way out.
+            self.assertFalse((instance / "graph").exists())
             lock_attempts = [
                 call.args[0] for call in opened.call_args_list
                 if Path(call.args[0]).name == ".atlas-lock"
@@ -1114,15 +1117,18 @@ class LaneBTests(unittest.TestCase):
             output.parent.mkdir()
             previous = b'{"previous": "good"}\n'
             output.write_bytes(previous)
-            # Both rename seams are patched so the simulated failure hits
-            # whichever primitive the builder uses (pathlib binds its
-            # accessor at class creation on some Python versions, so
-            # patching os.replace alone does not cover Path.replace).
+            # API-neutral failure injection: every stdlib primitive a
+            # same-directory atomic handoff can use is patched (pathlib
+            # binds its accessor at class creation on some versions, so
+            # the Path methods are patched alongside the os ones).
+            fail = OSError("rename failed")
             with (
                 mock.patch.object(build_atlas_graph.os, "replace",
-                                  side_effect=OSError("rename failed")),
-                mock.patch.object(Path, "replace",
-                                  side_effect=OSError("rename failed")),
+                                  side_effect=fail),
+                mock.patch.object(build_atlas_graph.os, "rename",
+                                  side_effect=fail),
+                mock.patch.object(Path, "replace", side_effect=fail),
+                mock.patch.object(Path, "rename", side_effect=fail),
             ):
                 code, _, stderr = self._run_main(directory, output)
             self.assertEqual(1, code)
