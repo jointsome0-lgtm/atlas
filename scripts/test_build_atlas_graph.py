@@ -800,6 +800,246 @@ def _encounter_row(depth="applied", target="material:m", context=None):
     return json.dumps(row)
 
 
+class LaneBTests(unittest.TestCase):
+    def _run_main(self, curated, output, *options):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        argv = ["build_atlas_graph.py", *options,
+                str(curated), str(output)]
+        with (
+            mock.patch.object(build_atlas_graph.sys, "argv", argv),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            code = build_atlas_graph.main()
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    # expectedFailure removed by the --as-of PR (#29)
+    @unittest.expectedFailure
+    def test_explicit_as_of_flag_stamps_generated_at(self):
+        # §20.1: --as-of is the explicit fold anchor and emits UTC midnight.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                directory, output, "--as-of", "2026-01-15")
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+
+    # expectedFailure removed by the --as-of PR (#29)
+    @unittest.expectedFailure
+    def test_explicit_as_of_skips_later_journal_row_with_report_count(self):
+        # §20.1: the explicit anchor is also an upper bound; skipped dated
+        # journal rows are counted in the build report, never silent.
+        row = json.loads(_ARTIFACT_ROW)
+        row["observed_at"] = "2026-01-16"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": json.dumps(row) + "\n",
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                directory, output, "--as-of", "2026-01-15")
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        ids = {node["id"] for node in graph["nodes"]}
+        self.assertNotIn("artifact:2026-07-16-001", ids)
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+        self.assertIn("skipp", stderr.lower())
+        self.assertRegex(stderr, r"\b1\b")
+
+    # expectedFailure removed by the --as-of PR (#29)
+    @unittest.expectedFailure
+    def test_explicit_as_of_skips_later_trail_segment_with_report_count(self):
+        # §20.1: trail segments share the journal's explicit upper bound
+        # and skipped segments are counted in the build report.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-01-16-001.md": (
+                "---\nid: trail-segment:2026-01-16-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-01-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                directory, output, "--as-of", "2026-01-15")
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        ids = {node["id"] for node in graph["nodes"]}
+        self.assertNotIn("trail-segment:2026-01-16-001", ids)
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+        self.assertIn("skipp", stderr.lower())
+        self.assertRegex(stderr, r"\b1\b")
+
+    # expectedFailure removed by the --as-of PR (#29)
+    @unittest.expectedFailure
+    def test_explicit_as_of_stamps_empty_undated_input(self):
+        # §20.1: an explicit anchor is emitted even when no dated input exists.
+        with _materialize({"concepts/.keep": ""}) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                directory, output, "--as-of", "2026-01-15")
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_missing_input_root_preserves_previous_output(self):
+        # §20.2/#60: input validation precedes output handling, so a missing
+        # curated tree fails clearly without clobbering the last good graph.
+        with tempfile.TemporaryDirectory() as directory:
+            instance = Path(directory) / "instance"
+            instance.mkdir()
+            curated = instance / "atlas"
+            output = instance / "graph" / "atlas-graph.json"
+            output.parent.mkdir()
+            previous = b'{"previous": "good"}\n'
+            output.write_bytes(previous)
+            code, _, stderr = self._run_main(curated, output)
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+            self.assertIn(str(curated), stderr)
+            self.assertEqual(previous, output.read_bytes())
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_mis_mounted_input_root_preserves_previous_output(self):
+        # §20.2/#60: a directory with none of the curated subdirectories is
+        # not a valid input mount and must fail before touching the output.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            curated = root / "mis-mounted"
+            (curated / "unexpected").mkdir(parents=True)
+            (curated / "unexpected" / "file.md").write_text(
+                "Vera Example\n", encoding="utf-8")
+            output = root / "instance" / "graph" / "atlas-graph.json"
+            output.parent.mkdir(parents=True)
+            previous = b'{"previous": "good"}\n'
+            output.write_bytes(previous)
+            code, _, stderr = self._run_main(curated, output)
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+            self.assertIn(str(curated), stderr)
+            self.assertEqual(previous, output.read_bytes())
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_missing_input_root_is_rejected_before_lock_acquisition(self):
+        # #60: validation precedes the output-derived instance lock; failure
+        # must neither attempt to create nor leave a .atlas-lock anywhere.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            instance = root / "instance"
+            instance.mkdir()
+            curated = instance / "atlas"
+            output = instance / "graph" / "atlas-graph.json"
+            real_open = build_atlas_graph.os.open
+            with mock.patch.object(
+                    build_atlas_graph.os, "open", wraps=real_open) as opened:
+                code, _, stderr = self._run_main(curated, output)
+            lock_attempts = [
+                call.args[0] for call in opened.call_args_list
+                if Path(call.args[0]).name == ".atlas-lock"
+            ]
+            self.assertEqual([], lock_attempts)
+            self.assertEqual([], list(root.rglob(".atlas-lock")))
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+
+    def test_two_emitted_graphs_are_byte_identical(self):
+        # §20.1: same inputs and same default as-of emit byte-identical JSON;
+        # neither the graph nor its serialization leaks wall-clock time.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+        }) as directory:
+            root = Path(directory)
+            first_instance = root / "first"
+            second_instance = root / "second"
+            first_instance.mkdir()
+            second_instance.mkdir()
+            first = first_instance / "graph" / "atlas-graph.json"
+            second = second_instance / "graph" / "atlas-graph.json"
+            first_code, _, first_stderr = self._run_main(
+                directory, first)
+            second_code, _, second_stderr = self._run_main(
+                directory, second)
+            self.assertEqual(0, first_code, first_stderr)
+            self.assertEqual(0, second_code, second_stderr)
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+
+    def test_default_as_of_uses_max_journal_date_in_emitted_graph(self):
+        # §20.1: without a flag, the maximum dated journal row anchors the
+        # persisted graph at UTC midnight.
+        artifact = json.loads(_ARTIFACT_ROW)
+        artifact["observed_at"] = "2026-01-14"
+        encounter = json.loads(_encounter_row())
+        encounter["date"] = "2026-01-16"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": json.dumps(artifact) + "\n",
+            "state/encounters.jsonl": json.dumps(encounter) + "\n",
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(directory, output)
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("2026-01-16T00:00:00Z", graph["generated_at"])
+
+    def test_failed_final_rename_preserves_previous_output(self):
+        # §20.2: emission uses a same-directory temp plus atomic rename, so
+        # a failure at the final rename cannot damage the last good graph.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            output.parent.mkdir()
+            previous = b'{"previous": "good"}\n'
+            output.write_bytes(previous)
+            with mock.patch.object(
+                    Path, "replace", side_effect=OSError("rename failed")):
+                with self.assertRaisesRegex(OSError, "rename failed"):
+                    self._run_main(directory, output)
+            self.assertEqual(previous, output.read_bytes())
+
+    def test_journal_ref_resolves_through_formerly(self):
+        # §34.4: stale journal payload refs and their derived edges resolve
+        # together to the living id and are reported as stale references.
+        material = (_MATERIAL % ("new", "New")).replace(
+            "status: active\n",
+            "status: active\nformerly:\n  - material:old\n")
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/new.md": material,
+            "state/encounters.jsonl": _encounter_row(
+                target="material:old") + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        encounter = next(node for node in graph["nodes"]
+                         if node["type"] == "encounter")
+        self.assertEqual("material:new", encounter["target"])
+        visited = [edge for edge in graph["edges"]
+                   if edge["type"] == "visited"]
+        self.assertEqual(["material:new"],
+                         [edge["target"] for edge in visited])
+        self.assertTrue(
+            any("stale curated ref material:old resolved to material:new"
+                in warning and "§34.4" in warning for warning in warnings),
+            warnings,
+        )
+
+
 class JournalProjectionTests(unittest.TestCase):
     # §20 step 8 (#31): the structural journal projection — rows become
     # nodes plus their §10.2 derived edges and §11.2-§11.3 role edges;
