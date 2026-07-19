@@ -1136,36 +1136,55 @@ class LaneBTests(unittest.TestCase):
             self.assertEqual(previous, output.read_bytes())
 
     def test_journal_ref_resolves_through_formerly(self):
-        # §34.4: stale journal payload refs and their derived edges resolve
-        # together to the living id and are reported as stale references.
+        # §34.4: stale journal payload refs — an encounter target, artifact
+        # touches, question pulls — and their derived edges resolve together
+        # to the living id and are reported as stale references.
         material = (_MATERIAL % ("new", "New")).replace(
             "status: active\n",
             "status: active\nformerly:\n  - material:old\n")
+        concept = (_CONCEPT % ("c", "C")).replace(
+            "title: C (Vera Example)\n",
+            "title: C (Vera Example)\nformerly:\n  - concept:old-c\n")
+        artifact = json.loads(_ARTIFACT_ROW)
+        artifact["touches"] = ["concept:old-c"]
+        question = json.loads(_QUESTION_ROW)
+        question["pulls"] = ["concept:old-c"]
         with _materialize({
-            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "concepts/c.md": concept,
             "materials/new.md": material,
             "state/encounters.jsonl": _encounter_row(
                 target="material:old") + "\n",
+            "state/artifacts.jsonl": json.dumps(artifact) + "\n",
+            "state/questions.jsonl": json.dumps(question) + "\n",
         }) as directory:
             graph, errors, warnings = build_atlas_graph.build(Path(directory))
         self.assertEqual([], errors)
         encounter = next(node for node in graph["nodes"]
                          if node["type"] == "encounter")
         self.assertEqual("material:new", encounter["target"])
-        # §10.4: the cached field-derivation refs resolve too — the renamed
-        # target must not silently cost the encounter its field membership.
+        # §10.4: the cached field-derivation refs resolve too — a renamed
+        # ref must not silently cost a journal node its field membership.
         self.assertEqual(["knowledge"], encounter["fields"])
-        visited = [edge for edge in graph["edges"]
-                   if edge["type"] == "visited"]
-        self.assertEqual(["material:new"],
-                         [edge["target"] for edge in visited])
-        # No 'curated' pin: the ref lives in a journal row — §34.4 requires
-        # the stale resolution to be reported, not a curated-origin label.
-        self.assertTrue(
-            any("material:old" in warning and "material:new" in warning
-                and "§34.4" in warning for warning in warnings),
-            warnings,
-        )
+        by_id = {node["id"]: node for node in graph["nodes"]}
+        self.assertEqual(["knowledge"],
+                         by_id["artifact:2026-07-16-001"]["fields"])
+        self.assertEqual(["knowledge"], by_id["question:q"]["fields"])
+        derived = {(edge["type"], edge["source"], edge["target"])
+                   for edge in graph["edges"]}
+        self.assertIn(("visited", "encounter:2026-07-16-001",
+                       "material:new"), derived)
+        self.assertIn(("influences", "artifact:2026-07-16-001",
+                       "concept:c"), derived)
+        self.assertIn(("pulled_by", "concept:c", "question:q"), derived)
+        # No 'curated' pin: the refs live in journal rows — §34.4 requires
+        # the stale resolutions to be reported, not a curated-origin label.
+        for old, new in (("material:old", "material:new"),
+                         ("concept:old-c", "concept:c")):
+            self.assertTrue(
+                any(old in warning and new in warning
+                    and "§34.4" in warning for warning in warnings),
+                (old, warnings),
+            )
 
 
 class JournalProjectionTests(unittest.TestCase):
