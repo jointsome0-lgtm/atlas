@@ -917,6 +917,9 @@ class LaneBTests(unittest.TestCase):
             self.assertIn("ERROR:", stderr)
             self.assertIn(str(curated), stderr)
             self.assertEqual(previous, output.read_bytes())
+            # Validation precedes output handling: no temp or other new
+            # artifact may appear beside the previous graph.
+            self.assertEqual([output], list(output.parent.iterdir()))
 
     # expectedFailure removed by the durability PR (#60)
     @unittest.expectedFailure
@@ -938,17 +941,33 @@ class LaneBTests(unittest.TestCase):
             self.assertIn("ERROR:", stderr)
             self.assertIn(str(curated), stderr)
             self.assertEqual(previous, output.read_bytes())
+            # Validation precedes output handling: no temp or other new
+            # artifact may appear beside the previous graph.
+            self.assertEqual([output], list(output.parent.iterdir()))
 
     # expectedFailure removed by the durability PR (#60)
     @unittest.expectedFailure
     def test_missing_input_root_is_rejected_before_lock_acquisition(self):
+        self._assert_invalid_root_rejected_before_lock(mis_mounted=False)
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_mis_mounted_input_root_is_rejected_before_lock_acquisition(self):
+        self._assert_invalid_root_rejected_before_lock(mis_mounted=True)
+
+    def _assert_invalid_root_rejected_before_lock(self, mis_mounted):
         # #60: validation precedes the output-derived instance lock; failure
-        # must neither attempt to create nor leave a .atlas-lock anywhere.
+        # must neither attempt to create nor leave a .atlas-lock anywhere —
+        # for a missing root and a mis-mounted (wrong-shape) root alike.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             instance = root / "instance"
             instance.mkdir()
             curated = instance / "atlas"
+            if mis_mounted:
+                (curated / "unexpected").mkdir(parents=True)
+                (curated / "unexpected" / "file.md").write_text(
+                    "Vera Example\n", encoding="utf-8")
             output = instance / "graph" / "atlas-graph.json"
             real_open = build_atlas_graph.os.open
             with mock.patch.object(
