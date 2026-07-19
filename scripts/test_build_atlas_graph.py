@@ -850,8 +850,10 @@ class LaneBTests(unittest.TestCase):
         ids = {node["id"] for node in graph["nodes"]}
         self.assertNotIn("artifact:2026-01-10-001", ids)
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
-        self.assertIn("skipp", stderr.lower())
-        self.assertRegex(stderr, r"\b1\b")
+        # §20.1: the report carries an aggregate count, not merely a
+        # per-row note — pin the count phrase.
+        self.assertRegex(stderr, r"skipped 1 dated input")
+        self.assertIn("as-of 2026-01-15", stderr)
 
     # expectedFailure removed by the --as-of PR (#29)
     @unittest.expectedFailure
@@ -881,8 +883,9 @@ class LaneBTests(unittest.TestCase):
         ids = {node["id"] for node in graph["nodes"]}
         self.assertNotIn("trail-segment:2026-01-10-001", ids)
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
-        self.assertIn("skipp", stderr.lower())
-        self.assertRegex(stderr, r"\b1\b")
+        # §20.1: the aggregate skip count covers trail segments too.
+        self.assertRegex(stderr, r"skipped 1 dated input")
+        self.assertIn("as-of 2026-01-15", stderr)
 
     # expectedFailure removed by the --as-of PR (#29)
     @unittest.expectedFailure
@@ -983,15 +986,26 @@ class LaneBTests(unittest.TestCase):
             self.assertEqual(first.read_bytes(), second.read_bytes())
 
     def test_default_as_of_uses_max_journal_date_in_emitted_graph(self):
-        # §20.1: without a flag, the maximum dated journal row anchors the
-        # persisted graph at UTC midnight.
+        # §20.1: without a flag, the max activity date across journal rows
+        # AND trail segments anchors the persisted graph at UTC midnight —
+        # the latest-dated input here is a trail segment, not a journal row.
         artifact = json.loads(_ARTIFACT_ROW)
         artifact["observed_at"] = "2026-01-14"
         encounter = json.loads(_encounter_row())
         encounter["date"] = "2026-01-16"
         with _materialize({
             "concepts/c.md": _CONCEPT % ("c", "C"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
             "materials/m.md": _MATERIAL % ("m", "M"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            "trails/2026-01-18-001.md": (
+                "---\nid: trail-segment:2026-01-18-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-01-18\n"
+                "direction: direction:d\nfrom: concept:c\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
             "state/artifacts.jsonl": json.dumps(artifact) + "\n",
             "state/encounters.jsonl": json.dumps(encounter) + "\n",
         }) as directory:
@@ -999,7 +1013,7 @@ class LaneBTests(unittest.TestCase):
             code, _, stderr = self._run_main(directory, output)
             self.assertEqual(0, code, stderr)
             graph = json.loads(output.read_text(encoding="utf-8"))
-        self.assertEqual("2026-01-16T00:00:00Z", graph["generated_at"])
+        self.assertEqual("2026-01-18T00:00:00Z", graph["generated_at"])
 
     def test_failed_final_rename_preserves_previous_output(self):
         # §20.2: emission uses a same-directory temp plus atomic rename, so
