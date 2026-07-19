@@ -814,8 +814,6 @@ class LaneBTests(unittest.TestCase):
             code = build_atlas_graph.main()
         return code, stdout.getvalue(), stderr.getvalue()
 
-    # expectedFailure removed by the --as-of PR (#29)
-    @unittest.expectedFailure
     def test_explicit_as_of_flag_stamps_generated_at(self):
         # §20.1: --as-of is the explicit fold anchor and emits UTC midnight.
         with _materialize({
@@ -828,8 +826,6 @@ class LaneBTests(unittest.TestCase):
             graph = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
 
-    # expectedFailure removed by the --as-of PR (#29)
-    @unittest.expectedFailure
     def test_explicit_as_of_skips_later_journal_row_with_report_count(self):
         # §20.1: the explicit anchor is an upper bound over every journal —
         # artifacts, encounters, and questions dated after it are skipped
@@ -902,8 +898,6 @@ class LaneBTests(unittest.TestCase):
         self.assertRegex(stderr, r"skipped 3 dated input")
         self.assertIn("as-of 2026-01-15", stderr)
 
-    # expectedFailure removed by the --as-of PR (#29)
-    @unittest.expectedFailure
     def test_explicit_as_of_skips_later_trail_segment_with_report_count(self):
         # §20.1: trail segments share the journal's explicit upper bound
         # and skipped segments are counted in the build report.
@@ -953,8 +947,6 @@ class LaneBTests(unittest.TestCase):
         self.assertRegex(stderr, r"skipped 1 dated input")
         self.assertIn("as-of 2026-01-15", stderr)
 
-    # expectedFailure removed by the --as-of PR (#29)
-    @unittest.expectedFailure
     def test_explicit_as_of_stamps_empty_undated_input(self):
         # §20.1: an explicit anchor is emitted even when no dated input exists.
         with _materialize({"concepts/.keep": ""}) as directory:
