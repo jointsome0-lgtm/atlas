@@ -117,6 +117,13 @@ EDGE_WEIGHTS = {"low", "medium", "high"}
 # boundary reader (validate_atlas aliases this constant).
 JOURNAL_ROW_BYTES = 16_384
 
+# §8: at least one domain directory distinguishes the curated tree from a
+# missing or mis-mounted instance path.
+CURATED_SUBDIRECTORIES = (
+    "concepts", "materials", "zones", "patterns", "directions",
+    "suggested-routes", "trails", "probes",
+)
+
 # §9.6/§9.7/§9.8 (§25.7): the journal schemas close their key sets
 # (additionalProperties: false) — a typo key must fail here too, never
 # be silently ignored (a misspelled sensitivity drops a privacy marking).
@@ -1451,16 +1458,34 @@ def main() -> int:
         return _print_usage()
 
     curated = Path(positional[0]).resolve()
+
+    # §20.2 (#60): reject a missing or mis-mounted input before the
+    # output-derived lock or any output path is touched, including --check.
+    if not curated.exists():
+        print(f"ERROR: {curated}: curated tree is missing", file=sys.stderr)
+        return 1
+    if (not curated.is_dir()
+            or not any((curated / name).is_dir()
+                       for name in CURATED_SUBDIRECTORIES)):
+        print(f"ERROR: {curated}: not shaped like a curated tree "
+              f"(expected at least one §8 curated subdirectory)",
+              file=sys.stderr)
+        return 1
+
     output = Path(positional[1]).resolve()
+    if output.name != "atlas-graph.json" or output.parent.name != "graph":
+        print(f"ERROR: {output}: OUTPUT_JSON must end in "
+              f"graph/atlas-graph.json", file=sys.stderr)
+        return _print_usage()
 
     # §25.6 (#36): the instance is single-writer — every writing flow takes
-    # .atlas-lock at the instance root, acquire-if-absent (O_CREAT|O_EXCL),
-    # and refuses when it is already held; stale locks are removed by hand.
+    # .atlas-lock at the output-derived instance root, acquire-if-absent
+    # (O_CREAT|O_EXCL), and refuses when it is already held; stale locks are
+    # removed by hand.
     lock_fd = None
-    # §8/§25.6: the lock lives at the instance root — with the normal
-    # layout the curated tree is INSTANCE/atlas, so lock its parent; a
-    # bare curated tree (fixtures) is its own root.
-    instance_root = curated.parent if curated.name == "atlas" else curated
+    # §20.2/§25.6 (#60): canonical output is
+    # INSTANCE/graph/atlas-graph.json, so its grandparent owns the lock.
+    instance_root = output.parent.parent
     lock = instance_root / ".atlas-lock"
     if not check_only:
         try:
@@ -1470,25 +1495,49 @@ def main() -> int:
                   f"single-writer (§25.6); if its holder crashed, inspect "
                   f"and remove the lock by hand", file=sys.stderr)
             return 1
-        os.write(lock_fd, (json.dumps({
-            "pid": os.getpid(),
-            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }) + "\n").encode("utf-8"))
+        except OSError as exc:
+            print(f"ERROR: cannot acquire {lock}: {exc}", file=sys.stderr)
+            return 1
+        try:
+            os.write(lock_fd, (json.dumps({
+                "pid": os.getpid(),
+                "started_at": time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }) + "\n").encode("utf-8"))
+        except OSError as exc:
+            _release_lock(lock_fd, lock)
+            print(f"ERROR: cannot write {lock}: {exc}", file=sys.stderr)
+            return 1
     try:
         return _run(curated, output, check_only, as_of)
     finally:
         if lock_fd is not None:
-            os.close(lock_fd)
-            lock.unlink(missing_ok=True)
+            _release_lock(lock_fd, lock)
 
 
 def _print_usage() -> int:
     print(
         f"usage: {Path(sys.argv[0]).name} [--check] "
-        "[--as-of YYYY-MM-DD] CURATED_TREE OUTPUT_JSON",
+        "[--as-of YYYY-MM-DD] CURATED_TREE "
+        "OUTPUT_JSON (graph/atlas-graph.json)",
         file=sys.stderr,
     )
     return 2
+
+
+def _release_lock(lock_fd: int, lock: Path) -> None:
+    # §25.6: remove only the inode this process acquired. If another actor
+    # replaced the path, its foreign lock survives this writer's cleanup.
+    try:
+        own_stat = os.fstat(lock_fd)
+        try:
+            path_stat = lock.stat()
+        except FileNotFoundError:
+            path_stat = None
+        if path_stat is not None and os.path.samestat(own_stat, path_stat):
+            lock.unlink()
+    finally:
+        os.close(lock_fd)
 
 
 def _valid_as_of(value: str) -> bool:
@@ -1515,14 +1564,8 @@ def _run(curated: Path, output: Path, check_only: bool,
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
     if not check_only:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        # §20.2: write a temp file beside the output and atomically rename
-        # it into place — a crash or concurrent read never sees a torn
-        # graph (§16.4 reads exactly one file).
-        tmp = output.with_name(output.name + ".tmp")
-        tmp.write_text(json.dumps(graph, ensure_ascii=False, indent=2) + "\n",
-                       encoding="utf-8")
-        tmp.replace(output)
+        if not _emit_graph(output, graph):
+            return 1
     try:
         output_display = output.relative_to(ROOT)
     except ValueError:
@@ -1531,6 +1574,57 @@ def _run(curated: Path, output: Path, check_only: bool,
           f"{len(graph['nodes'])} nodes, {len(graph['edges'])} edges"
           + ("" if check_only else f" -> {output_display}"))
     return 0
+
+
+def _emit_graph(output: Path, graph: dict) -> bool:
+    payload = (json.dumps(graph, ensure_ascii=False, indent=2) + "\n").encode(
+        "utf-8")
+    tmp = output.with_name(output.name + ".tmp")
+    replaced = False
+    had_previous = False
+    previous = b""
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        had_previous = output.exists()
+        if had_previous:
+            previous = output.read_bytes()
+
+        # §20.2/§25.6: the temp stays beside the canonical output inside
+        # the instance. Sync its bytes, atomically replace, then sync graph/
+        # so the directory entry itself is durable.
+        with tmp.open("wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, output)
+        replaced = True
+        directory_fd = os.open(
+            str(output.parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError as exc:
+        # A post-rename directory-sync failure is observable as a failed
+        # emission too; restore the last good bytes before returning.
+        if replaced:
+            try:
+                if had_previous:
+                    with tmp.open("wb") as stream:
+                        stream.write(previous)
+                        stream.flush()
+                    os.replace(tmp, output)
+                else:
+                    output.unlink(missing_ok=True)
+            except OSError:
+                pass
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        print(f"ERROR: cannot emit {output}: {exc}", file=sys.stderr)
+        return False
+    return True
 
 
 if __name__ == "__main__":
