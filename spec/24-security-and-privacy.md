@@ -65,9 +65,10 @@ plans/imported/      | T3        | importer (§12),     | acceptance ceiling
                      |           | default context     |
 intake/<source>/     | T3        | the batch flow only | acceptance ceiling
                      |           | (§33.2 and above)   | (§24.2) · refuse batch
-state/*.jsonl        | envelope  | builder fold, §19,  | row ceiling (§25.8) ·
-                     | T0/T1,    | default context     | fail-closed per file
-                     | text T2   | minus classed rows  |
+state/*.jsonl        | envelope  | builder fold, §19;  | row ceiling (§25.8) ·
+                     | T0/T1,    | default context only| fail-closed per file
+                     | text T2   | if no row is classed|
+                     |           | (whole file, §32.6) |
 graph/atlas-graph    | derived,  | viewer only (§16.4) | §25.8 · reject whole
   .json              | embeds T2 |                     | file (§16.5)
 graph/…redacted.json | ″         | agent-facing builds | §32.6 · abort, never
@@ -95,7 +96,12 @@ around them is the exact bypass this refuses).
 Acceptance ceilings: every foreign input — a T3 file, an
 observed artifact — has a byte ceiling checked before storage or
 full decode and structural ceilings (record count, string size,
-nesting depth) checked during it. §20.4/§25.8 hold the
+nesting depth) checked during it. An observation unit accepts
+regular strict-UTF-8 text only, under per-file, manifest-entry,
+and per-session corpus budgets; a binary or oversized item is
+listed by path and size and skipped — it enters agent context
+only through the §13.2 step 10 visible high-impact ask, never
+automatically. §20.4/§25.8 hold the
 frontmatter and journal values; the intake-batch, imported-plan,
 and observation budgets take values through the same §25.8
 measured-floor process (#56, #61) — the requirement is normative

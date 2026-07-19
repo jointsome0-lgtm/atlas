@@ -35,7 +35,7 @@
       "type": "object",
       "properties": {
         "id": {"$ref": "#/$defs/nodeId"},
-        "url": {"type": "string", "pattern": "^https://[!-~]+$", "description": "https-only, visible ASCII, non-empty (#37): a reference url identifies a material; other schemes and whitespace/controls are refused at intake (§16.3, §33.2)."},
+        "url": {"type": "string", "pattern": "^https://[a-z0-9][!-~]*$", "description": "https-only, non-empty, normalized lowercase serialization with a host starting alphanumeric (#37): a reference url identifies a material; other schemes, uppercase serialization, and whitespace/controls are refused at intake — normalization is the adapter's translation burden (§33.1); the viewer re-parses regardless (§16.3)."},
         "title": {"type": "string"},
         "text": {"type": "string"}
       },

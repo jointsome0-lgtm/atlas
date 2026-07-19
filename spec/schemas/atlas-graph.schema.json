@@ -35,8 +35,8 @@
     "slug": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "safeExternalUrl": {
       "type": "string",
-      "pattern": "^(?:https://[!-~]+)?$",
-      "description": "https-only external link, or the empty string for none (#37): visible ASCII only — no whitespace, controls, or other schemes; the viewer re-checks the scheme before rendering a link (§16.3)."
+      "pattern": "^(?:https://[a-z0-9][!-~]*)?$",
+      "description": "https-only external link, or the empty string for none (#37): normalized lowercase serialization — lowercase scheme, host starting alphanumeric (IDN as punycode, non-ASCII percent-encoded), visible ASCII only, no whitespace, controls, or other schemes; the viewer re-parses and re-checks before rendering a link (§16.3)."
     },
     "nodeId": {"type": "string", "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
     "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
@@ -260,6 +260,7 @@
         "target": {"$ref": "#/$defs/nodeId"},
         "type": {"$ref": "#/$defs/edgeType"},
         "provenance": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nodeId"}},
+        "sensitivity": {"type": "string", "enum": ["medical"], "description": "Sensitivity classes transcribed verbatim from §32.6: §20 step 12 emits the class on every entry the provenance union marks — a derived edge resting on a classed row included."},
         "weight": {"$ref": "#/$defs/emittedEdgeWeight"},
         "order": {"type": "integer", "minimum": 1},
         "context": {"$ref": "#/$defs/nodeId"},

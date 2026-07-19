@@ -54,10 +54,17 @@ Versioning — stated here once for every persisted format (the boundary formats
 ```text
 Emitted files — the graph (§10), the snapshot (§33.4), the
 redacted variant, every report — carry format + integer version.
-Additive change is the norm; a rename, removal, or semantic
-change bumps the version through a Decision Log entry; consumers
-ignore unknown fields; an unsupported version fails visibly
-(§10, #44).
+Additive change is the norm, landed with its schema in the
+emitting change — the schemas are closed (#37), so an emitted
+file never carries a field its schema lacks; a rename, removal,
+or semantic change bumps the version through a Decision Log
+entry. Forward tolerance for unknown fields is the OUT
+consumer's (§33.4): a downstream adapter ignores what it does
+not know. Atlas's own readers never do — a schema violation,
+unknown keys included, fails closed (§16.5, §24.2, §33.2); an
+unsupported version fails visibly (§10, #44). Inward intake is
+stricter still: a new record field is a schema version bump
+(§33.2), never a silently tolerated extra.
 Journal rows carry no version key: journals are append-only
 history and are never migrated (§8), so a row-kind schema evolves
 additively only — a new field is optional forever, and a semantic

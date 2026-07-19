@@ -136,14 +136,20 @@ enforces it.
 The viewer has exactly two inputs — the graph file and the URL fragment (§16.4) — and trusts neither (#37):
 
 ```text
-Graph file: before rendering, the viewer validates the whole
-file against the §25.7 atlas-graph schema and rejects the file
-on the first error — a visible generic failure, never a partial
-render. It projects the known fields of known shapes and never
-iterates unknown input properties; past the §25.8 threshold it
-renders the list fallback rather than degrading.
-Fragment: the raw fragment is bounded by the §20.4 line ceiling
-(4,096 bytes) and each known parameter occurs at most once.
+Graph file: acceptance is bounded before parsing — a byte cap
+on the file and hard node/edge count ceilings, dedicated §25.8
+entries via the measured-floor process (#56/#61); a breach is
+the same generic rejection. Within bounds, the viewer validates
+the whole file against the §25.7 atlas-graph schema and rejects
+the file on the first error — a visible generic failure, never
+a partial render. It projects the known fields of known shapes
+and never iterates unknown input properties; past the §25.8
+fallback threshold it renders the list fallback — a rendering
+mode, never the acceptance bound.
+Fragment: the raw fragment and each decoded parameter value
+carry dedicated byte ceilings — §25.8 entries via the
+measured-floor process, never a borrowed grammar constant —
+and each known parameter occurs at most once.
 Invalid percent-encoding, a duplicate known key, or a ceiling
 breach yields the generic visible error and no render; unknown
 params stay ignored (§16.4 forward compatibility). A rejected
