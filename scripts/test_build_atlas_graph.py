@@ -831,16 +831,31 @@ class LaneBTests(unittest.TestCase):
     # expectedFailure removed by the --as-of PR (#29)
     @unittest.expectedFailure
     def test_explicit_as_of_skips_later_journal_row_with_report_count(self):
-        # §20.1: the explicit anchor is also an upper bound; skipped dated
-        # journal rows are counted in the build report, never silent. The id
-        # is dated before the cutoff on purpose: the bound reads the row's
-        # observed_at, never a date embedded in the id.
-        row = json.loads(_ARTIFACT_ROW)
-        row["id"] = "artifact:2026-01-10-001"
-        row["observed_at"] = "2026-01-16"
+        # §20.1: the explicit anchor is an upper bound over every journal —
+        # artifacts, encounters, and questions dated after it are skipped
+        # and counted; a row on/before it is still read. Ids are dated
+        # before the cutoff on purpose: the bound reads the row's dated
+        # field, never a date embedded in the id.
+        kept = json.loads(_ARTIFACT_ROW)
+        kept["id"] = "artifact:2026-01-02-001"
+        kept["observed_at"] = "2026-01-10"
+        late = json.loads(_ARTIFACT_ROW)
+        late["id"] = "artifact:2026-01-10-001"
+        late["observed_at"] = "2026-01-16"
+        late_encounter = json.loads(_encounter_row())
+        late_encounter["id"] = "encounter:2026-01-10-001"
+        late_encounter["date"] = "2026-01-16"
+        late_question = json.loads(_QUESTION_ROW)
+        late_question["id"] = "question:late"
+        late_question["created_at"] = "2026-01-16"
+        late_question["source"] = {"artifact": "artifact:2026-01-02-001"}
         with _materialize({
             "concepts/c.md": _CONCEPT % ("c", "C"),
-            "state/artifacts.jsonl": json.dumps(row) + "\n",
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": (json.dumps(kept) + "\n"
+                                      + json.dumps(late) + "\n"),
+            "state/encounters.jsonl": json.dumps(late_encounter) + "\n",
+            "state/questions.jsonl": json.dumps(late_question) + "\n",
         }) as directory:
             output = Path(directory) / "graph" / "atlas-graph.json"
             code, _, stderr = self._run_main(
@@ -848,11 +863,14 @@ class LaneBTests(unittest.TestCase):
             self.assertEqual(0, code, stderr)
             graph = json.loads(output.read_text(encoding="utf-8"))
         ids = {node["id"] for node in graph["nodes"]}
+        self.assertIn("artifact:2026-01-02-001", ids)
         self.assertNotIn("artifact:2026-01-10-001", ids)
+        self.assertNotIn("encounter:2026-01-10-001", ids)
+        self.assertNotIn("question:late", ids)
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
         # §20.1: the report carries an aggregate count, not merely a
         # per-row note — pin the count phrase.
-        self.assertRegex(stderr, r"skipped 1 dated input")
+        self.assertRegex(stderr, r"skipped 3 dated input")
         self.assertIn("as-of 2026-01-15", stderr)
 
     # expectedFailure removed by the --as-of PR (#29)
@@ -874,6 +892,12 @@ class LaneBTests(unittest.TestCase):
                 "type: trail_segment\ntitle: \"\"\ndate: 2026-01-16\n"
                 "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
                 "via: []\nreason: momentum (Vera Example)\n---\n"),
+            # An in-window segment (date ≤ as-of) is still read (§20.1).
+            "trails/2026-01-05-001.md": (
+                "---\nid: trail-segment:2026-01-05-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-01-12\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
         }) as directory:
             output = Path(directory) / "graph" / "atlas-graph.json"
             code, _, stderr = self._run_main(
@@ -882,6 +906,7 @@ class LaneBTests(unittest.TestCase):
             graph = json.loads(output.read_text(encoding="utf-8"))
         ids = {node["id"] for node in graph["nodes"]}
         self.assertNotIn("trail-segment:2026-01-10-001", ids)
+        self.assertIn("trail-segment:2026-01-05-001", ids)
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
         # §20.1: the aggregate skip count covers trail segments too.
         self.assertRegex(stderr, r"skipped 1 dated input")
@@ -1055,10 +1080,19 @@ class LaneBTests(unittest.TestCase):
             output.parent.mkdir()
             previous = b'{"previous": "good"}\n'
             output.write_bytes(previous)
+            # Either failure contract is legal — today the OSError
+            # propagates; a #60 builder may catch it and exit 1 with an
+            # ERROR: diagnostic (§25.8). The invariant is the previous
+            # graph's bytes, not the failure channel.
             with mock.patch.object(
                     Path, "replace", side_effect=OSError("rename failed")):
-                with self.assertRaisesRegex(OSError, "rename failed"):
-                    self._run_main(directory, output)
+                try:
+                    code, _, stderr = self._run_main(directory, output)
+                except OSError:
+                    pass
+                else:
+                    self.assertEqual(1, code)
+                    self.assertIn("ERROR:", stderr)
             self.assertEqual(previous, output.read_bytes())
 
     def test_journal_ref_resolves_through_formerly(self):
