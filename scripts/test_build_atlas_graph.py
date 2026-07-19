@@ -864,9 +864,14 @@ class LaneBTests(unittest.TestCase):
             graph = json.loads(output.read_text(encoding="utf-8"))
         ids = {node["id"] for node in graph["nodes"]}
         self.assertIn("artifact:2026-01-02-001", ids)
-        self.assertNotIn("artifact:2026-01-10-001", ids)
-        self.assertNotIn("encounter:2026-01-10-001", ids)
-        self.assertNotIn("question:late", ids)
+        skipped = {"artifact:2026-01-10-001", "encounter:2026-01-10-001",
+                   "question:late"}
+        self.assertEqual(set(), ids & skipped)
+        # §20.3: journal-derived edges sit under the §20.1 bound too — a
+        # skipped row leaves no edge endpoint and no provenance entry.
+        for edge in graph["edges"]:
+            self.assertEqual(set(), {edge["source"], edge["target"],
+                                     *edge["provenance"]} & skipped)
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
         # §20.1: the report carries an aggregate count, not merely a
         # per-row note — pin the count phrase.
@@ -907,6 +912,12 @@ class LaneBTests(unittest.TestCase):
         ids = {node["id"] for node in graph["nodes"]}
         self.assertNotIn("trail-segment:2026-01-10-001", ids)
         self.assertIn("trail-segment:2026-01-05-001", ids)
+        # §20.3: a skipped segment derives nothing — no moved_to/via edge
+        # endpoint and no provenance entry may cite it.
+        for edge in graph["edges"]:
+            self.assertNotIn("trail-segment:2026-01-10-001",
+                             {edge["source"], edge["target"],
+                              *edge["provenance"]})
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
         # §20.1: the aggregate skip count covers trail segments too.
         self.assertRegex(stderr, r"skipped 1 dated input")
@@ -1084,8 +1095,12 @@ class LaneBTests(unittest.TestCase):
             # propagates; a #60 builder may catch it and exit 1 with an
             # ERROR: diagnostic (§25.8). The invariant is the previous
             # graph's bytes, not the failure channel.
+            # Patching os.replace covers every §20.2 rename seam: pathlib's
+            # Path.replace calls os.replace on the shared module at call
+            # time, so a direct os.replace implementation fails the same way.
             with mock.patch.object(
-                    Path, "replace", side_effect=OSError("rename failed")):
+                    build_atlas_graph.os, "replace",
+                    side_effect=OSError("rename failed")):
                 try:
                     code, _, stderr = self._run_main(directory, output)
                 except OSError:
