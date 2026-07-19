@@ -832,8 +832,11 @@ class LaneBTests(unittest.TestCase):
     @unittest.expectedFailure
     def test_explicit_as_of_skips_later_journal_row_with_report_count(self):
         # §20.1: the explicit anchor is also an upper bound; skipped dated
-        # journal rows are counted in the build report, never silent.
+        # journal rows are counted in the build report, never silent. The id
+        # is dated before the cutoff on purpose: the bound reads the row's
+        # observed_at, never a date embedded in the id.
         row = json.loads(_ARTIFACT_ROW)
+        row["id"] = "artifact:2026-01-10-001"
         row["observed_at"] = "2026-01-16"
         with _materialize({
             "concepts/c.md": _CONCEPT % ("c", "C"),
@@ -845,7 +848,7 @@ class LaneBTests(unittest.TestCase):
             self.assertEqual(0, code, stderr)
             graph = json.loads(output.read_text(encoding="utf-8"))
         ids = {node["id"] for node in graph["nodes"]}
-        self.assertNotIn("artifact:2026-07-16-001", ids)
+        self.assertNotIn("artifact:2026-01-10-001", ids)
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
         self.assertIn("skipp", stderr.lower())
         self.assertRegex(stderr, r"\b1\b")
@@ -862,8 +865,10 @@ class LaneBTests(unittest.TestCase):
                 "---\nid: direction:d\ntype: direction\n"
                 "title: D (Vera Example)\nattractor: pull\n"
                 "status: active\n---\n"),
-            "trails/2026-01-16-001.md": (
-                "---\nid: trail-segment:2026-01-16-001\n"
+            # Filename and id are dated before the cutoff on purpose: the
+            # bound reads the parsed date field, never the filename or id.
+            "trails/2026-01-10-001.md": (
+                "---\nid: trail-segment:2026-01-10-001\n"
                 "type: trail_segment\ntitle: \"\"\ndate: 2026-01-16\n"
                 "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
                 "via: []\nreason: momentum (Vera Example)\n---\n"),
@@ -874,7 +879,7 @@ class LaneBTests(unittest.TestCase):
             self.assertEqual(0, code, stderr)
             graph = json.loads(output.read_text(encoding="utf-8"))
         ids = {node["id"] for node in graph["nodes"]}
-        self.assertNotIn("trail-segment:2026-01-16-001", ids)
+        self.assertNotIn("trail-segment:2026-01-10-001", ids)
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
         self.assertIn("skipp", stderr.lower())
         self.assertRegex(stderr, r"\b1\b")
