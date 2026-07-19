@@ -1464,9 +1464,13 @@ def main() -> int:
     if not curated.exists():
         print(f"ERROR: {curated}: curated tree is missing", file=sys.stderr)
         return 1
+    # §20.1: an EMPTY curated tree is a valid fresh instance and still
+    # builds; a mis-mount is a directory with content but none of the §8
+    # curated subdirectories.
     if (not curated.is_dir()
-            or not any((curated / name).is_dir()
-                       for name in CURATED_SUBDIRECTORIES)):
+            or (any(curated.iterdir())
+                and not any((curated / name).is_dir()
+                            for name in CURATED_SUBDIRECTORIES))):
         print(f"ERROR: {curated}: not shaped like a curated tree "
               f"(expected at least one §8 curated subdirectory)",
               file=sys.stderr)
@@ -1477,6 +1481,15 @@ def main() -> int:
         print(f"ERROR: {output}: OUTPUT_JSON must end in "
               f"graph/atlas-graph.json", file=sys.stderr)
         return _print_usage()
+    # §25.6: with the normal layout the curated tree is INSTANCE/atlas and
+    # its journals are read from the same instance — the output-derived
+    # lock must guard exactly that root, or a held input-instance lock
+    # would be bypassed and the builder could race another writer.
+    if curated.name == "atlas" and curated.parent != output.parent.parent:
+        print(f"ERROR: {curated} belongs to instance {curated.parent}, but "
+              f"OUTPUT_JSON derives instance {output.parent.parent} — one "
+              f"instance, one lock (§25.6)", file=sys.stderr)
+        return 1
 
     # §25.6 (#36): the instance is single-writer — every writing flow takes
     # .atlas-lock at the output-derived instance root, acquire-if-absent

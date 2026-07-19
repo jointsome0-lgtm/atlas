@@ -1025,6 +1025,37 @@ class LaneBTests(unittest.TestCase):
             # artifact may appear beside the previous graph.
             self.assertEqual([output], list(output.parent.iterdir()))
 
+    def test_empty_curated_root_still_builds(self):
+        # §20.1: empty inputs still build — a fresh instance whose atlas/
+        # exists with no domain subdirectories yet is not a mis-mount.
+        with tempfile.TemporaryDirectory() as directory:
+            instance = Path(directory) / "instance"
+            curated = instance / "atlas"
+            curated.mkdir(parents=True)
+            output = instance / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(curated, output)
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual([], graph["nodes"])
+        self.assertNotIn("generated_at", graph)
+
+    def test_mismatched_instance_roots_are_rejected(self):
+        # §25.6: INSTANCE/atlas input with an output deriving a DIFFERENT
+        # instance root would lock the wrong root and race a writer of the
+        # instance actually being read — refused before the lock.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            curated = root / "instance" / "atlas"
+            (curated / "concepts").mkdir(parents=True)
+            other = root / "other"
+            output = other / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(curated, output)
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+            self.assertIn("instance", stderr)
+            self.assertFalse(other.exists())
+            self.assertEqual([], list(root.rglob(".atlas-lock")))
+
     def test_missing_input_root_is_rejected_before_lock_acquisition(self):
         self._assert_invalid_root_rejected_before_lock(mis_mounted=False)
 
