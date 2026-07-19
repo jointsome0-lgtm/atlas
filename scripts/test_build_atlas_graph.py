@@ -842,9 +842,16 @@ class LaneBTests(unittest.TestCase):
         late = json.loads(_ARTIFACT_ROW)
         late["id"] = "artifact:2026-01-10-001"
         late["observed_at"] = "2026-01-16"
+        kept_encounter = json.loads(_encounter_row())
+        kept_encounter["id"] = "encounter:2026-01-02-001"
+        kept_encounter["date"] = "2026-01-10"
         late_encounter = json.loads(_encounter_row())
         late_encounter["id"] = "encounter:2026-01-10-001"
         late_encounter["date"] = "2026-01-16"
+        kept_question = json.loads(_QUESTION_ROW)
+        kept_question["id"] = "question:kept"
+        kept_question["created_at"] = "2026-01-10"
+        kept_question["source"] = {"artifact": "artifact:2026-01-02-001"}
         late_question = json.loads(_QUESTION_ROW)
         late_question["id"] = "question:late"
         late_question["created_at"] = "2026-01-16"
@@ -854,8 +861,10 @@ class LaneBTests(unittest.TestCase):
             "materials/m.md": _MATERIAL % ("m", "M"),
             "state/artifacts.jsonl": (json.dumps(kept) + "\n"
                                       + json.dumps(late) + "\n"),
-            "state/encounters.jsonl": json.dumps(late_encounter) + "\n",
-            "state/questions.jsonl": json.dumps(late_question) + "\n",
+            "state/encounters.jsonl": (json.dumps(kept_encounter) + "\n"
+                                       + json.dumps(late_encounter) + "\n"),
+            "state/questions.jsonl": (json.dumps(kept_question) + "\n"
+                                      + json.dumps(late_question) + "\n"),
         }) as directory:
             output = Path(directory) / "graph" / "atlas-graph.json"
             code, _, stderr = self._run_main(
@@ -863,7 +872,16 @@ class LaneBTests(unittest.TestCase):
             self.assertEqual(0, code, stderr)
             graph = json.loads(output.read_text(encoding="utf-8"))
         ids = {node["id"] for node in graph["nodes"]}
-        self.assertIn("artifact:2026-01-02-001", ids)
+        # §20.1: in-window rows of EVERY journal are still read — node and
+        # derived edge alike.
+        self.assertLessEqual({"artifact:2026-01-02-001",
+                              "encounter:2026-01-02-001",
+                              "question:kept"}, ids)
+        derived = {(edge["type"], edge["source"], edge["target"])
+                   for edge in graph["edges"]}
+        self.assertIn(("visited", "encounter:2026-01-02-001", "material:m"),
+                      derived)
+        self.assertIn(("pulled_by", "concept:c", "question:kept"), derived)
         skipped = {"artifact:2026-01-10-001", "encounter:2026-01-10-001",
                    "question:late"}
         self.assertEqual(set(), ids & skipped)
