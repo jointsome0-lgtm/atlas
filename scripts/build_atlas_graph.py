@@ -181,7 +181,8 @@ def id_type(node_id: str) -> str | None:
     return ID_PREFIXES.get(prefix)
 
 
-def build(curated: Path) -> tuple[dict, list[str], list[str]]:
+def build(curated: Path, as_of: str | None = None) -> tuple[
+        dict, list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     nodes: dict[str, dict] = {}
@@ -193,6 +194,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     question_records: dict = {}  # question id -> (source object, pulls)
     encounter_records: list = []  # (id, target, depth, ctx question/artifact, origin)
     activity_dates: list = []  # §20.1 — the dated-input universe
+    skipped_dated_inputs = 0
 
     date_shape = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -201,6 +203,15 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         # rows and trail segments; malformed dates never anchor a graph.
         if isinstance(value, str) and date_shape.fullmatch(value):
             activity_dates.append(value)
+
+    def skip_after_as_of(value):
+        # §20.1: an explicit as-of is an inclusive upper bound over every
+        # dated input; a skipped input contributes no nodes or derived edges.
+        nonlocal skipped_dated_inputs
+        if as_of is not None and value is not None and value > as_of:
+            skipped_dated_inputs += 1
+            return True
+        return False
 
     def kinded_ref(value, origin, field, prefixes, cite):
         # §25.8: a payload ref embeds only in its contract kind and full
@@ -393,6 +404,14 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         ("probes", "probe"),
     ):
         for meta, body, path in load_dir(curated, subdir):
+            segment_date = None
+            if expected == "trail_segment":
+                # §20.1: read and validate the segment date first; a segment
+                # beyond an explicit cut is skipped whole before other fields.
+                segment_date = date_field(meta.get("date"), path, "date")
+                if skip_after_as_of(segment_date):
+                    continue
+                note_activity(segment_date)
             declared = meta.get("type", expected)
             if declared != expected and not (subdir == "suggested-routes"
                                              and declared == "suggested_route"):
@@ -494,8 +513,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                                    "§9.9/§10.4")
                         for ref in id_list(meta.get("via"), path, "via"))
                     if ref is not None]
-                extra["date"] = date_field(meta.get("date"), path, "date")
-                note_activity(extra["date"])
+                extra["date"] = segment_date
                 extra["direction"] = kinded_ref(meta.get("direction"), path,
                                                 "direction", {"direction"},
                                                 "§9.9/§10.4")
@@ -744,7 +762,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     # §20 step 8 (#31): the structural journal projection — artifact,
     # encounter, and question rows become nodes plus their §10.2 derived
     # edges. State folds and influence/frontier (§20 steps 9-10) stay
-    # §29 Phase 3/4; no as-of bound is claimed here (#29).
+    # §29 Phase 3/4; every projected row obeys §20.1's as-of bound.
     state_dir = (curated.parent / "state"
                  if curated.name == "atlas" else curated / "state")
 
@@ -768,7 +786,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs,
                           parse_constant=constant)
 
-    def journal_rows(stem):
+    def journal_rows(stem, date_key):
         paths = []
         direct = state_dir / f"{stem}.jsonl"
         if direct.is_file():
@@ -819,6 +837,13 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                     errors.append(f"{path}:{number}: journal row is not an "
                                   "object")
                     continue
+                origin = f"{path}:{number}"
+                # §20.1: the dated field is the first row field read. A row
+                # beyond an explicit cut is skipped whole, without unrelated
+                # schema diagnostics or any projection.
+                row_date = date_field(row.get(date_key), origin, date_key)
+                if skip_after_as_of(row_date):
+                    continue
                 nulls = sorted(k for k, v in row.items() if v is None)
                 if nulls:
                     # §25.7: no journal schema admits null anywhere — an
@@ -845,9 +870,10 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                         f"{path}:{number}: unknown journal key(s) "
                         f"{', '.join(sorted(unknown))} (§25.7)")
                     continue
-                yield f"{path}:{number}", row
+                note_activity(row_date)
+                yield origin, row, row_date
 
-    for origin, row in journal_rows("artifacts"):
+    for origin, row, row_date in journal_rows("artifacts", "observed_at"):
         # §9.6/§10.4: the authored type: embeds as kind (type is §10.1's).
         touches = [
             ref for ref in (
@@ -864,8 +890,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         extra = {
             "kind": str_field(row.get("type"), origin, "type"),
             "path": str_field(row.get("path"), origin, "path"),
-            "observed_at": date_field(row.get("observed_at"), origin,
-                                      "observed_at"),
+            "observed_at": row_date,
             "summary": str_field(row.get("summary"), origin, "summary"),
             "evidence_strength": str_field(row.get("evidence_strength"),
                                            origin, "evidence_strength",
@@ -875,7 +900,6 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             "sensitivity": str_field(row.get("sensitivity"), origin,
                                      "sensitivity", SENSITIVITY_CLASSES),
         }
-        note_activity(extra["observed_at"])
         for field in ("kind", "path", "observed_at", "summary",
                       "evidence_strength"):
             if row.get("type" if field == "kind" else field) is None:
@@ -902,7 +926,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                      lenient=True)
         field_refs[aid] = touches + supports_updates
 
-    for origin, row in journal_rows("encounters"):
+    for origin, row, row_date in journal_rows("encounters", "date"):
         # §9.7/§10.4: the journal row embeds whole — date, target, depth,
         # mode, context — and derives the visited edge.
         context = row.get("context")
@@ -919,7 +943,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
                           "context object")
             context = None
         extra = {
-            "date": date_field(row.get("date"), origin, "date"),
+            "date": row_date,
             "target": kinded_ref(row.get("target"), origin, "target",
                                  {"material", "part"}, "§9.7/§10.4"),
             "depth": str_field(row.get("depth"), origin, "depth",
@@ -930,7 +954,6 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             "sensitivity": str_field(row.get("sensitivity"), origin,
                                      "sensitivity", SENSITIVITY_CLASSES),
         }
-        note_activity(extra["date"])
         for field in ("date", "target", "depth", "mode"):
             if row.get(field) is None:
                 errors.append(f"{origin}: encounter row requires {field} "
@@ -949,7 +972,7 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
              (context or {}).get("question"), (context or {}).get("artifact"),
              origin))
 
-    for origin, row in journal_rows("questions"):
+    for origin, row, row_date in journal_rows("questions", "created_at"):
         # §9.8/§10.4: text, created_at, source embed; pulls derive the
         # pulled_by edges; status is derived, never stored (§31.8).
         pulls = [
@@ -973,13 +996,11 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
             source_ref = None
         extra = {
             "text": str_field(row.get("text"), origin, "text"),
-            "created_at": date_field(row.get("created_at"), origin,
-                                     "created_at"),
+            "created_at": row_date,
             "source": source_ref,
             "sensitivity": str_field(row.get("sensitivity"), origin,
                                      "sensitivity", SENSITIVITY_CLASSES),
         }
-        note_activity(extra["created_at"])
         for field in ("text", "created_at", "source"):
             if row.get(field) is None:
                 errors.append(f"{origin}: question row requires {field} "
@@ -1371,8 +1392,8 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
     # the wall clock (determinism: same inputs ⇒ byte-identical output).
     # The default as-of is the max activity date across the dated inputs —
     # journal rows and trail segments; with no dated input the key stays
-    # absent, not invented. The explicit --as-of bound over the folds is
-    # #29's.
+    # absent, not invented. An explicit as-of is the inclusive upper bound
+    # over every journal row and trail segment projected above.
     graph = {
         "format": "atlas-graph",
         "version": 1,
@@ -1388,25 +1409,50 @@ def build(curated: Path) -> tuple[dict, list[str], list[str]]:
         "frontier": [],     # §29 Phase 4 (§15)
         "projections": dict(sorted(projections.items())),  # §20 step 12, §32
     }
-    if activity_dates:
-        graph["generated_at"] = max(activity_dates) + "T00:00:00Z"
+    effective_as_of = (as_of
+                       or (max(activity_dates) if activity_dates else None))
+    if effective_as_of is not None:
+        graph["generated_at"] = effective_as_of + "T00:00:00Z"
+    if skipped_dated_inputs:
+        warnings.append(
+            f"skipped {skipped_dated_inputs} dated input(s) after as-of "
+            f"{as_of} (§20.1)")
     return graph, errors, warnings
 
 
 def main() -> int:
     args = sys.argv[1:]
-    check_only = "--check" in args
-    if check_only:
-        args.remove("--check")
-    if len(args) != 2:
-        print(
-            f"usage: {Path(sys.argv[0]).name} [--check] CURATED_TREE OUTPUT_JSON",
-            file=sys.stderr,
-        )
-        return 2
+    check_only = False
+    as_of = None
+    positional = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--check":
+            if check_only:
+                print("ERROR: --check may be specified only once",
+                      file=sys.stderr)
+                return _print_usage()
+            check_only = True
+        elif arg == "--as-of":
+            if as_of is not None:
+                print("ERROR: --as-of may be specified only once",
+                      file=sys.stderr)
+                return _print_usage()
+            index += 1
+            if index >= len(args) or not _valid_as_of(args[index]):
+                print("ERROR: --as-of requires YYYY-MM-DD", file=sys.stderr)
+                return _print_usage()
+            as_of = args[index]
+        else:
+            positional.append(arg)
+        index += 1
+    if len(positional) != 2:
+        return _print_usage()
 
-    curated = Path(args[0]).resolve()
-    output = Path(args[1]).resolve()
+    curated = Path(positional[0]).resolve()
+    output = Path(positional[1]).resolve()
+
     # §25.6 (#36): the instance is single-writer — every writing flow takes
     # .atlas-lock at the instance root, acquire-if-absent (O_CREAT|O_EXCL),
     # and refuses when it is already held; stale locks are removed by hand.
@@ -1429,16 +1475,36 @@ def main() -> int:
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }) + "\n").encode("utf-8"))
     try:
-        return _run(curated, output, check_only)
+        return _run(curated, output, check_only, as_of)
     finally:
         if lock_fd is not None:
             os.close(lock_fd)
             lock.unlink(missing_ok=True)
 
 
-def _run(curated: Path, output: Path, check_only: bool) -> int:
+def _print_usage() -> int:
+    print(
+        f"usage: {Path(sys.argv[0]).name} [--check] "
+        "[--as-of YYYY-MM-DD] CURATED_TREE OUTPUT_JSON",
+        file=sys.stderr,
+    )
+    return 2
+
+
+def _valid_as_of(value: str) -> bool:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return False
     try:
-        graph, errors, warnings = build(curated)
+        time.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
+
+
+def _run(curated: Path, output: Path, check_only: bool,
+         as_of: str | None = None) -> int:
+    try:
+        graph, errors, warnings = build(curated, as_of)
     except FrontmatterError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
