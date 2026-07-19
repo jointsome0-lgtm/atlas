@@ -1081,9 +1081,14 @@ class LaneBTests(unittest.TestCase):
             graph = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual("2026-01-18T00:00:00Z", graph["generated_at"])
 
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
     def test_failed_final_rename_preserves_previous_output(self):
         # §20.2: emission uses a same-directory temp plus atomic rename, so
-        # a failure at the final rename cannot damage the last good graph.
+        # a failure at the final rename cannot damage the last good graph —
+        # and §25.8 requires the failure be reported as exit 1 with an
+        # ERROR: diagnostic, never an uncaught traceback (today it
+        # propagates; #60 lands the contract).
         with _materialize({
             "concepts/c.md": _CONCEPT % ("c", "C"),
         }) as directory:
@@ -1091,23 +1096,19 @@ class LaneBTests(unittest.TestCase):
             output.parent.mkdir()
             previous = b'{"previous": "good"}\n'
             output.write_bytes(previous)
-            # Either failure contract is legal — today the OSError
-            # propagates; a #60 builder may catch it and exit 1 with an
-            # ERROR: diagnostic (§25.8). The invariant is the previous
-            # graph's bytes, not the failure channel.
-            # Patching os.replace covers every §20.2 rename seam: pathlib's
-            # Path.replace calls os.replace on the shared module at call
-            # time, so a direct os.replace implementation fails the same way.
-            with mock.patch.object(
-                    build_atlas_graph.os, "replace",
-                    side_effect=OSError("rename failed")):
-                try:
-                    code, _, stderr = self._run_main(directory, output)
-                except OSError:
-                    pass
-                else:
-                    self.assertEqual(1, code)
-                    self.assertIn("ERROR:", stderr)
+            # Both rename seams are patched so the simulated failure hits
+            # whichever primitive the builder uses (pathlib binds its
+            # accessor at class creation on some Python versions, so
+            # patching os.replace alone does not cover Path.replace).
+            with (
+                mock.patch.object(build_atlas_graph.os, "replace",
+                                  side_effect=OSError("rename failed")),
+                mock.patch.object(Path, "replace",
+                                  side_effect=OSError("rename failed")),
+            ):
+                code, _, stderr = self._run_main(directory, output)
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
             self.assertEqual(previous, output.read_bytes())
 
     def test_journal_ref_resolves_through_formerly(self):
