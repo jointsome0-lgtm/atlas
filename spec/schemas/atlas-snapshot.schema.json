@@ -16,7 +16,7 @@
     "questions": {"type": "array", "items": {"$ref": "#/$defs/questionEntry"}}
   },
   "required": ["format", "version", "generated_at", "withheld", "scales", "evidence_refs", "state", "materials", "trail", "questions"],
-  "additionalProperties": true,
+  "additionalProperties": false,
   "$defs": {
     "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
     "nodeId": {"type": "string", "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
@@ -43,7 +43,7 @@
         "freshness": {"const": ["fresh", "aging", "stale"], "description": "Freshness scale transcribed verbatim from §14.7."}
       },
       "required": ["exposure", "confidence", "clarity", "coverage", "freshness"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "materialScales": {
       "type": "object",
@@ -51,7 +51,7 @@
         "depth_reached": {"const": ["skim", "read", "summarized", "applied", "taught"], "description": "Material encounter-depth scale transcribed verbatim from §9.7 and §14.8."}
       },
       "required": ["depth_reached"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "patternScales": {
       "type": "object",
@@ -63,7 +63,7 @@
         "freshness": {"const": ["fresh", "aging", "stale"], "description": "Freshness scale transcribed verbatim from §14.7 and reused by §32.3."}
       },
       "required": ["exposure", "confidence", "clarity", "coverage", "freshness"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "zoneScales": {
       "type": "object",
@@ -76,7 +76,7 @@
         "freshness": {"const": ["fresh", "aging", "stale"], "description": "Freshness scale transcribed verbatim from §14.7 and reused by §32.2."}
       },
       "required": ["contact", "strength", "endurance", "mobility", "condition", "freshness"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "scales": {
       "type": "object",
@@ -87,7 +87,7 @@
         "zone": {"$ref": "#/$defs/zoneScales"}
       },
       "required": ["concept", "material", "pattern", "zone"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "evidenceRef": {
       "type": "object",
@@ -96,7 +96,7 @@
         "date": {"$ref": "#/$defs/date"}
       },
       "required": ["kind", "date"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "decisionRef": {
       "type": "object",
@@ -106,7 +106,7 @@
         "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidenceId"}}
       },
       "required": ["dimension", "date", "evidence"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "stateEntry": {
       "type": "object",
@@ -126,7 +126,7 @@
         "decisions": {"type": "array", "items": {"$ref": "#/$defs/decisionRef"}}
       },
       "required": ["evidence", "decisions"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "materialEntry": {
       "type": "object",
@@ -136,7 +136,7 @@
         "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidenceId"}}
       },
       "required": ["depth_reached", "last_seen", "evidence"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "conceptKindId": {"type": "string", "pattern": "^(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "regionId": {"type": "string", "pattern": "^(?:concept|pattern|zone):[a-z0-9]+(?:-[a-z0-9]+)*$"},
@@ -157,7 +157,7 @@
         "via": {"type": "array", "items": {"$ref": "#/$defs/viaId"}}
       },
       "required": ["id", "date", "to", "via"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "questionEntry": {
       "type": "object",
@@ -169,7 +169,7 @@
         "source": {"type": "array", "items": {"$ref": "#/$defs/evidenceId"}}
       },
       "required": ["id", "text", "status", "pulls", "source"],
-      "additionalProperties": true
+      "additionalProperties": false
     }
   }
 }

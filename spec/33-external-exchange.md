@@ -79,7 +79,13 @@ exists. A delivery violating this is refused in the batch
 report, like a content-mismatched batch id. import and observe
 are reserved — the direct lanes' receipt namespaces (§12.4,
 §13.2) — and a delivery claiming either source is refused the
-same way. Sensitive source and batch slugs follow §34.6.
+same way. Sensitive source and batch slugs follow §34.6:
+receipts survive purge (§34.2) carrying <source>/<batch>
+verbatim, so a telling label outlives the content it names;
+atlas cannot tell — source is opaque — and mints no substitute
+key (#37 kept the provenance line unbroken). Neutral,
+date-serial slugs for a sensitive feed are the adapter's
+burden, enforced where the adapter is configured (§34.3, §34.6).
 Records carry their activity dates: backfill is normal —
 last_seen and freshness follow the record's date, not delivery.
 Processing is the §13 flow verbatim. A batch claiming
@@ -131,6 +137,19 @@ partial surfaces in the batch report for the user to resolve
 (§13.2 step 10 discipline).
 Nothing is silently dropped: the batch report lists every record
 that could not be resolved or placed (§12.2 step 11 discipline).
+The envelope, reference, and record shapes are closed (§25.7,
+#37): an unknown key refuses the record — a batch-report line
+with record index and JSON pointer, under the §24.4 no-echo
+rule — never ignores it; a new field is a schema version bump.
+A misspelled sensitivity marker can only fail loudly, never
+read as unclassed: "declared, never inferred" (below) is
+mechanical, not promised.
+Acceptance ceilings (§24.2): a batch is bounded — total bytes
+checked before full decode; record count, per-record and
+per-string bytes, and nesting depth during it; a breach refuses
+the whole batch with one content-free diagnostic. The values
+join the §25.8 registry through the measured-floor process
+(#56, #61).
 Sensitivity is declared, never inferred: source is opaque, so a
 record carrying §32.6-class content says so — sensitivity:
 "medical" on the record, or on the envelope as the batch-wide

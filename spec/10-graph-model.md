@@ -204,6 +204,14 @@ personal_trail  | its segments' fields                 | direction
 Rules:
 
 ```text
+The builder validates every parsed source against its named
+§25.7 schema before this table applies (#37): an unknown key or
+schema error is a build ERROR naming file and pointer, never a
+silent drop — a misspelled sensitivity key would otherwise emit
+an unclassed node, defeating §32.6's "declared, never inferred"
+— and no graph is emitted from partially valid input. A prior
+validate_atlas.py run is a check, never a prerequisite the
+builder assumes.
 fields: [] is legal (no refs, or all dangling): the viewer renders
 the node in the default field and flags "field undefined" — the
 builder never substitutes a field it did not derive.
@@ -225,9 +233,10 @@ shows the record, §25.3) while the builder also derives typed
 edges from the same row (§10.2 matrix) — one row, one build,
 both faces; the two cannot fork.
 Embedded free text and markdown travel verbatim as JSON strings.
-Until the #37 threat model lands, the viewer renders them as
-plain text (text nodes, no HTML or markdown interpretation); the
-rendered form and its sanitization contract are #37's.
+The render floor is permanent (#37): every embedded string
+renders through text nodes — no HTML or markdown interpretation,
+no attribute or URL sink — and url fields render only under the
+§16.3 link contract; §16.5 holds the viewer's input hardening.
 ```
 
 ---

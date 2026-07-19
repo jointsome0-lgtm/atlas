@@ -8,7 +8,7 @@
     "type": {"const": "material"},
     "title": {"type": "string"},
     "kind": {"$ref": "#/$defs/materialKind"},
-    "url": {"type": "string"},
+    "url": {"$ref": "#/$defs/safeExternalUrl"},
     "status": {"$ref": "#/$defs/lifecycleStatus"},
     "overall_concepts": {"type": "array", "items": {"$ref": "#/$defs/conceptId"}},
     "parts": {"type": "array", "items": {"$ref": "#/$defs/materialPart"}},
@@ -20,6 +20,11 @@
   "additionalProperties": false,
   "$defs": {
     "slug": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "safeExternalUrl": {
+      "type": "string",
+      "pattern": "^(?:https://[!-~]+)?$",
+      "description": "https-only external link, or the empty string for none (#37): visible ASCII only — no whitespace, controls, or other schemes; the viewer re-checks the scheme before rendering a link (§16.3)."
+    },
     "sensitivity": {
       "type": "string",
       "enum": ["medical"],

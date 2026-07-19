@@ -86,6 +86,8 @@ What questions are pulling me now?
 What is nearby but not obligatory?
 ```
 
+Link contract (#37): a `url` value renders as a link only after the viewer itself re-parses it and the scheme is exactly `https` — the §25.7 schemas admit nothing else, and the viewer does not trust that; anything else renders as inert text. Links carry `rel="noopener noreferrer"` under the no-referrer policy (§16.5); the viewer never fetches a url on its own — navigation is the user's click (§31.7).
+
 ## §16.4 Embedding
 
 Views are URL-addressable — mode plus optional focus are the whole address:
@@ -125,7 +127,38 @@ ignored.
 The static viewer stays local: it reads graph/atlas-graph.json
 and nothing else — curated projections arrive embedded inside it
 (§20, §32), never as a second input; embedding grants the shell
-a window, not a channel (§24).
+a window, not a channel (§24) — §16.5 states the pair that
+enforces it.
+```
+
+## §16.5 Input Hardening
+
+The viewer has exactly two inputs — the graph file and the URL fragment (§16.4) — and trusts neither (#37):
+
+```text
+Graph file: before rendering, the viewer validates the whole
+file against the §25.7 atlas-graph schema and rejects the file
+on the first error — a visible generic failure, never a partial
+render. It projects the known fields of known shapes and never
+iterates unknown input properties; past the §25.8 threshold it
+renders the list fallback rather than degrading.
+Fragment: the raw fragment is bounded by the §20.4 line ceiling
+(4,096 bytes) and each known parameter occurs at most once.
+Invalid percent-encoding, a duplicate known key, or a ceiling
+breach yields the generic visible error and no render; unknown
+params stay ignored (§16.4 forward compatibility). A rejected
+value is never echoed through HTML — every visible diagnostic
+uses text nodes (§10.4).
+Window, not a channel — the enforcing pair: the viewer ships
+its own CSP — default-src 'none'; script-src 'self'; style-src
+'self'; connect-src 'self'; img-src 'self'; object-src 'none';
+base-uri 'none'; form-action 'none' — and a no-referrer
+referrer policy. A conforming shell serves the viewer from a
+dedicated origin in a sandboxed iframe granting render
+capabilities only: no top navigation, popups, forms, downloads,
+or parent-origin access. The CSP is the viewer's burden; the
+sandbox is the shell's (§33.1 keeps shell-specific code out of
+atlas, the same split §34 uses for deletion mechanics).
 ```
 
 ---

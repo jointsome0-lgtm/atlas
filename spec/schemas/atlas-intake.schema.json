@@ -12,7 +12,7 @@
     "records": {"type": "array", "items": {"$ref": "#/$defs/record"}}
   },
   "required": ["format", "version", "source", "batch", "records"],
-  "additionalProperties": true,
+  "additionalProperties": false,
   "$defs": {
     "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
     "nodeId": {"type": "string", "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
@@ -35,11 +35,11 @@
       "type": "object",
       "properties": {
         "id": {"$ref": "#/$defs/nodeId"},
-        "url": {"type": "string"},
+        "url": {"type": "string", "pattern": "^https://[!-~]+$", "description": "https-only, visible ASCII, non-empty (#37): a reference url identifies a material; other schemes and whitespace/controls are refused at intake (§16.3, §33.2)."},
         "title": {"type": "string"},
         "text": {"type": "string"}
       },
-      "additionalProperties": true,
+      "additionalProperties": false,
       "oneOf": [
         {"required": ["id"]},
         {"required": ["url"]},
@@ -57,7 +57,7 @@
         "sensitivity": {"$ref": "#/$defs/sensitivity"}
       },
       "required": ["kind", "date", "target", "depth"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "artifactRecord": {
       "type": "object",
@@ -71,7 +71,7 @@
         "sensitivity": {"$ref": "#/$defs/sensitivity"}
       },
       "required": ["kind", "date", "type", "text"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "questionRecord": {
       "type": "object",
@@ -83,7 +83,7 @@
         "sensitivity": {"$ref": "#/$defs/sensitivity"}
       },
       "required": ["kind", "date", "text"],
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "planRecord": {
       "type": "object",
@@ -95,7 +95,7 @@
         "sensitivity": {"$ref": "#/$defs/sensitivity"}
       },
       "required": ["kind", "date"],
-      "additionalProperties": true,
+      "additionalProperties": false,
       "oneOf": [
         {"required": ["text"]},
         {"required": ["ref"]}
