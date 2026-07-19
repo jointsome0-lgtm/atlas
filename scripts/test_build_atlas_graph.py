@@ -800,6 +800,428 @@ def _encounter_row(depth="applied", target="material:m", context=None):
     return json.dumps(row)
 
 
+class LaneBTests(unittest.TestCase):
+    def _run_main(self, curated, output, *options):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        argv = ["build_atlas_graph.py", *options,
+                str(curated), str(output)]
+        with (
+            mock.patch.object(build_atlas_graph.sys, "argv", argv),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            code = build_atlas_graph.main()
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    # expectedFailure removed by the --as-of PR (#29)
+    @unittest.expectedFailure
+    def test_explicit_as_of_flag_stamps_generated_at(self):
+        # §20.1: --as-of is the explicit fold anchor and emits UTC midnight.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                directory, output, "--as-of", "2026-01-15")
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+
+    # expectedFailure removed by the --as-of PR (#29)
+    @unittest.expectedFailure
+    def test_explicit_as_of_skips_later_journal_row_with_report_count(self):
+        # §20.1: the explicit anchor is an upper bound over every journal —
+        # artifacts, encounters, and questions dated after it are skipped
+        # and counted; a row on/before it is still read. Ids are dated
+        # before the cutoff on purpose: the bound reads the row's dated
+        # field, never a date embedded in the id.
+        # The kept artifact sits exactly ON the anchor day: §20.1's bound is
+        # inclusive (date ≤ as-of), a strict < must fail here.
+        kept = json.loads(_ARTIFACT_ROW)
+        kept["id"] = "artifact:2026-01-02-001"
+        kept["observed_at"] = "2026-01-15"
+        late = json.loads(_ARTIFACT_ROW)
+        late["id"] = "artifact:2026-01-10-001"
+        late["observed_at"] = "2026-01-16"
+        # Kept encounter and question also sit ON the anchor day — the
+        # inclusive bound holds per journal, not just for artifacts.
+        kept_encounter = json.loads(_encounter_row())
+        kept_encounter["id"] = "encounter:2026-01-02-001"
+        kept_encounter["date"] = "2026-01-15"
+        late_encounter = json.loads(_encounter_row())
+        late_encounter["id"] = "encounter:2026-01-10-001"
+        late_encounter["date"] = "2026-01-16"
+        kept_question = json.loads(_QUESTION_ROW)
+        kept_question["id"] = "question:kept"
+        kept_question["created_at"] = "2026-01-15"
+        kept_question["source"] = {"artifact": "artifact:2026-01-02-001"}
+        late_question = json.loads(_QUESTION_ROW)
+        late_question["id"] = "question:late"
+        late_question["created_at"] = "2026-01-16"
+        late_question["source"] = {"artifact": "artifact:2026-01-02-001"}
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": (json.dumps(kept) + "\n"
+                                      + json.dumps(late) + "\n"),
+            "state/encounters.jsonl": (json.dumps(kept_encounter) + "\n"
+                                       + json.dumps(late_encounter) + "\n"),
+            "state/questions.jsonl": (json.dumps(kept_question) + "\n"
+                                      + json.dumps(late_question) + "\n"),
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                directory, output, "--as-of", "2026-01-15")
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        ids = {node["id"] for node in graph["nodes"]}
+        # §20.1: in-window rows of EVERY journal are still read — node and
+        # derived edge alike.
+        self.assertLessEqual({"artifact:2026-01-02-001",
+                              "encounter:2026-01-02-001",
+                              "question:kept"}, ids)
+        derived = {(edge["type"], edge["source"], edge["target"])
+                   for edge in graph["edges"]}
+        self.assertIn(("visited", "encounter:2026-01-02-001", "material:m"),
+                      derived)
+        self.assertIn(("pulled_by", "concept:c", "question:kept"), derived)
+        self.assertIn(("influences", "artifact:2026-01-02-001", "concept:c"),
+                      derived)
+        skipped = {"artifact:2026-01-10-001", "encounter:2026-01-10-001",
+                   "question:late"}
+        self.assertEqual(set(), ids & skipped)
+        # §20.3: journal-derived edges sit under the §20.1 bound too — a
+        # skipped row leaves no edge endpoint and no provenance entry.
+        for edge in graph["edges"]:
+            self.assertEqual(set(), {edge["source"], edge["target"],
+                                     *edge["provenance"]} & skipped)
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+        # §20.1: the report carries an aggregate count, not merely a
+        # per-row note — pin the count phrase.
+        self.assertRegex(stderr, r"skipped 3 dated input")
+        self.assertIn("as-of 2026-01-15", stderr)
+
+    # expectedFailure removed by the --as-of PR (#29)
+    @unittest.expectedFailure
+    def test_explicit_as_of_skips_later_trail_segment_with_report_count(self):
+        # §20.1: trail segments share the journal's explicit upper bound
+        # and skipped segments are counted in the build report.
+        with _materialize({
+            "concepts/a.md": _CONCEPT % ("a", "A"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            # Filename and id are dated before the cutoff on purpose: the
+            # bound reads the parsed date field, never the filename or id.
+            "trails/2026-01-10-001.md": (
+                "---\nid: trail-segment:2026-01-10-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-01-16\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+            # An in-window segment is still read — dated ON the anchor
+            # day: the bound is inclusive for segments too (§20.1).
+            "trails/2026-01-05-001.md": (
+                "---\nid: trail-segment:2026-01-05-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-01-15\n"
+                "direction: direction:d\nfrom: concept:a\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                directory, output, "--as-of", "2026-01-15")
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        ids = {node["id"] for node in graph["nodes"]}
+        self.assertNotIn("trail-segment:2026-01-10-001", ids)
+        self.assertIn("trail-segment:2026-01-05-001", ids)
+        # §20.3: the kept segment still derives its movement edge.
+        self.assertIn(
+            ("moved_to", "concept:a", "concept:b"),
+            {(edge["type"], edge["source"], edge["target"])
+             for edge in graph["edges"]})
+        # §20.3: a skipped segment derives nothing — no moved_to/via edge
+        # endpoint and no provenance entry may cite it.
+        for edge in graph["edges"]:
+            self.assertNotIn("trail-segment:2026-01-10-001",
+                             {edge["source"], edge["target"],
+                              *edge["provenance"]})
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+        # §20.1: the aggregate skip count covers trail segments too.
+        self.assertRegex(stderr, r"skipped 1 dated input")
+        self.assertIn("as-of 2026-01-15", stderr)
+
+    # expectedFailure removed by the --as-of PR (#29)
+    @unittest.expectedFailure
+    def test_explicit_as_of_stamps_empty_undated_input(self):
+        # §20.1: an explicit anchor is emitted even when no dated input exists.
+        with _materialize({"concepts/.keep": ""}) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                directory, output, "--as-of", "2026-01-15")
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_missing_input_root_preserves_previous_output(self):
+        # §20.2/#60: input validation precedes output handling, so a missing
+        # curated tree fails clearly without clobbering the last good graph.
+        with tempfile.TemporaryDirectory() as directory:
+            instance = Path(directory) / "instance"
+            instance.mkdir()
+            curated = instance / "atlas"
+            output = instance / "graph" / "atlas-graph.json"
+            output.parent.mkdir()
+            previous = b'{"previous": "good"}\n'
+            output.write_bytes(previous)
+            code, _, stderr = self._run_main(curated, output)
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+            self.assertIn(str(curated), stderr)
+            self.assertEqual(previous, output.read_bytes())
+            # Validation precedes output handling: no temp or other new
+            # artifact may appear beside the previous graph.
+            self.assertEqual([output], list(output.parent.iterdir()))
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_mis_mounted_input_root_preserves_previous_output(self):
+        # §20.2/#60: a directory with none of the curated subdirectories is
+        # not a valid input mount and must fail before touching the output.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            curated = root / "mis-mounted"
+            (curated / "unexpected").mkdir(parents=True)
+            (curated / "unexpected" / "file.md").write_text(
+                "Vera Example\n", encoding="utf-8")
+            output = root / "instance" / "graph" / "atlas-graph.json"
+            output.parent.mkdir(parents=True)
+            previous = b'{"previous": "good"}\n'
+            output.write_bytes(previous)
+            code, _, stderr = self._run_main(curated, output)
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+            self.assertIn(str(curated), stderr)
+            self.assertEqual(previous, output.read_bytes())
+            # Validation precedes output handling: no temp or other new
+            # artifact may appear beside the previous graph.
+            self.assertEqual([output], list(output.parent.iterdir()))
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_missing_input_root_is_rejected_before_lock_acquisition(self):
+        self._assert_invalid_root_rejected_before_lock(mis_mounted=False)
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_mis_mounted_input_root_is_rejected_before_lock_acquisition(self):
+        self._assert_invalid_root_rejected_before_lock(mis_mounted=True)
+
+    def _assert_invalid_root_rejected_before_lock(self, mis_mounted):
+        # #60: validation precedes the output-derived instance lock; the
+        # ordering is proven behaviorally — with the lock already held, an
+        # invalid root must still be diagnosed as such, never as a lock
+        # refusal — for a missing and a mis-mounted (wrong-shape) root alike.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            instance = root / "instance"
+            instance.mkdir()
+            curated = instance / "atlas"
+            if mis_mounted:
+                (curated / "unexpected").mkdir(parents=True)
+                (curated / "unexpected" / "file.md").write_text(
+                    "Vera Example\n", encoding="utf-8")
+            output = instance / "graph" / "atlas-graph.json"
+            held = b'{"pid": 1, "started_at": "2026-01-01T00:00:00Z"}\n'
+            (instance / ".atlas-lock").write_bytes(held)
+            real_open = build_atlas_graph.os.open
+            with mock.patch.object(
+                    build_atlas_graph.os, "open", wraps=real_open) as opened:
+                code, _, stderr = self._run_main(curated, output)
+            # The invalid-root diagnostic wins over the lock-held refusal,
+            # and the holder's lock is left untouched.
+            self.assertIn(str(curated), stderr)
+            self.assertNotIn(".atlas-lock", stderr)
+            self.assertEqual(held, (instance / ".atlas-lock").read_bytes())
+            # Validation precedes output handling entirely: the absent
+            # graph/ directory must not have been created on the way out.
+            self.assertFalse((instance / "graph").exists())
+            lock_attempts = [
+                call.args[0] for call in opened.call_args_list
+                if Path(call.args[0]).name == ".atlas-lock"
+            ]
+            self.assertEqual([], lock_attempts)
+            self.assertEqual([instance / ".atlas-lock"],
+                             list(root.rglob(".atlas-lock")))
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+
+    def test_two_emitted_graphs_are_byte_identical(self):
+        # §20.1: same inputs and same default as-of emit byte-identical JSON;
+        # neither the graph nor its serialization leaks wall-clock time.
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": _ARTIFACT_ROW + "\n",
+        }) as directory:
+            root = Path(directory)
+            first_instance = root / "first"
+            second_instance = root / "second"
+            first_instance.mkdir()
+            second_instance.mkdir()
+            first = first_instance / "graph" / "atlas-graph.json"
+            second = second_instance / "graph" / "atlas-graph.json"
+            first_code, _, first_stderr = self._run_main(
+                directory, first)
+            second_code, _, second_stderr = self._run_main(
+                directory, second)
+            self.assertEqual(0, first_code, first_stderr)
+            self.assertEqual(0, second_code, second_stderr)
+            # §20.1: the artifact's observed_at anchors the default as-of —
+            # identical omission or mis-stamping must not pass as identity.
+            graph = json.loads(first.read_text(encoding="utf-8"))
+            self.assertEqual("2026-07-16T00:00:00Z", graph["generated_at"])
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+
+    def test_default_as_of_uses_max_journal_date_in_emitted_graph(self):
+        # §20.1: without a flag, the max activity date across journal rows
+        # AND trail segments anchors the persisted graph at UTC midnight —
+        # the latest-dated input here is a trail segment, not a journal row.
+        artifact = json.loads(_ARTIFACT_ROW)
+        artifact["observed_at"] = "2026-01-14"
+        encounter = json.loads(_encounter_row())
+        encounter["date"] = "2026-01-16"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "concepts/b.md": _CONCEPT % ("b", "B"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "directions/d.md": (
+                "---\nid: direction:d\ntype: direction\n"
+                "title: D (Vera Example)\nattractor: pull\n"
+                "status: active\n---\n"),
+            # Filename and id are dated earlier on purpose: the default
+            # anchor reads the parsed date field, never the filename or id.
+            "trails/2026-01-12-001.md": (
+                "---\nid: trail-segment:2026-01-12-001\n"
+                "type: trail_segment\ntitle: \"\"\ndate: 2026-01-18\n"
+                "direction: direction:d\nfrom: concept:c\nto: concept:b\n"
+                "via: []\nreason: momentum (Vera Example)\n---\n"),
+            "state/artifacts.jsonl": json.dumps(artifact) + "\n",
+            "state/encounters.jsonl": json.dumps(encounter) + "\n",
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(directory, output)
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("2026-01-18T00:00:00Z", graph["generated_at"])
+
+    def test_default_as_of_uses_max_encounter_date_in_emitted_graph(self):
+        # §20.1: every journal feeds the default anchor — here the latest
+        # dated input is an encounter row, not an artifact or a segment.
+        artifact = json.loads(_ARTIFACT_ROW)
+        artifact["observed_at"] = "2026-01-14"
+        encounter = json.loads(_encounter_row())
+        encounter["date"] = "2026-01-16"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": json.dumps(artifact) + "\n",
+            "state/encounters.jsonl": json.dumps(encounter) + "\n",
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(directory, output)
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("2026-01-16T00:00:00Z", graph["generated_at"])
+
+    # expectedFailure removed by the durability PR (#60)
+    @unittest.expectedFailure
+    def test_failed_final_rename_preserves_previous_output(self):
+        # §20.2: emission uses a same-directory temp plus atomic rename, so
+        # a failure at the final rename cannot damage the last good graph —
+        # and §25.8 requires the failure be reported as exit 1 with an
+        # ERROR: diagnostic, never an uncaught traceback (today it
+        # propagates; #60 lands the contract).
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+        }) as directory:
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            output.parent.mkdir()
+            previous = b'{"previous": "good"}\n'
+            output.write_bytes(previous)
+            # API-neutral failure injection: every stdlib primitive a
+            # same-directory atomic handoff can use is patched (pathlib
+            # binds its accessor at class creation on some versions, so
+            # the Path methods are patched alongside the os ones).
+            fail = OSError("rename failed")
+            with (
+                mock.patch.object(build_atlas_graph.os, "replace",
+                                  side_effect=fail),
+                mock.patch.object(build_atlas_graph.os, "rename",
+                                  side_effect=fail),
+                mock.patch.object(Path, "replace", side_effect=fail),
+                mock.patch.object(Path, "rename", side_effect=fail),
+            ):
+                code, _, stderr = self._run_main(directory, output)
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+            self.assertEqual(previous, output.read_bytes())
+
+    def test_journal_ref_resolves_through_formerly(self):
+        # §34.4: stale journal payload refs — an encounter target, artifact
+        # touches, question pulls — and their derived edges resolve together
+        # to the living id and are reported as stale references.
+        material = (_MATERIAL % ("new", "New")).replace(
+            "status: active\n",
+            "status: active\nformerly:\n  - material:old\n")
+        concept = (_CONCEPT % ("c", "C")).replace(
+            "title: C (Vera Example)\n",
+            "title: C (Vera Example)\nformerly:\n  - concept:old-c\n")
+        artifact = json.loads(_ARTIFACT_ROW)
+        artifact["touches"] = ["concept:old-c"]
+        question = json.loads(_QUESTION_ROW)
+        question["pulls"] = ["concept:old-c"]
+        with _materialize({
+            "concepts/c.md": concept,
+            "materials/new.md": material,
+            "state/encounters.jsonl": _encounter_row(
+                target="material:old") + "\n",
+            "state/artifacts.jsonl": json.dumps(artifact) + "\n",
+            "state/questions.jsonl": json.dumps(question) + "\n",
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        encounter = next(node for node in graph["nodes"]
+                         if node["type"] == "encounter")
+        self.assertEqual("material:new", encounter["target"])
+        # §10.4: the cached field-derivation refs resolve too — a renamed
+        # ref must not silently cost a journal node its field membership.
+        self.assertEqual(["knowledge"], encounter["fields"])
+        by_id = {node["id"]: node for node in graph["nodes"]}
+        self.assertEqual(["knowledge"],
+                         by_id["artifact:2026-07-16-001"]["fields"])
+        self.assertEqual(["knowledge"], by_id["question:q"]["fields"])
+        derived = {(edge["type"], edge["source"], edge["target"])
+                   for edge in graph["edges"]}
+        self.assertIn(("visited", "encounter:2026-07-16-001",
+                       "material:new"), derived)
+        self.assertIn(("influences", "artifact:2026-07-16-001",
+                       "concept:c"), derived)
+        self.assertIn(("pulled_by", "concept:c", "question:q"), derived)
+        # No 'curated' pin: the refs live in journal rows — §34.4 requires
+        # the stale resolutions to be reported, not a curated-origin label.
+        for old, new in (("material:old", "material:new"),
+                         ("concept:old-c", "concept:c")):
+            self.assertTrue(
+                any(old in warning and new in warning
+                    and "§34.4" in warning for warning in warnings),
+                (old, warnings),
+            )
+
+
 class JournalProjectionTests(unittest.TestCase):
     # §20 step 8 (#31): the structural journal projection — rows become
     # nodes plus their §10.2 derived edges and §11.2-§11.3 role edges;
