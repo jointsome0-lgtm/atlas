@@ -1020,8 +1020,10 @@ class LaneBTests(unittest.TestCase):
                 "---\nid: direction:d\ntype: direction\n"
                 "title: D (Vera Example)\nattractor: pull\n"
                 "status: active\n---\n"),
-            "trails/2026-01-18-001.md": (
-                "---\nid: trail-segment:2026-01-18-001\n"
+            # Filename and id are dated earlier on purpose: the default
+            # anchor reads the parsed date field, never the filename or id.
+            "trails/2026-01-12-001.md": (
+                "---\nid: trail-segment:2026-01-12-001\n"
                 "type: trail_segment\ntitle: \"\"\ndate: 2026-01-18\n"
                 "direction: direction:d\nfrom: concept:c\nto: concept:b\n"
                 "via: []\nreason: momentum (Vera Example)\n---\n"),
@@ -1071,9 +1073,11 @@ class LaneBTests(unittest.TestCase):
                    if edge["type"] == "visited"]
         self.assertEqual(["material:new"],
                          [edge["target"] for edge in visited])
+        # No 'curated' pin: the ref lives in a journal row — §34.4 requires
+        # the stale resolution to be reported, not a curated-origin label.
         self.assertTrue(
-            any("stale curated ref material:old resolved to material:new"
-                in warning and "§34.4" in warning for warning in warnings),
+            any("material:old" in warning and "material:new" in warning
+                and "§34.4" in warning for warning in warnings),
             warnings,
         )
 
