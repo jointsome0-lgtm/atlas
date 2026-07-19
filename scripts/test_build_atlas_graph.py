@@ -956,9 +956,10 @@ class LaneBTests(unittest.TestCase):
         self._assert_invalid_root_rejected_before_lock(mis_mounted=True)
 
     def _assert_invalid_root_rejected_before_lock(self, mis_mounted):
-        # #60: validation precedes the output-derived instance lock; failure
-        # must neither attempt to create nor leave a .atlas-lock anywhere —
-        # for a missing root and a mis-mounted (wrong-shape) root alike.
+        # #60: validation precedes the output-derived instance lock; the
+        # ordering is proven behaviorally — with the lock already held, an
+        # invalid root must still be diagnosed as such, never as a lock
+        # refusal — for a missing and a mis-mounted (wrong-shape) root alike.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             instance = root / "instance"
@@ -969,16 +970,24 @@ class LaneBTests(unittest.TestCase):
                 (curated / "unexpected" / "file.md").write_text(
                     "Vera Example\n", encoding="utf-8")
             output = instance / "graph" / "atlas-graph.json"
+            held = b'{"pid": 1, "started_at": "2026-01-01T00:00:00Z"}\n'
+            (instance / ".atlas-lock").write_bytes(held)
             real_open = build_atlas_graph.os.open
             with mock.patch.object(
                     build_atlas_graph.os, "open", wraps=real_open) as opened:
                 code, _, stderr = self._run_main(curated, output)
+            # The invalid-root diagnostic wins over the lock-held refusal,
+            # and the holder's lock is left untouched.
+            self.assertIn(str(curated), stderr)
+            self.assertNotIn(".atlas-lock", stderr)
+            self.assertEqual(held, (instance / ".atlas-lock").read_bytes())
             lock_attempts = [
                 call.args[0] for call in opened.call_args_list
                 if Path(call.args[0]).name == ".atlas-lock"
             ]
             self.assertEqual([], lock_attempts)
-            self.assertEqual([], list(root.rglob(".atlas-lock")))
+            self.assertEqual([instance / ".atlas-lock"],
+                             list(root.rglob(".atlas-lock")))
             self.assertEqual(1, code)
             self.assertIn("ERROR:", stderr)
 
