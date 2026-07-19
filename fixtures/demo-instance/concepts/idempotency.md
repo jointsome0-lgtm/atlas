@@ -6,7 +6,7 @@ updated: 2026-07-11
 aliases:
   - idempotent operations
 related_concepts:
-  - concept:rest-api
+  - concept:restful-api
   - concept:redis
 ---
 
