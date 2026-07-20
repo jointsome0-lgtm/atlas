@@ -354,6 +354,33 @@ class RefusalAndPlacementTests(unittest.TestCase):
         self.assertEqual("unresolved", report["records"][0]["class"])
         self.assertEqual(0, len(rows(root, "questions")))
 
+    def test_truncated_original_with_stale_receipts_fails_closed(self):
+        # §33.2: receipts recorded beyond the current record range betray a
+        # mutated "immutable" original — the replay must fail closed, never
+        # exit 0 with a report that hides recorded intake rows.
+        with private_instance() as root, tempfile.TemporaryDirectory() as outside:
+            two = batch([encounter(), artifact()])
+            delivery = write_batch(Path(outside), two)
+            code, _, stderr = run_main(root, "--batch-file", delivery)
+            self.assertEqual(0, code, stderr)
+            canonical = (root / "intake" / two["source"]
+                         / f"{two['batch']}.json")
+            truncated = batch([encounter()])
+            canonical.write_text(
+                json.dumps(truncated, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            before = {p.name: p.read_bytes() for p in (root / "state").glob("*.jsonl")}
+            code, report, stderr = run_main(
+                root, "--batch", f"{two['source']}/{two['batch']}"
+            )
+            after = {p.name: p.read_bytes() for p in (root / "state").glob("*.jsonl")}
+        self.assertEqual(1, code)
+        self.assertEqual(["conflict"],
+                         [item["class"] for item in report["records"]])
+        self.assertIn("batch-content-conflict", stderr)
+        self.assertEqual(before, after)
+
     def test_missing_original_with_receipts_refuses_redelivery(self):
         # §33.2: receipts on record with the canonical original gone mean a
         # redelivery cannot be byte-compared — it must fail closed, never

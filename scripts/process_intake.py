@@ -606,6 +606,19 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
     source = envelope["source"]
     batch = envelope["batch"]
     receipt_status = instance.receipt_status()
+    # §33.2: a batch id names one immutable delivery — a receipt recorded
+    # beyond the current record range means the canonical original no
+    # longer matches what the receipts covered (e.g. a truncated file), so
+    # the whole batch fails closed instead of reporting a clean partial
+    # replay that hides recorded rows.
+    prefix = f"{source}/{batch}#"
+    total = len(envelope["records"])
+    if any(
+        int(key.rsplit("#", 1)[1]) >= total
+        for key in receipt_status.opened | receipt_status.processed
+        if key.startswith(prefix)
+    ):
+        return _conflict_report(envelope)
     known = _load_known_ids(instance, receipt_status.interrupted)
     results: dict[int, dict] = {}
     pending: dict[int, tuple[dict, str]] = {}
