@@ -366,6 +366,35 @@ class LockAndAppendTests(unittest.TestCase):
                 instance.append_record("state/artifacts.jsonl", second)
                 self.assertEqual(2, len(target.read_bytes().splitlines()))
 
+    def test_failed_post_write_fsync_rolls_the_row_back(self):
+        real_fsync = os.fsync
+        calls = {"n": 0}
+
+        def failing_fsync(fd):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("synthetic fsync failure")
+            return real_fsync(fd)
+
+        with fake_instance() as root:
+            instance = atlas_io.AtlasInstance(root)
+            with instance.lock():
+                instance.append_record("state/artifacts.jsonl", VALID_ARTIFACT)
+                target = root / "state" / "artifacts.jsonl"
+                intact = target.read_bytes()
+                with unittest.mock.patch.object(
+                    atlas_io.os, "fsync", failing_fsync
+                ), self.assertRaises(atlas_io.AtlasIOError) as raised:
+                    instance.append_record(
+                        "state/artifacts.jsonl", VALID_ARTIFACT
+                    )
+                self.assertEqual(atlas_io.ReasonCode.APPEND_IO,
+                                 raised.exception.diagnostic.reason)
+                self.assertEqual(intact, target.read_bytes())
+                second = {**VALID_ARTIFACT, "id": "artifact:vera-after-sync"}
+                instance.append_record("state/artifacts.jsonl", second)
+                self.assertEqual(2, len(target.read_bytes().splitlines()))
+
     def test_incomplete_existing_jsonl_is_refused_without_append(self):
         with fake_instance() as root:
             target = root / "state" / "artifacts.jsonl"

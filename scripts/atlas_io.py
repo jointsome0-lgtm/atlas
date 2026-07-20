@@ -479,19 +479,22 @@ class AtlasInstance:
                     if os.read(fd, 1) != b"\n":
                         _fail(ReasonCode.INVALID_JSONL, display)
                 line = payload + b"\n"
+                # The lock excludes other Atlas writers, so on any failure —
+                # short write or post-write fsync — truncating back to the
+                # pre-append size cannot lose foreign rows, while a torn or
+                # undurable tail would corrupt every later append or retry.
                 try:
                     written = os.write(fd, line)
+                    durable = written == len(line)
+                    if durable:
+                        os.fsync(fd)
                 except OSError:
-                    written = -1
-                if written != len(line):
-                    # The lock excludes other Atlas writers, so truncating
-                    # back to the pre-append size cannot lose foreign rows;
-                    # a torn tail would block every later append.
+                    durable = False
+                if not durable:
                     with contextlib.suppress(OSError):
                         os.ftruncate(fd, info.st_size)
                         os.fsync(fd)
                     _fail(ReasonCode.APPEND_IO, display)
-                os.fsync(fd)
             finally:
                 os.close(fd)
             created = before is None
