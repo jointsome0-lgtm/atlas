@@ -1044,6 +1044,54 @@ class SchemaValidatorTests(unittest.TestCase):
         with self.assertRaises(validate_atlas.SchemaSubsetError):
             validate_atlas.SchemaValidator({"type": "string", "format": "date"})
 
+    def test_subset_diagnostics_never_echo_rejected_values(self):
+        # §24.4: schema-side expectations may be named, but refused values
+        # never enter a boundary diagnostic.
+        cases = (
+            ("SECRET_ENUM_VERA", {"enum": ["allowed"]},
+             "allowed choices ['allowed']"),
+            ("SECRET_PATTERN_VERA", {"type": "string",
+                                     "pattern": "^allowed$"},
+             "pattern '^allowed$'"),
+            (-987654321, {"type": "integer", "minimum": 0},
+             "below minimum 0"),
+        )
+        for rejected, schema, expectation in cases:
+            with self.subTest(rejected=type(rejected).__name__):
+                errors = validate_atlas.SchemaValidator(schema).validate(
+                    rejected)
+                self.assertEqual(1, len(errors))
+                self.assertIn(expectation, errors[0])
+                self.assertNotIn(str(rejected), errors[0])
+
+    def test_oversize_journal_row_reports_ceiling_without_echo(self):
+        # §25.8/§24.4: a 64 KiB row is rejected at the ceiling; its content
+        # is neither retained for decoding nor copied into the diagnostic.
+        secret = "SECRET_OVERSIZE_VERA"
+        oversize = json.loads(VALID_ARTIFACT_ROW)
+        oversize["summary"] = secret + "x" * 65536
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "state/artifacts.jsonl": (json.dumps(oversize) + "\n"
+                                          + VALID_ARTIFACT_ROW),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("state/artifacts.jsonl:1: journal row exceeds "
+                      "16384 bytes", stderr)
+        self.assertNotIn(secret, stderr)
+
+    def test_multichunk_jsonl_row_round_trips_unchanged(self):
+        # SEC-14: a normal row crossing the reader's chunk boundary keeps
+        # the same line number and JSON value as the former whole-file read.
+        row = json.loads(VALID_ARTIFACT_ROW)
+        row["summary"] = "Synthetic Vera Example " + "x" * 10000
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.jsonl"
+            path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            rows = list(validate_atlas._read_jsonl(path))
+        self.assertEqual([(1, row)], rows)
+
     def test_valid_instance(self):
         with tempfile.TemporaryDirectory() as directory:
             materialize(VALID_INSTANCE, Path(directory))

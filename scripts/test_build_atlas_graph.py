@@ -852,6 +852,110 @@ class LaneBTests(unittest.TestCase):
             graph = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
 
+    def test_redacted_emission_is_beside_full_schema_valid_and_deterministic(self):
+        # §20 step 12/§32.6: the builder owns both variants. A classed zone,
+        # its incident loads edge, and its silhouette projection leave the
+        # agent-facing graph whole; the complete graph is unchanged.
+        import validate_atlas
+
+        with _materialize({
+            "atlas/zones/shoulder.md": (
+                "---\nid: zone:shoulder\ntype: zone\n"
+                "title: Shoulder (Vera Example)\nfigure_region: shoulder\n"
+                "sensitivity: medical\n---\nVera Example care note.\n"),
+            "atlas/patterns/press.md": (
+                "---\nid: pattern:press\ntype: pattern\n"
+                "title: Press (Vera Example)\nconcept_edges:\n"
+                "  - to: zone:shoulder\n    role: loads\n---\n"),
+        }) as directory:
+            root = Path(directory)
+            output = root / "graph" / "atlas-graph.json"
+            options = ("--as-of", "2026-01-15")
+            code, _, stderr = self._run_main(
+                root / "atlas", output, *options)
+            self.assertEqual(0, code, stderr)
+            original_full = output.read_bytes()
+
+            code, _, stderr = self._run_main(
+                root / "atlas", output, "--redact", *options)
+            self.assertEqual(0, code, stderr)
+            redacted_output = output.with_name("atlas-graph.redacted.json")
+            first_redacted = redacted_output.read_bytes()
+            self.assertEqual(original_full, output.read_bytes())
+
+            full = json.loads(output.read_text(encoding="utf-8"))
+            redacted = json.loads(
+                redacted_output.read_text(encoding="utf-8"))
+            self.assertNotIn("withheld", full)
+            self.assertIn("zone:shoulder",
+                          {node["id"] for node in full["nodes"]})
+            self.assertNotIn("zone:shoulder",
+                             {node["id"] for node in redacted["nodes"]})
+            self.assertEqual(1, len(full["edges"]))
+            self.assertEqual([], redacted["edges"])
+            self.assertEqual("shoulder",
+                             full["projections"]["zone:shoulder"])
+            self.assertNotIn("zone:shoulder", redacted["projections"])
+            self.assertEqual({
+                "nodes": 1, "edges": 1, "trails": 0, "state": 0,
+                "influence": 0, "frontier": 0, "projections": 1,
+            }, redacted["withheld"])
+
+            # Mirror test_built_graph_validates_against_schema: validate the
+            # two emissions as persisted graph artifacts, independently of
+            # the fixture's curated-file schemas.
+            validation_root = root / "validation"
+            validation_graph = validation_root / "graph"
+            validation_graph.mkdir(parents=True)
+            (validation_graph / output.name).write_bytes(output.read_bytes())
+            (validation_graph / redacted_output.name).write_bytes(
+                redacted_output.read_bytes())
+            stdout = io.StringIO()
+            validation_stderr = io.StringIO()
+            with (contextlib.redirect_stdout(stdout),
+                  contextlib.redirect_stderr(validation_stderr)):
+                validation_code = validate_atlas.main(
+                    ["validate", str(validation_root)])
+            self.assertEqual(0, validation_code,
+                             validation_stderr.getvalue())
+
+            code, _, stderr = self._run_main(
+                root / "atlas", output, "--redact", *options)
+            self.assertEqual(0, code, stderr)
+            self.assertEqual(original_full, output.read_bytes())
+            self.assertEqual(first_redacted, redacted_output.read_bytes())
+            self.assertEqual([], list(output.parent.glob("*.tmp")))
+
+    def test_non_redact_run_removes_the_stale_redacted_variant(self):
+        # §32.6: content classed after the agent-facing variant was emitted
+        # must not keep leaking through the old file — a write run without
+        # --redact removes the stale variant instead of leaving it beside a
+        # fresher full graph.
+        with _materialize({
+            "atlas/concepts/c.md": _CONCEPT % ("c", "C"),
+        }) as directory:
+            root = Path(directory)
+            output = root / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                root / "atlas", output, "--redact")
+            self.assertEqual(0, code, stderr)
+            redacted_output = output.with_name("atlas-graph.redacted.json")
+            self.assertTrue(redacted_output.exists())
+            code, _, stderr = self._run_main(root / "atlas", output)
+            self.assertEqual(0, code, stderr)
+            self.assertFalse(redacted_output.exists())
+
+    def test_check_and_redact_are_rejected_together(self):
+        with tempfile.TemporaryDirectory() as directory:
+            curated = Path(directory) / "atlas"
+            curated.mkdir()
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(
+                curated, output, "--check", "--redact")
+        self.assertEqual(2, code)
+        self.assertIn("--check and --redact cannot be combined", stderr)
+        self.assertFalse(output.exists())
+
     def test_explicit_as_of_skips_later_journal_row_with_report_count(self):
         # §20.1: the explicit anchor is an upper bound over every journal —
         # artifacts, encounters, and questions dated after it are skipped
@@ -1764,17 +1868,35 @@ class JournalProjectionTests(unittest.TestCase):
 
     def test_oversize_journal_row_fails_the_build(self):
         # §25.8: the boundary reader enforces a 16,384-byte row ceiling —
-        # the builder must never project a row the boundary refuses.
+        # the builder discards that row without buffering its remainder,
+        # then resumes at the following LF and projects the later row.
         row = json.loads(_ARTIFACT_ROW)
-        row["summary"] = "s (Vera Example) " + "x" * 17000
+        row["summary"] = "s (Vera Example) " + "x" * 65536
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": (json.dumps(row) + "\n"
+                                      + _ARTIFACT_ROW + "\n"),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual(1, sum("journal row exceeds 16384 bytes" in error
+                                for error in errors), errors)
+        self.assertIn("artifact:2026-07-16-001",
+                      {node["id"] for node in graph["nodes"]})
+
+    def test_multichunk_journal_row_projects_unchanged(self):
+        # SEC-14: a legal row spanning read chunks is decoded exactly once
+        # with its payload unchanged.
+        row = json.loads(_ARTIFACT_ROW)
+        row["summary"] = "Vera Example " + "x" * 10000
         with _materialize({
             "concepts/c.md": _CONCEPT % ("c", "C"),
             "state/artifacts.jsonl": json.dumps(row) + "\n",
         }) as directory:
-            _, errors, _ = build_atlas_graph.build(Path(directory))
-        self.assertTrue(
-            any("journal row exceeds 16384 bytes" in e for e in errors),
-            errors)
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        artifact = next(node for node in graph["nodes"]
+                        if node["id"] == row["id"])
+        self.assertEqual(row["summary"], artifact["summary"])
 
     def test_question_row_requires_question_type(self):
         # §9.8: type: "question" is the schema's fixed discriminant.

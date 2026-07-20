@@ -116,6 +116,7 @@ EDGE_WEIGHTS = {"low", "medium", "high"}
 # §25.8: journal row byte ceiling — a policy ceiling shared with the
 # boundary reader (validate_atlas aliases this constant).
 JOURNAL_ROW_BYTES = 16_384
+_JOURNAL_READ_BYTES = 8_192
 
 # §8: at least one domain directory distinguishes the curated tree from a
 # missing or mis-mounted instance path.
@@ -806,19 +807,15 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         # journal — duplicate detection spans it, not each file.
         seen_rows: set = set()
         for path in paths:
-            data = path.read_bytes()
-            chunks = data.split(b"\n")
-            for number, raw in enumerate(chunks, 1):
-                if not raw:
-                    if number == len(chunks):
-                        continue  # trailing newline
-                    errors.append(f"{path}:{number}: blank journal row")
-                    continue
-                if len(raw) > JOURNAL_ROW_BYTES:
+            for number, raw, oversized in _journal_lines(path):
+                if oversized:
                     # §25.8: the boundary reader enforces the same ceiling
                     # — an oversize row must never project.
                     errors.append(f"{path}:{number}: journal row exceeds "
                                   f"{JOURNAL_ROW_BYTES} bytes")
+                    continue
+                if not raw:
+                    errors.append(f"{path}:{number}: blank journal row")
                     continue
                 if raw in seen_rows:
                     # §20.1: a byte-identical row repeated within a journal
@@ -1427,9 +1424,42 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     return graph, errors, warnings
 
 
+def _journal_lines(path: Path):
+    """Yield bounded journal rows, discarding an oversize row in place."""
+    number = 1
+    row = bytearray()
+    discarding = False
+    with path.open("rb") as stream:
+        while chunk := stream.read(_JOURNAL_READ_BYTES):
+            offset = 0
+            while offset < len(chunk):
+                newline = chunk.find(b"\n", offset)
+                end = len(chunk) if newline < 0 else newline
+                if not discarding:
+                    room = JOURNAL_ROW_BYTES + 1 - len(row)
+                    row.extend(chunk[offset:end][:room])
+                    if end - offset > room or len(row) > JOURNAL_ROW_BYTES:
+                        # §25.8: report as soon as byte N+1 arrives, then
+                        # drain to LF without retaining rejected content.
+                        yield number, b"", True
+                        row.clear()
+                        discarding = True
+                if newline < 0:
+                    break
+                if not discarding:
+                    yield number, bytes(row), False
+                number += 1
+                row.clear()
+                discarding = False
+                offset = newline + 1
+    if row:
+        yield number, bytes(row), False
+
+
 def main() -> int:
     args = sys.argv[1:]
     check_only = False
+    redact = False
     as_of = None
     positional = []
     index = 0
@@ -1441,6 +1471,12 @@ def main() -> int:
                       file=sys.stderr)
                 return _print_usage()
             check_only = True
+        elif arg == "--redact":
+            if redact:
+                print("ERROR: --redact may be specified only once",
+                      file=sys.stderr)
+                return _print_usage()
+            redact = True
         elif arg == "--as-of":
             if as_of is not None:
                 print("ERROR: --as-of may be specified only once",
@@ -1455,6 +1491,10 @@ def main() -> int:
             positional.append(arg)
         index += 1
     if len(positional) != 2:
+        return _print_usage()
+    if check_only and redact:
+        print("ERROR: --check and --redact cannot be combined",
+              file=sys.stderr)
         return _print_usage()
 
     curated = Path(positional[0]).resolve()
@@ -1522,7 +1562,7 @@ def main() -> int:
             print(f"ERROR: cannot write {lock}: {exc}", file=sys.stderr)
             return 1
     try:
-        return _run(curated, output, check_only, as_of)
+        return _run(curated, output, check_only, as_of, redact)
     finally:
         if lock_fd is not None:
             _release_lock(lock_fd, lock)
@@ -1530,7 +1570,7 @@ def main() -> int:
 
 def _print_usage() -> int:
     print(
-        f"usage: {Path(sys.argv[0]).name} [--check] "
+        f"usage: {Path(sys.argv[0]).name} [--check | --redact] "
         "[--as-of YYYY-MM-DD] CURATED_TREE "
         "OUTPUT_JSON (graph/atlas-graph.json)",
         file=sys.stderr,
@@ -1564,7 +1604,7 @@ def _valid_as_of(value: str) -> bool:
 
 
 def _run(curated: Path, output: Path, check_only: bool,
-         as_of: str | None = None) -> int:
+         as_of: str | None = None, redact: bool = False) -> int:
     try:
         graph, errors, warnings = build(curated, as_of)
     except FrontmatterError as exc:
@@ -1579,6 +1619,20 @@ def _run(curated: Path, output: Path, check_only: bool,
     if not check_only:
         if not _emit_graph(output, graph):
             return 1
+        redacted_output = output.with_name("atlas-graph.redacted.json")
+        if redact:
+            if not _emit_graph(redacted_output, _redact_graph(graph)):
+                return 1
+        else:
+            # §32.6: a stale agent-facing variant must never outlive the
+            # build that obsoleted it — content classed after the variant
+            # was emitted would keep leaking through the old file.
+            try:
+                redacted_output.unlink(missing_ok=True)
+            except OSError as exc:
+                print(f"ERROR: cannot remove stale {redacted_output}: {exc}",
+                      file=sys.stderr)
+                return 1
     try:
         output_display = output.relative_to(ROOT)
     except ValueError:
@@ -1587,6 +1641,42 @@ def _run(curated: Path, output: Path, check_only: bool,
           f"{len(graph['nodes'])} nodes, {len(graph['edges'])} edges"
           + ("" if check_only else f" -> {output_display}"))
     return 0
+
+
+def _redact_graph(graph: dict) -> dict:
+    # §20 step 12/§32.6: Phase 1 taint lives on whole nodes. Edges resting
+    # on those ids and silhouette entries for those zones leave as units;
+    # nothing is rewritten and the full graph remains untouched.
+    redacted_ids = {
+        node["id"] for node in graph["nodes"] if "sensitivity" in node
+    }
+    nodes = [node for node in graph["nodes"]
+             if node["id"] not in redacted_ids]
+    edges = [
+        edge for edge in graph["edges"]
+        if edge["source"] not in redacted_ids
+        and edge["target"] not in redacted_ids
+        and not redacted_ids.intersection(edge["provenance"])
+    ]
+    projections = {
+        zone: region for zone, region in graph["projections"].items()
+        if zone not in redacted_ids
+    }
+    redacted = dict(graph)
+    redacted["nodes"] = nodes
+    redacted["edges"] = edges
+    redacted["projections"] = projections
+    # atlas-graph.schema.json requires every §10 payload key, zeros included.
+    redacted["withheld"] = {
+        "nodes": len(graph["nodes"]) - len(nodes),
+        "edges": len(graph["edges"]) - len(edges),
+        "trails": 0,
+        "state": 0,
+        "influence": 0,
+        "frontier": 0,
+        "projections": len(graph["projections"]) - len(projections),
+    }
+    return redacted
 
 
 def _emit_graph(output: Path, graph: dict) -> bool:

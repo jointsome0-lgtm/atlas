@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "spec" / "schemas"
 GRAMMAR_DIR = ROOT / "fixtures" / "grammar"
 JOURNAL_ROW_BYTES = _builder.JOURNAL_ROW_BYTES  # §25.8 — one source
+_JOURNAL_READ_BYTES = 8_192
 
 SCHEMA_NAMES = {
     "concept",
@@ -252,7 +253,7 @@ class SchemaValidator:
             if expected not in predicates:
                 raise SchemaSubsetError(f"unsupported schema type {expected!r}")
             if not predicates[expected](instance):
-                errors.append(f"{path}: expected {expected}, got {type(instance).__name__}")
+                errors.append(f"{path}: expected type {expected}")
                 return
 
         if "const" in schema and not _json_equal(instance, schema["const"]):
@@ -260,13 +261,16 @@ class SchemaValidator:
         if "enum" in schema and not any(
             _json_equal(instance, choice) for choice in schema["enum"]
         ):
-            errors.append(f"{path}: value {instance!r} is outside {schema['enum']!r}")
+            errors.append(f"{path}: value is outside allowed choices "
+                          f"{schema['enum']!r}")
         if "pattern" in schema and isinstance(instance, str):
             if not _ecma_search(schema["pattern"], instance):
-                errors.append(f"{path}: string {instance!r} does not match {schema['pattern']!r}")
+                errors.append(f"{path}: string does not match pattern "
+                              f"{schema['pattern']!r}")
         if "minimum" in schema and isinstance(instance, int) and not isinstance(instance, bool):
             if instance < schema["minimum"]:
-                errors.append(f"{path}: value {instance} is below minimum {schema['minimum']}")
+                errors.append(f"{path}: value is below minimum "
+                              f"{schema['minimum']}")
 
         if isinstance(instance, dict):
             required = schema.get("required", [])
@@ -275,7 +279,8 @@ class SchemaValidator:
                     errors.append(f"{path}: missing required property {key!r}")
             if "minProperties" in schema and len(instance) < schema["minProperties"]:
                 errors.append(
-                    f"{path}: has {len(instance)} properties; minimum is {schema['minProperties']}"
+                    f"{path}: has fewer properties than minimum "
+                    f"{schema['minProperties']}"
                 )
             properties = schema.get("properties", {})
             for key, value in instance.items():
@@ -292,7 +297,8 @@ class SchemaValidator:
         if isinstance(instance, list):
             if "minItems" in schema and len(instance) < schema["minItems"]:
                 errors.append(
-                    f"{path}: has {len(instance)} items; minimum is {schema['minItems']}"
+                    f"{path}: has fewer items than minimum "
+                    f"{schema['minItems']}"
                 )
             if schema.get("uniqueItems"):
                 for index, item in enumerate(instance):
@@ -379,20 +385,17 @@ def _journal_paths(state: Path, stem: str):
 
 
 def _read_jsonl(path: Path):
-    data = path.read_bytes()
-    if data.startswith(b"\xef\xbb\xbf"):
-        raise JsonInputError(f"{path}:1: UTF-8 BOM is unsupported")
-    if b"\r" in data:
-        line = data.count(b"\n", 0, data.index(b"\r")) + 1
-        raise JsonInputError(f"{path}:{line}: CR/CRLF is unsupported; use LF")
-    for number, raw in enumerate(data.split(b"\n"), 1):
-        if not raw and number == len(data.split(b"\n")):
-            continue
+    for number, raw, oversized in _journal_lines(path):
+        if oversized:
+            raise JsonInputError(
+                f"{path}:{number}: journal row exceeds "
+                f"{JOURNAL_ROW_BYTES} bytes"
+            )
         if not raw:
             raise JsonInputError(f"{path}:{number}: blank JSONL row is unsupported")
-        if len(raw) > JOURNAL_ROW_BYTES:
+        if b"\r" in raw:
             raise JsonInputError(
-                f"{path}:{number}: journal row exceeds {JOURNAL_ROW_BYTES} bytes"
+                f"{path}:{number}: CR/CRLF is unsupported; use LF"
             )
         try:
             text = raw.decode("utf-8", errors="strict")
@@ -402,6 +405,44 @@ def _read_jsonl(path: Path):
         except (json.JSONDecodeError, JsonInputError) as exc:
             message = exc.msg if isinstance(exc, json.JSONDecodeError) else str(exc)
             raise JsonInputError(f"{path}:{number}: invalid JSON: {message}") from None
+
+
+def _journal_lines(path: Path):
+    """Yield rows without retaining more than the §25.8 ceiling plus one."""
+    number = 1
+    row = bytearray()
+    discarding = False
+    first = True
+    with path.open("rb") as stream:
+        while chunk := stream.read(_JOURNAL_READ_BYTES):
+            if first:
+                first = False
+                if chunk.startswith(b"\xef\xbb\xbf"):
+                    raise JsonInputError(
+                        f"{path}:1: UTF-8 BOM is unsupported")
+            offset = 0
+            while offset < len(chunk):
+                newline = chunk.find(b"\n", offset)
+                end = len(chunk) if newline < 0 else newline
+                if not discarding:
+                    room = JOURNAL_ROW_BYTES + 1 - len(row)
+                    row.extend(chunk[offset:end][:room])
+                    if end - offset > room or len(row) > JOURNAL_ROW_BYTES:
+                        # §25.8/§24.4: surface the ceiling immediately and
+                        # discard the refused remainder without echoing it.
+                        yield number, b"", True
+                        row.clear()
+                        discarding = True
+                if newline < 0:
+                    break
+                if not discarding:
+                    yield number, bytes(row), False
+                number += 1
+                row.clear()
+                discarding = False
+                offset = newline + 1
+    if row:
+        yield number, bytes(row), False
 
 
 _EVIDENCE_PREFIXES = ("artifact:", "encounter:", "question:")
