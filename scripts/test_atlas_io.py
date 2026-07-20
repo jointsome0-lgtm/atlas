@@ -467,21 +467,23 @@ class LockAndAppendTests(unittest.TestCase):
                 self.assertTrue(result.created)
 
     def test_failed_parent_fsync_unlinks_the_created_file(self):
-        real_sync_dir = atlas_io._sync_dir
+        real_fsync = os.fsync
         calls = {"n": 0}
 
-        def failing_sync_dir(directory):
+        def failing_fsync(fd):
+            # Call 1 is the file fsync after the write; call 2 is the parent
+            # directory-entry fsync — the failure under test.
             calls["n"] += 1
-            if calls["n"] == 1:
+            if calls["n"] == 2:
                 raise OSError("synthetic dir fsync failure")
-            return real_sync_dir(directory)
+            return real_fsync(fd)
 
         with fake_instance() as root:
             instance = atlas_io.AtlasInstance(root)
             target = root / "state" / "artifacts.jsonl"
             with instance.lock():
                 with unittest.mock.patch.object(
-                    atlas_io, "_sync_dir", failing_sync_dir
+                    atlas_io.os, "fsync", failing_fsync
                 ), self.assertRaises(atlas_io.AtlasIOError) as raised:
                     instance.append_record(
                         "state/artifacts.jsonl", VALID_ARTIFACT
@@ -494,6 +496,23 @@ class LockAndAppendTests(unittest.TestCase):
                 )
                 self.assertTrue(result.created)
                 self.assertEqual(1, len(target.read_bytes().splitlines()))
+
+    def test_swapped_intermediate_directory_is_not_followed_on_append(self):
+        def bypass(root, relative_path, *, allow_missing=False):
+            return root.joinpath(*Path(relative_path).parts)
+
+        with fake_instance() as root, tempfile.TemporaryDirectory() as outside:
+            instance = atlas_io.AtlasInstance(root)
+            (root / "state").rmdir()
+            (root / "state").symlink_to(outside, target_is_directory=True)
+            with unittest.mock.patch.object(atlas_io, "_safe_path", bypass):
+                with instance.lock(), self.assertRaises(
+                    atlas_io.AtlasIOError
+                ):
+                    instance.append_record(
+                        "state/artifacts.jsonl", VALID_ARTIFACT
+                    )
+            self.assertEqual([], list(Path(outside).iterdir()))
 
     def test_incomplete_existing_jsonl_is_refused_without_append(self):
         with fake_instance() as root:

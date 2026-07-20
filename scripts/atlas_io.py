@@ -270,14 +270,17 @@ class AtlasInstance:
 
         display = _safe_display_path(relative_path)
         path = self.path(relative_path)
-        # Re-open without following symlinks: the containment check above
-        # cannot cover a swap in the gap before the open (§24.2).
+        # Re-open binding every component no-follow: the containment check
+        # above cannot cover a swap in the gap before the open (§24.2).
         flags = os.O_RDONLY
         flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
         try:
-            fd = os.open(path, flags)
+            fd, parent_fd = _open_under_root(
+                self.root, path.relative_to(self.root).parts, flags
+            )
         except OSError:
             _fail(ReasonCode.UNSAFE_PATH, display)
+        os.close(parent_fd)
         try:
             with os.fdopen(fd, "rb") as stream:
                 info = os.fstat(stream.fileno())
@@ -476,8 +479,14 @@ class AtlasInstance:
         flags = os.O_APPEND | os.O_CREAT | os.O_RDWR
         flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
         flags |= getattr(os, "O_NONBLOCK", 0)
+        name = path.name
         try:
-            fd = os.open(path, flags, 0o600)
+            fd, parent_fd = _open_under_root(
+                self.root, path.relative_to(self.root).parts, flags
+            )
+        except OSError:
+            _fail(ReasonCode.APPEND_IO, display)
+        try:
             try:
                 info = os.fstat(fd)
                 if not stat.S_ISREG(info.st_mode):
@@ -504,30 +513,32 @@ class AtlasInstance:
                             # This call created the file: truncation would
                             # leave an empty journal whose directory entry a
                             # retry never syncs — unlink it instead.
-                            path.unlink()
-                            _sync_dir(parent)
+                            os.unlink(name, dir_fd=parent_fd)
+                            os.fsync(parent_fd)
                         else:
                             os.ftruncate(fd, info.st_size)
                             os.fsync(fd)
                     _fail(ReasonCode.APPEND_IO, display)
+                created = before is None
+                if created:
+                    try:
+                        os.fsync(parent_fd)
+                    except OSError:
+                        # The row is not durable until its new file's
+                        # directory entry is; unlink the created file so a
+                        # retry does not see a phantom row.
+                        with contextlib.suppress(OSError):
+                            os.unlink(name, dir_fd=parent_fd)
+                            os.fsync(parent_fd)
+                        _fail(ReasonCode.APPEND_IO, display)
             finally:
                 os.close(fd)
-            created = before is None
-            if created:
-                try:
-                    _sync_dir(parent)
-                except OSError:
-                    # The row is not durable until its new file's directory
-                    # entry is; unlink the created file so a retry does not
-                    # see a phantom row.
-                    with contextlib.suppress(OSError):
-                        path.unlink()
-                        _sync_dir(parent)
-                    _fail(ReasonCode.APPEND_IO, display)
         except AtlasIOError:
             raise
         except OSError:
             _fail(ReasonCode.APPEND_IO, display)
+        finally:
+            os.close(parent_fd)
         return AppendResult(display, len(payload), created)
 
     def append_receipt(self, key: str, marker: str, date: str) -> AppendResult:
@@ -768,10 +779,32 @@ def _safe_display_path(relative_path: str | os.PathLike[str]) -> str:
     return path.as_posix()
 
 
-def _sync_dir(directory: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    fd = os.open(directory, flags)
+_DIR_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+
+
+def _open_under_root(
+    root: Path, parts: tuple[str, ...], flags: int
+) -> tuple[int, int]:
+    """Open a validated root-relative path binding every component no-follow.
+
+    Walks the already-checked component chain with directory fds (openat), so
+    a directory swapped for a symlink after the check cannot redirect the
+    open (§24.2). Returns (fd, parent_dir_fd); the caller closes both.
+    """
+
+    dir_fd = os.open(root, _DIR_FLAGS)
     try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+        for part in parts[:-1]:
+            next_fd = os.open(part, _DIR_FLAGS, dir_fd=dir_fd)
+            os.close(dir_fd)
+            dir_fd = next_fd
+        fd = os.open(parts[-1], flags, 0o600, dir_fd=dir_fd)
+    except OSError:
+        os.close(dir_fd)
+        raise
+    return fd, dir_fd
