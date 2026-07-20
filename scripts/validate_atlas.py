@@ -458,13 +458,6 @@ _ZONE_ID_RE = re.compile(rf"^zone:{_SLUG}$")
 
 
 
-_REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
-                    "pattern": {"body"}}
-_FIELD_DERIVED_KINDS = {"material", "material_part", "suggested_route",
-                        "direction", "probe", "question", "artifact",
-                        "encounter", "trail_segment", "plan"}
-_PART_EDGE_ROLES = {"prerequisite_of", "extends", "contradicts", "implements",
-                    "explains", "demonstrates", "critiques", "mentions"}
 # §10.3: provenance is the direct derivation basis, so per edge kind it must
 # name the owning record — the authored species' authoring endpoint (§9.3
 # concept_edges on the source, §9.14 supported_by on the receiving target),
@@ -482,72 +475,17 @@ _PROVENANCE_TARGET_OWNED = {
 
 def _graph_field_errors(instance: dict, path: Path) -> list[str]:
     """§10.4: fields membership is derivable from the emitted edges —
-    recompute it for the derived kinds and require the persisted value to
-    match (region kinds are pinned by the schema itself)."""
+    recompute it for the derived kinds (via the builder's shared
+    derivation, one source) and require the persisted value to match
+    (region kinds are pinned by the schema itself)."""
     errors: list[str] = []
-    types = {}
-    for node in _as_list(instance.get("nodes")):
-        if isinstance(node, dict) and isinstance(node.get("id"), str):
-            # A non-string type already carries its schema diagnostic —
-            # None keeps every set membership below hashable.
-            node_type = node.get("type")
-            types[node["id"]] = node_type if isinstance(node_type, str) else None
-    refs: dict = {}
-    for edge in _as_list(instance.get("edges")):
-        if not isinstance(edge, dict):
-            continue
-        src, tgt = edge.get("source"), edge.get("target")
-        kind = edge.get("type")
-        if not (isinstance(src, str) and isinstance(tgt, str)
-                and isinstance(kind, str)):
-            continue
-        if kind in ("overall_concept", "has_part"):
-            refs.setdefault(src, []).append(tgt)
-        elif (kind in _PART_EDGE_ROLES
-                and types.get(src) == "material_part"):
-            refs.setdefault(src, []).append(tgt)
-        elif kind in ("step_of_route", "part_of_direction", "probed_by",
-                      "pulled_by"):
-            refs.setdefault(tgt, []).append(src)
-        elif kind in ("influences", "updates_state", "visited"):
-            refs.setdefault(src, []).append(tgt)
-
+    expected_by_id = _builder.graph_field_expectations(instance)
     for node in _as_list(instance.get("nodes")):
         if not (isinstance(node, dict) and isinstance(node.get("id"), str)):
             continue
-        # §10.4 payload-held refs: trail segments derive from ∪ to; a plan
-        # derives its routes' fields through their source_plan.
-        if (types.get(node["id"]) == "encounter"
-                and isinstance(node.get("target"), str)):
-            refs.setdefault(node["id"], []).append(node["target"])
-        if types.get(node["id"]) == "trail_segment":
-            origin = node.get("from")
-            origins = origin if isinstance(origin, list) else [origin]
-            for ref in origins + [node.get("to")]:
-                if isinstance(ref, str):
-                    refs.setdefault(node["id"], []).append(ref)
-        source_plan = node.get("source_plan")
-        if (types.get(node["id"]) == "suggested_route"
-                and isinstance(source_plan, str)):
-            refs.setdefault(source_plan, []).append(node["id"])
-
-    def fields_of(node_id, seen=frozenset()):
-        if node_id in seen:
-            return set()
-        registry = _REGISTRY_FIELDS.get(types.get(node_id))
-        if registry is not None:
-            return set(registry)
-        result = set()
-        for ref in refs.get(node_id, []):
-            result |= fields_of(ref, seen | {node_id})
-        return result
-
-    for node in _as_list(instance.get("nodes")):
-        if not (isinstance(node, dict) and isinstance(node.get("id"), str)):
+        expected = expected_by_id.get(node["id"])
+        if expected is None:
             continue
-        if types.get(node["id"]) not in _FIELD_DERIVED_KINDS:
-            continue
-        expected = sorted(fields_of(node["id"]))
         found = node.get("fields")
         if (isinstance(found, list)
                 and sorted(x for x in found if isinstance(x, str)) != expected):

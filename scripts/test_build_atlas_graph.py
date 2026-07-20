@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import build_atlas_graph
+import validate_atlas
 from frontmatter import parse_frontmatter
 
 
@@ -984,6 +985,36 @@ class LaneBTests(unittest.TestCase):
         self.assertLessEqual(
             {"material:m", "material:m2", "concept:c"},
             {node["id"] for node in redacted["nodes"]})
+
+    def test_redaction_withholds_nodes_with_stranded_field_derivation(self):
+        # §10.4/§32.6: fields stay derivable from the surviving edges. A
+        # clean material whose only overall concept is classed would keep
+        # its full-graph fields while the deriving edge leaves — a derived
+        # value resting on classed data, never rewritten, so the node is
+        # withheld whole and the redacted graph passes the validator.
+        classed = (_CONCEPT % ("x", "X")).replace(
+            "title: X (Vera Example)\n",
+            "title: X (Vera Example)\nsensitivity: medical\n")
+        material = ("---\nid: material:m\ntype: material\n"
+                    "title: M (Vera Example)\nkind: docs\nurl: \"\"\n"
+                    "status: active\noverall_concepts:\n  - concept:x\n"
+                    "parts: []\n---\n")
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "concepts/x.md": classed,
+            "materials/m.md": material,
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        full_ids = {node["id"] for node in graph["nodes"]}
+        self.assertIn("material:m", full_ids)
+        redacted = build_atlas_graph._redact_graph(graph)
+        ids = {node["id"] for node in redacted["nodes"]}
+        self.assertNotIn("material:m", ids)
+        self.assertIn("concept:c", ids)
+        self.assertEqual(2, redacted["withheld"]["nodes"])
+        self.assertEqual(
+            [], validate_atlas._graph_field_errors(redacted, Path("r")))
 
     def test_redaction_closes_over_payload_citations(self):
         # §32.6: taint unions through citation — an unclassed encounter

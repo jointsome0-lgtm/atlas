@@ -69,6 +69,88 @@ AUTHORED_ROLES = {
     "explains", "demonstrates", "critiques", "mentions", "loads",
 }
 
+# §10.4: fields = union of the fields of the region nodes reachable through
+# the kind's listed refs; chains bottom out at the §10.1 registry (concept →
+# knowledge; zone, pattern → body), so resolution is acyclic.
+REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
+                   "pattern": {"body"}}
+FIELD_DERIVED_KINDS = {"material", "material_part", "suggested_route",
+                       "direction", "probe", "question", "artifact",
+                       "encounter", "trail_segment", "plan"}
+PART_EDGE_ROLES = {"prerequisite_of", "extends", "contradicts", "implements",
+                   "explains", "demonstrates", "critiques", "mentions"}
+
+
+def graph_field_expectations(instance: dict) -> dict[str, list[str]]:
+    """§10.4 over an emitted graph: recompute every derived-kind node's
+    fields from the instance's own edges and payload-held refs. Shared
+    canon — the boundary validator checks emissions against it and
+    redaction withholds nodes it strands — so it is hardened for
+    arbitrary JSON, not just the builder's own output."""
+    def as_list(value):
+        return value if isinstance(value, list) else []
+
+    types: dict[str, str | None] = {}
+    for node in as_list(instance.get("nodes")):
+        if isinstance(node, dict) and isinstance(node.get("id"), str):
+            # A non-string type already carries its schema diagnostic —
+            # None keeps every set membership below hashable.
+            node_type = node.get("type")
+            types[node["id"]] = node_type if isinstance(node_type, str) else None
+    refs: dict = {}
+    for edge in as_list(instance.get("edges")):
+        if not isinstance(edge, dict):
+            continue
+        src, tgt = edge.get("source"), edge.get("target")
+        kind = edge.get("type")
+        if not (isinstance(src, str) and isinstance(tgt, str)
+                and isinstance(kind, str)):
+            continue
+        if kind in ("overall_concept", "has_part"):
+            refs.setdefault(src, []).append(tgt)
+        elif (kind in PART_EDGE_ROLES
+                and types.get(src) == "material_part"):
+            refs.setdefault(src, []).append(tgt)
+        elif kind in ("step_of_route", "part_of_direction", "probed_by",
+                      "pulled_by"):
+            refs.setdefault(tgt, []).append(src)
+        elif kind in ("influences", "updates_state", "visited"):
+            refs.setdefault(src, []).append(tgt)
+
+    for node in as_list(instance.get("nodes")):
+        if not (isinstance(node, dict) and isinstance(node.get("id"), str)):
+            continue
+        # §10.4 payload-held refs: trail segments derive from ∪ to; a plan
+        # derives its routes' fields through their source_plan.
+        if (types.get(node["id"]) == "encounter"
+                and isinstance(node.get("target"), str)):
+            refs.setdefault(node["id"], []).append(node["target"])
+        if types.get(node["id"]) == "trail_segment":
+            origin = node.get("from")
+            origins = origin if isinstance(origin, list) else [origin]
+            for ref in origins + [node.get("to")]:
+                if isinstance(ref, str):
+                    refs.setdefault(node["id"], []).append(ref)
+        source_plan = node.get("source_plan")
+        if (types.get(node["id"]) == "suggested_route"
+                and isinstance(source_plan, str)):
+            refs.setdefault(source_plan, []).append(node["id"])
+
+    def fields_of(node_id, seen=frozenset()):
+        if node_id in seen:
+            return set()
+        registry = REGISTRY_FIELDS.get(types.get(node_id))
+        if registry is not None:
+            return set(registry)
+        result = set()
+        for ref in refs.get(node_id, []):
+            result |= fields_of(ref, seen | {node_id})
+        return result
+
+    return {node_id: sorted(fields_of(node_id))
+            for node_id, kind in types.items()
+            if kind in FIELD_DERIVED_KINDS}
+
 # §32.1: patterns are concept-kind nodes — a program part maps to patterns
 # exactly as a chapter maps to concepts.
 CONCEPT_KIND = {"concept", "pattern"}
@@ -1368,14 +1450,9 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         edge.pop("_origin", None)
         edge.pop("_lenient", None)
 
-    # §10.4: fields = union of the fields of the region nodes reachable
-    # through the kind's listed refs; chains bottom out at the §10.1
-    # registry (concept → knowledge; zone, pattern → body), so resolution
-    # is acyclic. Dangling refs contribute nothing; fields: [] is legal —
-    # the viewer flags it, the builder never substitutes.
-    REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
-                       "pattern": {"body"}}
-
+    # §10.4 (REGISTRY_FIELDS at module level). Dangling refs contribute
+    # nothing; fields: [] is legal — the viewer flags it, the builder
+    # never substitutes.
     def fields_of(node_id, seen=frozenset()):
         node = nodes.get(node_id)
         if node is None or node_id in seen:
@@ -1696,29 +1773,49 @@ def _redact_graph(graph: dict) -> dict:
                 redacted_ids.add(node["id"])
                 changed = True
 
-    nodes = [node for node in graph["nodes"]
-             if node["id"] not in redacted_ids]
-    # An edge leaves whole when ANY id it carries is marked: endpoints,
+    # Withheld ⊇ marked: classed/tainted ids drive the substring scans
+    # above; withheld additionally covers nodes stranded by the §10.4
+    # consistency pass below, whose ids are not themselves classed.
+    withheld_ids = set(redacted_ids)
+
+    # An edge leaves whole when ANY id it carries is withheld: endpoints,
     # provenance, and the identity metadata that also holds node ids —
     # context (a route id) and step (a concept id) — or its own class.
     # Its remaining metadata (note, weight) gets the same substring taint
     # scan as node payloads: a marked id in edge free text is the same leak.
     def keep_edge(edge):
-        if (edge["source"] in redacted_ids
-                or edge["target"] in redacted_ids
-                or edge.get("context") in redacted_ids
-                or edge.get("step") in redacted_ids
+        if (edge["source"] in withheld_ids
+                or edge["target"] in withheld_ids
+                or edge.get("context") in withheld_ids
+                or edge.get("step") in withheld_ids
                 or "sensitivity" in edge
-                or redacted_ids.intersection(edge["provenance"])):
+                or withheld_ids.intersection(edge["provenance"])):
             return False
         text = payload_text(
             edge, {"source", "target", "context", "step", "provenance"})
         return not any(marked in text for marked in redacted_ids)
 
-    edges = [edge for edge in graph["edges"] if keep_edge(edge)]
+    # §10.4/§32.6: fields must stay derivable from the surviving edges. A
+    # surviving node whose stored fields the surviving graph no longer
+    # derives rests on redacted refs — a derived value resting on classed
+    # data is marked by the union, and payloads are never rewritten, so
+    # the node leaves whole too. Withholding it drops its edges, which can
+    # strand further derivations — iterate to a fixpoint.
+    while True:
+        nodes = [node for node in graph["nodes"]
+                 if node["id"] not in withheld_ids]
+        edges = [edge for edge in graph["edges"] if keep_edge(edge)]
+        expected = graph_field_expectations({"nodes": nodes, "edges": edges})
+        stale = {node["id"] for node in nodes
+                 if node["id"] in expected
+                 and node.get("fields") != expected[node["id"]]}
+        if not stale:
+            break
+        withheld_ids |= stale
+
     projections = {
         zone: region for zone, region in graph["projections"].items()
-        if zone not in redacted_ids
+        if zone not in withheld_ids
     }
     redacted = dict(graph)
     redacted["nodes"] = nodes
