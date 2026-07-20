@@ -150,6 +150,22 @@ class CeilingAndSchemaTests(unittest.TestCase):
                          raised.exception.diagnostic.reason)
         self.assertNotIn(secret, str(raised.exception))
 
+    def test_symlink_swapped_in_after_the_check_is_not_followed(self):
+        secret = "OUTSIDE-VERA-SECRET"
+        with fake_instance() as root, tempfile.TemporaryDirectory() as outside:
+            target = Path(outside) / "target.json"
+            target.write_text(json.dumps({"secret": secret}), encoding="utf-8")
+            swapped = root / "intake" / "value.json"
+            swapped.symlink_to(target)
+            instance = atlas_io.AtlasInstance(root)
+            with unittest.mock.patch.object(
+                atlas_io.AtlasInstance, "path", return_value=swapped
+            ), self.assertRaises(atlas_io.AtlasIOError) as raised:
+                instance.read_json("intake/value.json", max_bytes=1024)
+        self.assertEqual(atlas_io.ReasonCode.UNSAFE_PATH,
+                         raised.exception.diagnostic.reason)
+        self.assertNotIn(secret, str(raised.exception))
+
     def test_count_ceiling_is_caller_supplied(self):
         atlas_io.enforce_ceiling(2, maximum=2, kind="count")
         with self.assertRaises(atlas_io.AtlasIOError) as raised:

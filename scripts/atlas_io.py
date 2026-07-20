@@ -270,8 +270,16 @@ class AtlasInstance:
 
         display = _safe_display_path(relative_path)
         path = self.path(relative_path)
+        # Re-open without following symlinks: the containment check above
+        # cannot cover a swap in the gap before the open (§24.2).
+        flags = os.O_RDONLY
+        flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
         try:
-            with path.open("rb") as stream:
+            fd = os.open(path, flags)
+        except OSError:
+            _fail(ReasonCode.UNSAFE_PATH, display)
+        try:
+            with os.fdopen(fd, "rb") as stream:
                 info = os.fstat(stream.fileno())
                 if not stat.S_ISREG(info.st_mode):
                     _fail(ReasonCode.UNSAFE_PATH, display)
