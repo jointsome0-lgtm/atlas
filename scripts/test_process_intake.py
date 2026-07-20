@@ -270,6 +270,36 @@ class RefusalAndPlacementTests(unittest.TestCase):
         self.assertEqual(["unresolved", "interrupted"],
                          [item["class"] for item in report["records"]])
 
+    def test_free_text_equal_to_minted_id_creates_no_dependency(self):
+        # Free text is data (§24.3): a text field spelling another record's
+        # minted id verbatim must not invent a reverse dependency or fail
+        # an otherwise-valid batch as a reference cycle.
+        records = [
+            question(refs=[{"id": "artifact:vera-example-2026-07-20-002-1-2"}]),
+            artifact(text="question:vera-example-2026-07-20-002-0-2"),
+        ]
+        with private_instance() as root, tempfile.TemporaryDirectory() as outside:
+            delivery = write_batch(Path(outside), batch(records))
+            code, report, stderr = run_main(root, "--batch-file", delivery)
+        self.assertEqual(0, code, stderr)
+        self.assertEqual(["applied", "applied"],
+                         [item["class"] for item in report["records"]])
+
+    def test_symlink_under_input_roots_refuses_resolution(self):
+        # §24.2: known ids load only from a contained tree — a symlink under
+        # atlas/ or state/ refuses the run before any id is trusted.
+        with private_instance() as root, tempfile.TemporaryDirectory() as outside:
+            outside_material = Path(outside) / "evil.md"
+            outside_material.write_text("outside the instance\n", encoding="utf-8")
+            (root / "atlas" / "materials" / "evil.md").symlink_to(outside_material)
+            delivery = write_batch(Path(outside), batch([encounter()]))
+            code, report, stderr = run_main(root, "--batch-file", delivery)
+            self.assertEqual([], rows(root, "receipts"))
+        self.assertEqual(1, code)
+        self.assertIsNone(report)
+        self.assertIn("unsafe-path", stderr)
+        self.assertNotIn(str(outside_material), stderr)
+
     def test_hyphenated_slugs_mint_distinct_injective_ids(self):
         # "a-b"/"c" and "a"/"b-c" have distinct receipt keys and must mint
         # distinct ids — never collapse into one id and a false id-conflict.

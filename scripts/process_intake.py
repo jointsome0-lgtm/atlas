@@ -336,6 +336,7 @@ def _load_known_ids(
     state the user has not resolved.
     """
 
+    _preflight_tree(instance)
     try:
         graph, errors, _warnings = build_atlas_graph.build(instance.root / "atlas")
         withheld = _interrupted_output_ids(instance, interrupted)
@@ -354,6 +355,51 @@ def _load_known_ids(
         for retired in node.get("formerly", []):
             known[retired] = node_id
     return known
+
+
+def _preflight_tree(instance: atlas_io.AtlasInstance) -> None:
+    """Refuse symlinks and special files under the resolution input roots.
+
+    §24.2 containment: the builder's own readers follow paths normally, so
+    reference resolution must not trust ids reachable only through a
+    symlink out of the instance or ignore boundary — the tree is walked
+    lstat-only before any id is loaded.
+    """
+
+    for top in ("atlas", "state"):
+        stack = [instance.path(top)]
+        while stack:
+            directory = stack.pop()
+            try:
+                entries = list(os.scandir(directory))
+            except OSError:
+                _preflight_fail(instance, directory)
+            for entry in entries:
+                is_directory = False
+                try:
+                    if entry.is_symlink():
+                        _preflight_fail(instance, entry.path)
+                    is_directory = entry.is_dir(follow_symlinks=False)
+                    if not is_directory and not entry.is_file(
+                        follow_symlinks=False
+                    ):
+                        _preflight_fail(instance, entry.path)
+                except OSError:
+                    _preflight_fail(instance, entry.path)
+                if is_directory:
+                    stack.append(Path(entry.path))
+
+
+def _preflight_fail(instance: atlas_io.AtlasInstance, path) -> None:
+    try:
+        relative = Path(path).relative_to(instance.root).as_posix()
+    except ValueError:
+        relative = "."
+    raise atlas_io.AtlasIOError(
+        atlas_io.Diagnostic(
+            reason=atlas_io.ReasonCode.UNSAFE_PATH, relative_path=relative
+        )
+    )
 
 
 def _interrupted_output_ids(
@@ -485,9 +531,19 @@ def _classify_pending(
             return placements, failures
 
 
-def _row_reference_ids(row: dict) -> set[str]:
+# The rows' structural reference fields — free text (summary, text) is data
+# and never creates a dependency, even when it equals a minted id verbatim.
+_ROW_REFERENCE_FIELDS = {
+    "encounter": ("target",),
+    "artifact": ("touches",),
+    "question": ("pulls", "source"),
+}
+
+
+def _row_reference_ids(kind: str, row: dict) -> set[str]:
     ids: set[str] = set()
-    for value in row.values():
+    for field in _ROW_REFERENCE_FIELDS[kind]:
+        value = row.get(field)
         if isinstance(value, str):
             ids.add(value)
         elif isinstance(value, list):
@@ -520,7 +576,11 @@ def _append_order(
     dependencies = {
         index: [
             minted_to_index[ref]
-            for ref in sorted(_row_reference_ids(placements[index].row))
+            for ref in sorted(
+                _row_reference_ids(
+                    pending[index][0]["kind"], placements[index].row
+                )
+            )
             if ref in minted_to_index and minted_to_index[ref] != index
         ]
         for index in placements
