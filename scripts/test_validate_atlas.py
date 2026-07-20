@@ -215,6 +215,17 @@ INVALID_INSTANCES = {
     "bad-graph-redacted-without-withheld": {
         "graph/atlas-graph.redacted.json": VALID_EMPTY_GRAPH,
     },
+    # §32.6/§24.3: the agent-facing variant must not retain any classed
+    # entry — a schema-valid redacted graph with a surviving sensitivity
+    # marking must fail the gate, never be certified for agent context.
+    "bad-redacted-surviving-sensitivity": {
+        "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH.replace(
+            '"nodes": [],',
+            '"nodes": [{"id": "concept:example", "type": "concept",'
+            ' "title": "Example (Vera Example)", "fields": ["knowledge"],'
+            ' "aliases": [], "sensitivity": "medical"}],'
+        ),
+    },
     "bad-decision-weight-endpoints": {
         "state/decisions.jsonl": (
             '{"date":"2026-07-16","target":"loads:concept:a->concept:b",'
@@ -1189,6 +1200,17 @@ class SchemaValidatorTests(unittest.TestCase):
                 self.assertTrue(
                     all(line.startswith("ERROR:") for line in stderr.splitlines())
                 )
+
+    def test_unknown_property_diagnostic_does_not_echo_the_key(self):
+        # §24.4: a rejected key name is rejected content — the diagnostic
+        # shows the closed key set (the expectation), never the stray key.
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(INVALID_INSTANCES["unknown-curated"],
+                        Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertNotIn("stray", stderr)
+        self.assertIn("closed key set", stderr)
 
     def test_intake_schema_positive_and_negative_documents(self):
         schemas, errors = validate_atlas._load_registry()

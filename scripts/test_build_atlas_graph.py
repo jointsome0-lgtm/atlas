@@ -926,6 +926,32 @@ class LaneBTests(unittest.TestCase):
             self.assertEqual(first_redacted, redacted_output.read_bytes())
             self.assertEqual([], list(output.parent.glob("*.tmp")))
 
+    def test_redaction_drops_edges_carrying_a_classed_id_in_metadata(self):
+        # §32.6: an edge names ids beyond its endpoints — provenance,
+        # context (a route id), step (a concept id). A classed concept
+        # surviving as material_roles step metadata would leak its id into
+        # the agent-facing graph.
+        concept = (_CONCEPT % ("c", "C")).replace(
+            "title: C (Vera Example)\n",
+            "title: C (Vera Example)\nsensitivity: medical\n")
+        route = ("---\nid: suggested-route:r\ntype: suggested_route\n"
+                 "title: R (Vera Example)\nstatus: available\nsteps:\n"
+                 "  - concept:c\nmaterial_roles:\n  - step: concept:c\n"
+                 "    primary_materials:\n      - material:m\n---\n")
+        with _materialize({
+            "concepts/c.md": concept,
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "suggested-routes/r.md": route,
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        redacted = build_atlas_graph._redact_graph(graph)
+        for edge in redacted["edges"]:
+            self.assertNotIn(
+                "concept:c",
+                {edge["source"], edge["target"], edge.get("context"),
+                 edge.get("step"), *edge["provenance"]})
+
     def test_non_redact_run_removes_the_stale_redacted_variant(self):
         # §32.6: content classed after the agent-facing variant was emitted
         # must not keep leaking through the old file — a write run without

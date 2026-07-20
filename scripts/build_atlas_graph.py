@@ -1652,10 +1652,16 @@ def _redact_graph(graph: dict) -> dict:
     }
     nodes = [node for node in graph["nodes"]
              if node["id"] not in redacted_ids]
+    # An edge leaves whole when ANY id it carries is marked: endpoints,
+    # provenance, and the identity metadata that also holds node ids —
+    # context (a route id) and step (a concept id) — or its own class.
     edges = [
         edge for edge in graph["edges"]
         if edge["source"] not in redacted_ids
         and edge["target"] not in redacted_ids
+        and edge.get("context") not in redacted_ids
+        and edge.get("step") not in redacted_ids
+        and "sensitivity" not in edge
         and not redacted_ids.intersection(edge["provenance"])
     ]
     projections = {

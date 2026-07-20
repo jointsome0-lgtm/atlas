@@ -288,7 +288,11 @@ class SchemaValidator:
                 if key in properties:
                     self._validate(value, properties[key], child_path, errors)
                 elif schema.get("additionalProperties") is False:
-                    errors.append(f"{path}: unknown property {key!r}")
+                    # §24.4: the rejected key name is rejected content —
+                    # the closed key set is the expectation shown instead.
+                    errors.append(
+                        f"{path}: unknown property outside the closed key "
+                        f"set {sorted(properties)!r}")
                 elif isinstance(schema.get("additionalProperties"), dict):
                     self._validate(
                         value, schema["additionalProperties"], child_path, errors
@@ -1476,6 +1480,20 @@ def validate_instance(root: Path):
                     errors.append(
                         f"{path}: the redacted graph must carry withheld (§20)"
                     )
+                if redacted:
+                    # §32.6/§24.3: everything the union marks is OMITTED
+                    # from the agent-facing variant — a surviving classed
+                    # entry means the gate would certify classed content
+                    # into agent context.
+                    for section in ("nodes", "edges"):
+                        for position, entry in enumerate(
+                                _as_list(instance.get(section))):
+                            if (isinstance(entry, dict)
+                                    and "sensitivity" in entry):
+                                errors.append(
+                                    f"{path}: {section}[{position}] still "
+                                    "carries sensitivity in the redacted "
+                                    "graph (§32.6)")
                 if not redacted and "withheld" in instance:
                     errors.append(
                         f"{path}: the full graph never carries withheld (§20)"
