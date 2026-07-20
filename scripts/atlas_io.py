@@ -261,6 +261,10 @@ class AtlasInstance:
     def __init__(self, root: str | os.PathLike[str]):
         self.root = _validate_instance_root(root)
         self._lock_fd: int | None = None
+        # Valid only while the lock is held: the single-writer lock excludes
+        # every other Atlas writer, so receipt state can only change through
+        # this instance's own append_receipt. Cleared on release.
+        self._receipt_cache: tuple[set[str], set[str]] | None = None
 
     def path(
         self,
@@ -570,6 +574,7 @@ class AtlasInstance:
         finally:
             failure = self._release_lock(lock_fd, lock_path)
             self._lock_fd = None
+            self._receipt_cache = None
             if failure is not None and not body_failed:
                 _fail(failure, ".atlas-lock")
 
@@ -722,12 +727,15 @@ class AtlasInstance:
             legal = key in current.opened and key not in current.processed
         if not legal:
             _fail(ReasonCode.INVALID_RECEIPT_TRANSITION, "state/receipts.jsonl")
-        return self._append(
+        result = self._append(
             "state/receipts.jsonl",
             "state/receipts.jsonl",
             {"intake": key, "marker": marker, "date": date},
             "journal-receipt",
         )
+        if self._receipt_cache is not None:
+            self._receipt_cache[0 if marker == "opened" else 1].add(key)
+        return result
 
     def receipt_status(self) -> ReceiptStatus:
         """Report opened, processed, and interrupted receipt keys.
@@ -736,6 +744,11 @@ class AtlasInstance:
         state/receipts/*.jsonl — the same set the canonical validator folds.
         """
 
+        if self._lock_fd is not None and self._receipt_cache is not None:
+            cached_opened, cached_processed = self._receipt_cache
+            return ReceiptStatus(
+                frozenset(cached_opened), frozenset(cached_processed)
+            )
         # (chronological file rank, line): the direct file is the newest —
         # rotation moves old rows out — so rotated files rank first in sorted
         # order and state/receipts.jsonl last. §33.2's pair is ordered by this
@@ -784,6 +797,8 @@ class AtlasInstance:
                     relative,
                     record_index=number,
                 )
+        if self._lock_fd is not None:
+            self._receipt_cache = (set(opened), set(processed))
         return ReceiptStatus(frozenset(opened), frozenset(processed))
 
     def _require_lock(self) -> None:
