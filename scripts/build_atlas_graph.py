@@ -1628,11 +1628,23 @@ def _run(curated: Path, output: Path, check_only: bool,
             # build that obsoleted it — content classed after the variant
             # was emitted would keep leaking through the old file.
             try:
-                redacted_output.unlink(missing_ok=True)
+                redacted_output.unlink()
+            except FileNotFoundError:
+                pass
             except OSError as exc:
                 print(f"ERROR: cannot remove stale {redacted_output}: {exc}",
                       file=sys.stderr)
                 return 1
+            else:
+                # §25.6: the removal is only durable once graph/'s entry
+                # is synced — a crash before that could resurrect the
+                # stale variant next to a newer full graph.
+                try:
+                    _sync_dir(redacted_output.parent)
+                except OSError as exc:
+                    print(f"ERROR: cannot remove stale {redacted_output}: "
+                          f"{exc}", file=sys.stderr)
+                    return 1
     try:
         output_display = output.relative_to(ROOT)
     except ValueError:
@@ -1651,12 +1663,13 @@ def _redact_graph(graph: dict) -> dict:
         node["id"] for node in graph["nodes"] if "sensitivity" in node
     }
 
-    def payload_text(node):
-        # Every string anywhere in the payload except the node's own id —
-        # reference fields (target, context/source values, via items,
-        # probe, direction) and free text (summary, reason, notes) alike.
+    def payload_text(mapping, skip):
+        # Every string anywhere in the payload except the identity fields
+        # the caller already checks exactly — reference fields (target,
+        # context/source values, via items, probe, direction) and free
+        # text (summary, reason, notes) alike.
         parts = []
-        stack = [value for key, value in node.items() if key != "id"]
+        stack = [value for key, value in mapping.items() if key not in skip]
         while stack:
             value = stack.pop()
             if isinstance(value, str):
@@ -1678,7 +1691,7 @@ def _redact_graph(graph: dict) -> dict:
         for node in graph["nodes"]:
             if node["id"] in redacted_ids:
                 continue
-            text = payload_text(node)
+            text = payload_text(node, {"id"})
             if any(marked in text for marked in redacted_ids):
                 redacted_ids.add(node["id"])
                 changed = True
@@ -1688,15 +1701,21 @@ def _redact_graph(graph: dict) -> dict:
     # An edge leaves whole when ANY id it carries is marked: endpoints,
     # provenance, and the identity metadata that also holds node ids —
     # context (a route id) and step (a concept id) — or its own class.
-    edges = [
-        edge for edge in graph["edges"]
-        if edge["source"] not in redacted_ids
-        and edge["target"] not in redacted_ids
-        and edge.get("context") not in redacted_ids
-        and edge.get("step") not in redacted_ids
-        and "sensitivity" not in edge
-        and not redacted_ids.intersection(edge["provenance"])
-    ]
+    # Its remaining metadata (note, weight) gets the same substring taint
+    # scan as node payloads: a marked id in edge free text is the same leak.
+    def keep_edge(edge):
+        if (edge["source"] in redacted_ids
+                or edge["target"] in redacted_ids
+                or edge.get("context") in redacted_ids
+                or edge.get("step") in redacted_ids
+                or "sensitivity" in edge
+                or redacted_ids.intersection(edge["provenance"])):
+            return False
+        text = payload_text(
+            edge, {"source", "target", "context", "step", "provenance"})
+        return not any(marked in text for marked in redacted_ids)
+
+    edges = [edge for edge in graph["edges"] if keep_edge(edge)]
     projections = {
         zone: region for zone, region in graph["projections"].items()
         if zone not in redacted_ids
@@ -1716,6 +1735,14 @@ def _redact_graph(graph: dict) -> dict:
         "projections": len(graph["projections"]) - len(projections),
     }
     return redacted
+
+
+def _sync_dir(directory: Path) -> None:
+    fd = os.open(str(directory), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _emit_graph(output: Path, graph: dict) -> bool:
@@ -1740,12 +1767,7 @@ def _emit_graph(output: Path, graph: dict) -> bool:
             os.fsync(stream.fileno())
         os.replace(tmp, output)
         replaced = True
-        directory_fd = os.open(
-            str(output.parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        _sync_dir(output.parent)
     except OSError as exc:
         # A post-rename directory-sync failure is observable as a failed
         # emission too; restore the last good bytes before returning.

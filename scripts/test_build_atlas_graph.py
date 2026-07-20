@@ -952,6 +952,39 @@ class LaneBTests(unittest.TestCase):
                 {edge["source"], edge["target"], edge.get("context"),
                  edge.get("step"), *edge["provenance"]})
 
+    def test_redaction_drops_edges_citing_a_classed_id_in_free_text(self):
+        # §32.6: edge free-text metadata gets the same taint rule as node
+        # payloads — a supports note mentioning a classed id would leak it
+        # into the agent-facing graph even though every id the edge carries
+        # (endpoints, provenance) is retained.
+        classed = (_CONCEPT % ("x", "X")).replace(
+            "title: X (Vera Example)\n",
+            "title: X (Vera Example)\nsensitivity: medical\n")
+        supported = ("---\nid: material:m2\ntype: material\n"
+                     "title: M2 (Vera Example)\nkind: docs\nurl: \"\"\n"
+                     "status: active\noverall_concepts:\n  - concept:c\n"
+                     "supported_by:\n  - id: material:m\n"
+                     "    note: pairs well, but see concept:x first\n"
+                     "parts: []\n---\n")
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "concepts/x.md": classed,
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "materials/m2.md": supported,
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(any(edge["type"] == "supports"
+                            for edge in graph["edges"]))
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertNotIn("concept:x", json.dumps(redacted))
+        self.assertFalse(any(edge["type"] == "supports"
+                             for edge in redacted["edges"]))
+        # The mentioning nodes themselves are clean and stay.
+        self.assertLessEqual(
+            {"material:m", "material:m2", "concept:c"},
+            {node["id"] for node in redacted["nodes"]})
+
     def test_redaction_closes_over_payload_citations(self):
         # §32.6: taint unions through citation — an unclassed encounter
         # whose context cites a classed artifact rests on classed data;
