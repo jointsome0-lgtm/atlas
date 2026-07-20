@@ -1650,6 +1650,34 @@ def _redact_graph(graph: dict) -> dict:
     redacted_ids = {
         node["id"] for node in graph["nodes"] if "sensitivity" in node
     }
+
+    def payload_refs(node):
+        # Every string anywhere in the payload except the node's own id —
+        # target, context/source values, via/from/resulting_questions
+        # items, probe, direction — is a potential id reference.
+        stack = [value for key, value in node.items() if key != "id"]
+        while stack:
+            value = stack.pop()
+            if isinstance(value, str):
+                yield value
+            elif isinstance(value, list):
+                stack.extend(value)
+            elif isinstance(value, dict):
+                stack.extend(value.values())
+
+    # §32.6: taint unions through citation — a retained node whose payload
+    # cites a marked id rests on classed data and leaves whole too, to a
+    # fixpoint (an id inside a surviving payload is already a leak).
+    changed = True
+    while changed:
+        changed = False
+        for node in graph["nodes"]:
+            if node["id"] in redacted_ids:
+                continue
+            if any(ref in redacted_ids for ref in payload_refs(node)):
+                redacted_ids.add(node["id"])
+                changed = True
+
     nodes = [node for node in graph["nodes"]
              if node["id"] not in redacted_ids]
     # An edge leaves whole when ANY id it carries is marked: endpoints,

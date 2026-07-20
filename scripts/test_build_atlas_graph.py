@@ -952,6 +952,29 @@ class LaneBTests(unittest.TestCase):
                 {edge["source"], edge["target"], edge.get("context"),
                  edge.get("step"), *edge["provenance"]})
 
+    def test_redaction_closes_over_payload_citations(self):
+        # §32.6: taint unions through citation — an unclassed encounter
+        # whose context cites a classed artifact rests on classed data;
+        # retaining it would leak the artifact's id through the payload.
+        artifact = json.loads(_ARTIFACT_ROW)
+        artifact["sensitivity"] = "medical"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/artifacts.jsonl": json.dumps(artifact) + "\n",
+            "state/encounters.jsonl": _encounter_row(
+                context={"artifact": "artifact:2026-07-16-001"}) + "\n",
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        redacted = build_atlas_graph._redact_graph(graph)
+        ids = {node["id"] for node in redacted["nodes"]}
+        self.assertNotIn("artifact:2026-07-16-001", ids)
+        self.assertNotIn("encounter:2026-07-16-001", ids)
+        self.assertEqual(2, redacted["withheld"]["nodes"])
+        payload = json.dumps(redacted)
+        self.assertNotIn("artifact:2026-07-16-001", payload)
+
     def test_non_redact_run_removes_the_stale_redacted_variant(self):
         # §32.6: content classed after the agent-facing variant was emitted
         # must not keep leaking through the old file — a write run without
