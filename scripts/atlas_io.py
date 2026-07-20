@@ -391,10 +391,10 @@ class AtlasInstance:
             body_failed = True
             raise
         finally:
-            released = self._release_lock(lock_fd, lock_path)
+            failure = self._release_lock(lock_fd, lock_path)
             self._lock_fd = None
-            if not released and not body_failed:
-                _fail(ReasonCode.LOCK_IO, ".atlas-lock")
+            if failure is not None and not body_failed:
+                _fail(failure, ".atlas-lock")
 
     def append_record(
         self,
@@ -613,8 +613,15 @@ class AtlasInstance:
             _fail(ReasonCode.LOCK_LOST, ".atlas-lock")
 
     @staticmethod
-    def _release_lock(lock_fd: int, lock_path: Path) -> bool:
-        released = True
+    def _release_lock(lock_fd: int, lock_path: Path) -> ReasonCode | None:
+        """Release the held lock; None on success, else the failure code.
+
+        A missing or replaced .atlas-lock means exclusivity was already lost
+        mid-flow (§25.6's lock covers the complete writing flow), so it is
+        LOCK_LOST, never silent success.
+        """
+
+        failure: ReasonCode | None = None
         try:
             own = os.fstat(lock_fd)
             try:
@@ -623,14 +630,16 @@ class AtlasInstance:
                 current = None
             if current is not None and os.path.samestat(own, current):
                 lock_path.unlink()
+            else:
+                failure = ReasonCode.LOCK_LOST
         except OSError:
-            released = False
+            failure = ReasonCode.LOCK_IO
         finally:
             try:
                 os.close(lock_fd)
             except OSError:
-                released = False
-        return released
+                failure = failure or ReasonCode.LOCK_IO
+        return failure
 
 
 def _fail(

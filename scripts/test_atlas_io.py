@@ -260,6 +260,23 @@ class LockAndAppendTests(unittest.TestCase):
                     raise RuntimeError("Vera Example stop")
             self.assertFalse((root / ".atlas-lock").exists())
 
+    def test_replaced_or_missing_lock_fails_the_flow_on_exit(self):
+        with fake_instance() as root:
+            instance = atlas_io.AtlasInstance(root)
+            lock = root / ".atlas-lock"
+            with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                with instance.lock():
+                    lock.unlink()
+                    lock.write_text('{"pid": 0}', encoding="utf-8")
+            self.assertEqual(atlas_io.ReasonCode.LOCK_LOST,
+                             raised.exception.diagnostic.reason)
+            lock.unlink()
+            with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                with instance.lock():
+                    lock.unlink()
+            self.assertEqual(atlas_io.ReasonCode.LOCK_LOST,
+                             raised.exception.diagnostic.reason)
+
     def test_append_requires_flow_lock(self):
         with fake_instance() as root:
             instance = atlas_io.AtlasInstance(root)
