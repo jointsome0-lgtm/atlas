@@ -385,7 +385,8 @@ class RefusalAndPlacementTests(unittest.TestCase):
         # §33.2: a processed receipt alone does not prove the current record
         # is the one it covered — an in-place kind or content edit of the
         # canonical original with an unchanged record count must conflict.
-        for drifted in (artifact(), encounter(depth="applied")):
+        for drifted in (artifact(), encounter(depth="applied"),
+                        encounter(target={"id": "material:mdn-http-methods"})):
             with self.subTest(kind=drifted["kind"]), private_instance() as root, \
                     tempfile.TemporaryDirectory() as outside:
                 original = batch([encounter()])

@@ -422,28 +422,23 @@ def _journal_outputs(
     return outputs
 
 
-class _IdentityResolution(dict):
-    """Resolution stand-in that maps every id to itself.
-
-    Replay verification compares verbatim-copied row fields only, so the
-    reference fields recomputed through this map are dropped before the
-    comparison — resolution may legitimately drift under §34.4 retirement.
-    """
-
-    def get(self, key, default=None):
-        return key if isinstance(key, str) else default
-
-
 def _replay_matches(
     instance: atlas_io.AtlasInstance,
     record: object,
     envelope: dict,
+    known: dict[str, str],
     key: str,
     minted_id: str | None,
     index: int,
     recorded: tuple[str, dict] | None,
 ) -> bool:
-    """Check a replayed record still matches its recorded durable output."""
+    """Check a replayed record still matches its recorded durable output.
+
+    Every field is compared, reference fields included — an edited ref must
+    conflict like an edited text. Both sides' reference ids are mapped
+    through the current retirement resolution first, so a §34.4 rename
+    between the original run and the replay is not a false drift.
+    """
 
     if recorded is None or not isinstance(record, dict):
         return False
@@ -455,19 +450,27 @@ def _replay_matches(
         record, "atlas-intake", definition=definition
     ):
         return False
-    placement = _place_record(
-        record, envelope, _IdentityResolution(), key, minted_id, index
-    )
+    placement = _place_record(record, envelope, known, key, minted_id, index)
     if placement.row is None:
         return False
-    drop = set(_ROW_REFERENCE_FIELDS[kind])
+    reference = set(_ROW_REFERENCE_FIELDS[kind])
+
+    def _resolved(value):
+        if isinstance(value, str):
+            return known.get(value, value)
+        if isinstance(value, list):
+            return [_resolved(item) for item in value]
+        if isinstance(value, dict):
+            return {name: _resolved(item) for name, item in value.items()}
+        return value
+
     expected = {
-        field: value
+        field: _resolved(value) if field in reference else value
         for field, value in placement.row.items()
-        if field not in drop
     }
     durable = {
-        field: value for field, value in row.items() if field not in drop
+        field: _resolved(value) if field in reference else value
+        for field, value in row.items()
     }
     return expected == durable
 
@@ -688,7 +691,7 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
             # the one it covered — an in-place edit of the canonical
             # original with the same record count must not replay clean.
             if not _replay_matches(
-                instance, record, envelope, key, minted_id, index,
+                instance, record, envelope, known, key, minted_id, index,
                 outputs.get(key),
             ):
                 return _conflict_report(envelope)
