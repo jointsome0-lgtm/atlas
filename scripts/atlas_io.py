@@ -319,6 +319,20 @@ class AtlasInstance:
         except (TypeError, ValueError, OSError):
             _fail(ReasonCode.UNSAFE_PATH)
         try:
+            relative = absolute.relative_to(self.root)
+        except ValueError:
+            relative = None
+        if relative is not None:
+            # An instance-contained delivery binds the instance's own
+            # containment and ignore-root rules (§24.2) — a batch under
+            # INSTANCE/secrets/ or .env* must refuse before any read.
+            _safe_path(self.root, relative, allow_missing=False)
+        elif any(_is_ignored_name(part) for part in absolute.parts[1:]):
+            # §24: read no secrets, never scan .env — an external delivery
+            # under an ignore-named component is refused before decoding
+            # or preservation.
+            _fail(ReasonCode.IGNORED_PATH)
+        try:
             fd, parent_fd = _open_under_root(
                 Path(absolute.anchor), absolute.parts[1:],
                 os.O_RDONLY

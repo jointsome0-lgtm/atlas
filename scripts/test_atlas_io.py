@@ -144,6 +144,30 @@ class CeilingAndSchemaTests(unittest.TestCase):
         self.assertEqual(atlas_io.ReasonCode.UNSAFE_PATH,
                          raised.exception.diagnostic.reason)
 
+    def test_delivery_under_ignored_roots_is_refused_before_reading(self):
+        # §24: read no secrets, never scan .env — inside the instance the
+        # ignore roots bind by location; outside, an ignore-named path
+        # component refuses the delivery before decoding or preservation.
+        data = (json.dumps(VALID_INTAKE) + "\n").encode("utf-8")
+        with fake_instance() as root, tempfile.TemporaryDirectory() as outside:
+            instance = atlas_io.AtlasInstance(root)
+            (root / "secrets").mkdir()
+            inside_secret = root / "secrets" / "delivery.json"
+            inside_secret.write_bytes(data)
+            outside_secret = Path(outside) / "secrets" / "delivery.json"
+            outside_secret.parent.mkdir()
+            outside_secret.write_bytes(data)
+            dotenv = Path(outside) / ".env.delivery.json"
+            dotenv.write_bytes(data)
+            for path in (inside_secret, outside_secret, dotenv):
+                with self.subTest(path=path.name), \
+                        self.assertRaises(atlas_io.AtlasIOError) as raised:
+                    instance.read_delivered_json(path, max_bytes=1024)
+                self.assertEqual(
+                    atlas_io.ReasonCode.IGNORED_PATH,
+                    raised.exception.diagnostic.reason,
+                )
+
     def test_unbounded_read_is_refused(self):
         with fake_instance() as root:
             path = root / "intake" / "value.json"
