@@ -248,6 +248,28 @@ class RefusalAndPlacementTests(unittest.TestCase):
         self.assertEqual([item["class"] for item in first["records"]],
                          [item["class"] for item in second["records"]])
 
+        # The dependency commits before the dependent: a crash around the
+        # cited record's write never leaves a processed question citing an
+        # artifact the flow will not automatically create.
+        crashing = [
+            question(refs=[{"id": "artifact:vera-example-2026-07-20-002-1-2"}]),
+            artifact(),
+        ]
+        with private_instance() as root, tempfile.TemporaryDirectory() as outside:
+            delivery = write_batch(Path(outside), batch(crashing))
+            with mock.patch.dict(os.environ, {
+                "ATLAS_INTAKE_CRASH": "after-opened:1"
+            }, clear=False):
+                code, _, stderr = run_main(root, "--batch-file", delivery)
+            self.assertEqual(1, code)
+            self.assertIn("injected-crash", stderr)
+            self.assertEqual(0, len(rows(root, "questions")))
+            code, report, _ = run_main(root, "--batch-file", delivery)
+            self.assertEqual(0, len(rows(root, "questions")))
+        self.assertEqual(1, code)
+        self.assertEqual(["unresolved", "interrupted"],
+                         [item["class"] for item in report["records"]])
+
     def test_hyphenated_slugs_mint_distinct_injective_ids(self):
         # "a-b"/"c" and "a"/"b-c" have distinct receipt keys and must mint
         # distinct ids — never collapse into one id and a false id-conflict.

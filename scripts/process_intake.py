@@ -485,6 +485,63 @@ def _classify_pending(
             return placements, failures
 
 
+def _row_reference_ids(row: dict) -> set[str]:
+    ids: set[str] = set()
+    for value in row.values():
+        if isinstance(value, str):
+            ids.add(value)
+        elif isinstance(value, list):
+            ids.update(item for item in value if isinstance(item, str))
+        elif isinstance(value, dict):
+            ids.update(
+                item for item in value.values() if isinstance(item, str)
+            )
+    return ids
+
+
+def _append_order(
+    pending: dict[int, tuple[dict, str]],
+    placements: dict[int, Placement],
+) -> list[int]:
+    """Order appends so an intra-batch dependency is durable first.
+
+    A crash between two records must never leave a processed dependent
+    citing a minted id whose own record stayed interrupted or unwritten —
+    dependencies commit before dependents, ties break by record index.
+    The closed record family cannot form reference cycles (only questions
+    cite other records); an impossible cycle still fails closed.
+    """
+
+    minted_to_index = {
+        minted: index
+        for index, (_, minted) in pending.items()
+        if index in placements
+    }
+    dependencies = {
+        index: [
+            minted_to_index[ref]
+            for ref in sorted(_row_reference_ids(placements[index].row))
+            if ref in minted_to_index and minted_to_index[ref] != index
+        ]
+        for index in placements
+    }
+    order: list[int] = []
+    done: set[int] = set()
+    remaining = sorted(placements)
+    while remaining:
+        deferred: list[int] = []
+        for index in remaining:
+            if all(dep in done for dep in dependencies[index]):
+                order.append(index)
+                done.add(index)
+            else:
+                deferred.append(index)
+        if len(deferred) == len(remaining):
+            raise IntakeFailure("reference-cycle")
+        remaining = deferred
+    return order
+
+
 def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
     source = envelope["source"]
     batch = envelope["batch"]
@@ -549,7 +606,7 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
     placements, failures = _classify_pending(instance, envelope, known, pending)
     results.update(failures)
 
-    for index in sorted(placements):
+    for index in _append_order(pending, placements):
         record, minted_id = pending[index]
         key = atlas_io.make_receipt_key(source, batch, index)
         kind = record["kind"]
