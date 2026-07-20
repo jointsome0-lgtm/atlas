@@ -13,6 +13,8 @@ atlas/
 data/
 state/
 intake/
+!fixtures/intake/
+!fixtures/intake/vera-example-batch.json
 graph/
 plans/
 secrets/

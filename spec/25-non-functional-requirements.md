@@ -92,11 +92,11 @@ atlas-graph            — graph emission (§10); the redacted
                          there, forbidden on the full graph (§20)
 atlas-snapshot         — state snapshot (§33.4)
 atlas-intake           — intake envelope + records (§33.2)
-report-import, report-batch, report-build
-                       — derived, purgeable reports (§12.2 step
-                         11, §13.2/§33.2, §20); their shapes stay
-                         their flows' to define — the ids are
-                         reserved so no report ships schema-less
+report-batch           — deterministic intake result (§33.2, #56)
+report-import, report-build
+                       — reserved derived, purgeable reports (§12.2
+                         step 11, §20); their shapes stay their
+                         flows' to define so no report ships schema-less
 ```
 
 The set is closed: a new persisted format registers here in the same change that creates it.
@@ -133,11 +133,12 @@ checked before use. Until a value lands through a Decision Log
 entry, the viewer refuses what it cannot bound (§24.2); the
 2,400-node line above stays a rendering fallback, never an
 acceptance bound.
-Foreign-input acceptance ceilings (#37, §24.2) — named here,
-values pending the same process: intake-batch total bytes,
-record count, per-record and per-string bytes, nesting depth
-(§33.2); imported-plan file bytes (§12); observer per-file
-bytes, manifest entries, per-session corpus bytes (§13).
+Foreign-input acceptance ceilings (#37, §24.2): intake batches
+≤ 16,777,216 total bytes, ≤ 16,384 records, ≤ 16,384 bytes per
+record, ≤ 8,192 bytes per string, nesting depth ≤ 8 (§33.2, #56).
+Values remain pending the same measured-floor process for
+imported-plan file bytes (§12), and observer per-file bytes,
+manifest entries, and per-session corpus bytes (§13).
 CLI contract (every script): exit 0 success, 1 failure, 2 usage;
 diagnostics to stderr, one per line, prefixed ERROR: / WARNING:;
 stdout carries the result summary.
@@ -152,4 +153,3 @@ derived export (§20, §33.4).
 ```
 
 ---
-

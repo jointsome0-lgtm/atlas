@@ -73,6 +73,8 @@ class ReasonCode(StrEnum):
     INVALID_RECEIPT_KEY = "invalid-receipt-key"
     INVALID_RECEIPT_TRANSITION = "invalid-receipt-transition"
     INVALID_RECEIPT_JOURNAL = "invalid-receipt-journal"
+    CONTENT_CONFLICT = "content-conflict"
+    PRESERVE_IO = "preserve-io"
 
 
 class DiagnosticLevel(StrEnum):
@@ -125,6 +127,8 @@ _EXPECTATIONS = {
     ReasonCode.INVALID_RECEIPT_JOURNAL: (
         "ordered schema-valid content-free receipt rows"
     ),
+    ReasonCode.CONTENT_CONFLICT: "byte-identical content at the canonical path",
+    ReasonCode.PRESERVE_IO: "one durable byte-identical canonical original",
 }
 
 
@@ -159,6 +163,14 @@ class ReceiptStatus:
         """Keys with an opened row but no processed row."""
 
         return self.opened - self.processed
+
+
+@dataclass(frozen=True)
+class DeliveredJSON:
+    """One bounded delivered JSON value and its byte-identical original."""
+
+    value: object
+    data: bytes
 
 
 class AtlasIOError(RuntimeError):
@@ -286,44 +298,154 @@ class AtlasInstance:
         except OSError:
             _fail(ReasonCode.UNSAFE_PATH, display)
         os.close(parent_fd)
-        try:
-            with os.fdopen(fd, "rb") as stream:
-                info = os.fstat(stream.fileno())
-                if not stat.S_ISREG(info.st_mode):
-                    _fail(ReasonCode.UNSAFE_PATH, display)
-                enforce_ceiling(
-                    info.st_size,
-                    maximum=max_bytes,
-                    kind="bytes",
-                    relative_path=display,
-                )
-                # Read one byte past the ceiling so growth after fstat still
-                # fails before a full decode.
-                data = stream.read(max_bytes + 1 if max_bytes is not None else 1)
-        except AtlasIOError:
-            raise
-        except OSError:
-            _fail(ReasonCode.UNSAFE_PATH, display)
-        enforce_ceiling(
-            len(data), maximum=max_bytes, kind="bytes", relative_path=display
-        )
-        if data.startswith(b"\xef\xbb\xbf"):
-            if not delivered:
-                _fail(ReasonCode.INVALID_UTF8, display)
-            data = data[3:]
-        if not delivered and b"\r" in data:
-            _fail(ReasonCode.INVALID_LINE_ENDING, display)
-        try:
-            text = data.decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
-            _fail(ReasonCode.INVALID_UTF8, display)
-        try:
-            return validate_atlas._json_loads(text)
-        except (json.JSONDecodeError, validate_atlas.JsonInputError):
-            _fail(ReasonCode.INVALID_JSON, display)
+        data = _read_bounded_fd(fd, max_bytes, display)
+        return _decode_json(data, delivered=delivered, display=display)
 
-    def validate_schema(self, value, schema_name: str) -> None:
-        """Validate a parsed value against one canonical registered schema."""
+    def read_delivered_json(
+        self,
+        path: str | os.PathLike[str],
+        *,
+        max_bytes: int | None,
+    ) -> DeliveredJSON:
+        """Read an explicit external delivery no-follow, bounded by fstat.
+
+        The caller still chooses the instance destination.  Returning the
+        original bytes lets the lane preserve exactly what was decoded,
+        without a second path open or a check/copy race.
+        """
+
+        try:
+            absolute = Path(os.path.abspath(path))
+        except (TypeError, ValueError, OSError):
+            _fail(ReasonCode.UNSAFE_PATH)
+        try:
+            fd, parent_fd = _open_under_root(
+                Path(absolute.anchor), absolute.parts[1:],
+                os.O_RDONLY
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NONBLOCK", 0),
+            )
+        except (OSError, IndexError):
+            _fail(ReasonCode.UNSAFE_PATH)
+        os.close(parent_fd)
+        data = _read_bounded_fd(fd, max_bytes, ".")
+        value = _decode_json(data, delivered=True, display=".")
+        return DeliveredJSON(value=value, data=data)
+
+    def preserve_bytes(
+        self,
+        relative_path: str | os.PathLike[str],
+        data: bytes,
+    ) -> bool:
+        """Durably preserve bytes at a canonical path without overwriting.
+
+        Returns True when this call created the original and False for an
+        identical replay.  Different existing bytes fail closed.
+        """
+
+        self._require_lock()
+        display = _safe_display_path(relative_path)
+        try:
+            relative = Path(relative_path)
+        except (TypeError, ValueError):
+            _fail(ReasonCode.UNSAFE_PATH)
+        if (
+            not isinstance(data, bytes)
+            or relative.is_absolute()
+            or not relative.parts
+            or any(part in {"", ".", ".."} for part in relative.parts)
+            or _is_ignored_name(relative.parts[0])
+        ):
+            _fail(ReasonCode.UNSAFE_PATH, display)
+
+        parent_fd = _ensure_directories(self.root, relative.parts[:-1], display)
+        name = relative.parts[-1]
+        read_flags = os.O_RDONLY
+        read_flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        read_flags |= getattr(os, "O_NONBLOCK", 0)
+        try:
+            existing_fd = os.open(name, read_flags, dir_fd=parent_fd)
+        except FileNotFoundError:
+            existing_fd = None
+        except OSError:
+            os.close(parent_fd)
+            _fail(ReasonCode.UNSAFE_PATH, display)
+        if existing_fd is not None:
+            try:
+                try:
+                    existing_size = os.fstat(existing_fd).st_size
+                except OSError:
+                    _fail(ReasonCode.UNSAFE_PATH, display)
+                if existing_size != len(data):
+                    os.close(existing_fd)
+                    existing_fd = None
+                    _fail(ReasonCode.CONTENT_CONFLICT, display)
+                existing = _read_bounded_fd(existing_fd, len(data), display)
+                existing_fd = None
+            finally:
+                if existing_fd is not None:
+                    with contextlib.suppress(OSError):
+                        os.close(existing_fd)
+                os.close(parent_fd)
+            if existing != data:
+                _fail(ReasonCode.CONTENT_CONFLICT, display)
+            return False
+
+        temp_name = None
+        temp_fd = None
+        for attempt in range(100):
+            candidate = f".{name}.tmp-{os.getpid()}-{attempt}"
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+            flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+            try:
+                temp_fd = os.open(candidate, flags, 0o600, dir_fd=parent_fd)
+                temp_name = candidate
+                break
+            except FileExistsError:
+                continue
+            except OSError:
+                os.close(parent_fd)
+                _fail(ReasonCode.PRESERVE_IO, display)
+        if temp_fd is None or temp_name is None:
+            os.close(parent_fd)
+            _fail(ReasonCode.PRESERVE_IO, display)
+        try:
+            offset = 0
+            while offset < len(data):
+                written = os.write(temp_fd, data[offset:])
+                if written <= 0:
+                    raise OSError("short write")
+                offset += written
+            os.fsync(temp_fd)
+            os.close(temp_fd)
+            temp_fd = None
+            # The instance lock is the single-writer exclusion (§25.6), so
+            # this same-directory rename cannot replace another Atlas write.
+            os.rename(temp_name, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+            temp_name = None
+            os.fsync(parent_fd)
+        except OSError:
+            if temp_fd is not None:
+                with contextlib.suppress(OSError):
+                    os.close(temp_fd)
+            if temp_name is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(temp_name, dir_fd=parent_fd)
+                    os.fsync(parent_fd)
+            os.close(parent_fd)
+            _fail(ReasonCode.PRESERVE_IO, display)
+        os.close(parent_fd)
+        return True
+
+    def schema_errors(
+        self,
+        value,
+        schema_name: str,
+        *,
+        definition: str | None = None,
+    ) -> tuple[str, ...]:
+        """Return content-free canonical schema errors for one definition."""
 
         schemas = _schema_registry()
         if not isinstance(schema_name, str):
@@ -331,14 +453,39 @@ class AtlasInstance:
         schema = schemas.get(schema_name)
         if schema is None:
             _fail(ReasonCode.UNKNOWN_SCHEMA)
+        target = schema
+        if definition is not None:
+            if not isinstance(definition, str):
+                _fail(ReasonCode.UNKNOWN_SCHEMA)
+            target = schema.get("$defs", {}).get(definition)
+            if target is None:
+                _fail(ReasonCode.UNKNOWN_SCHEMA)
         try:
-            errors = validate_atlas.SchemaValidator(schema).validate(value)
+            validator = validate_atlas.SchemaValidator(schema)
+            errors: list[str] = []
+            validator._validate(value, target, "$", errors)
         except validate_atlas.SchemaSubsetError:
             _fail(ReasonCode.SCHEMA_REGISTRY_INVALID)
-        if errors:
+        return tuple(errors)
+
+    def validate_schema(
+        self,
+        value,
+        schema_name: str,
+        *,
+        definition: str | None = None,
+    ) -> None:
+        """Validate a parsed value against one canonical registered schema."""
+
+        if self.schema_errors(value, schema_name, definition=definition):
             _fail(ReasonCode.SCHEMA_INVALID)
 
-    def validate_format(self, value: object) -> str:
+    def validate_format(
+        self,
+        value: object,
+        *,
+        definition: str | None = None,
+    ) -> str:
         """Check format/version and then the matching closed schema."""
 
         if not isinstance(value, Mapping):
@@ -360,7 +507,7 @@ class AtlasInstance:
         version_schema = schema.get("properties", {}).get("version", {})
         if version_schema.get("const") != version:
             _fail(ReasonCode.UNSUPPORTED_VERSION)
-        self.validate_schema(value, format_name)
+        self.validate_schema(value, format_name, definition=definition)
         return format_name
 
     @contextlib.contextmanager
@@ -687,6 +834,76 @@ def _schema_registry() -> dict[str, dict]:
     if errors:
         _fail(ReasonCode.SCHEMA_REGISTRY_INVALID)
     return schemas
+
+
+def _read_bounded_fd(fd: int, maximum: int | None, display: str) -> bytes:
+    """Read one already-open regular file after its fstat ceiling check."""
+
+    try:
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                _fail(ReasonCode.UNSAFE_PATH, display)
+            enforce_ceiling(
+                info.st_size,
+                maximum=maximum,
+                kind="bytes",
+                relative_path=display,
+            )
+            data = stream.read(maximum + 1 if maximum is not None else 1)
+    except AtlasIOError:
+        raise
+    except OSError:
+        _fail(ReasonCode.UNSAFE_PATH, display)
+    enforce_ceiling(
+        len(data), maximum=maximum, kind="bytes", relative_path=display
+    )
+    return data
+
+
+def _decode_json(data: bytes, *, delivered: bool, display: str):
+    """Decode one strict JSON value without echoing refused content."""
+
+    if data.startswith(b"\xef\xbb\xbf"):
+        if not delivered:
+            _fail(ReasonCode.INVALID_UTF8, display)
+        data = data[3:]
+    if not delivered and b"\r" in data:
+        _fail(ReasonCode.INVALID_LINE_ENDING, display)
+    try:
+        text = data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        _fail(ReasonCode.INVALID_UTF8, display)
+    try:
+        return validate_atlas._json_loads(text)
+    except (json.JSONDecodeError, validate_atlas.JsonInputError, RecursionError):
+        _fail(ReasonCode.INVALID_JSON, display)
+
+
+def _ensure_directories(root: Path, parts: tuple[str, ...], display: str) -> int:
+    """Open, and durably create when absent, a no-follow directory chain."""
+
+    try:
+        directory_fd = os.open(root, _DIR_FLAGS)
+    except OSError:
+        _fail(ReasonCode.PRESERVE_IO, display)
+    for component in parts:
+        try:
+            next_fd = os.open(component, _DIR_FLAGS, dir_fd=directory_fd)
+        except FileNotFoundError:
+            try:
+                os.mkdir(component, 0o700, dir_fd=directory_fd)
+                os.fsync(directory_fd)
+                next_fd = os.open(component, _DIR_FLAGS, dir_fd=directory_fd)
+            except OSError:
+                os.close(directory_fd)
+                _fail(ReasonCode.PRESERVE_IO, display)
+        except OSError:
+            os.close(directory_fd)
+            _fail(ReasonCode.UNSAFE_PATH, display)
+        os.close(directory_fd)
+        directory_fd = next_fd
+    return directory_fd
 
 
 def _validate_instance_root(root: str | os.PathLike[str]) -> Path:

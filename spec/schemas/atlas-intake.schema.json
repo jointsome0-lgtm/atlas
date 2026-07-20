@@ -14,6 +14,20 @@
   "required": ["format", "version", "source", "batch", "records"],
   "additionalProperties": false,
   "$defs": {
+    "envelope": {
+      "type": "object",
+      "properties": {
+        "format": {"const": "atlas-intake"},
+        "version": {"type": "integer", "const": 1},
+        "source": {"type": "string", "pattern": "^(?!(?:import|observe)$)[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        "batch": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        "sensitivity": {"$ref": "#/$defs/sensitivity"},
+        "records": {"type": "array"}
+      },
+      "required": ["format", "version", "source", "batch", "records"],
+      "additionalProperties": false,
+      "description": "Envelope-only validation for §33.2 whole-batch acceptance; records are validated individually against their closed definitions."
+    },
     "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
     "nodeId": {"type": "string", "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"},
     "sensitivity": {
