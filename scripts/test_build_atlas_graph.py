@@ -536,8 +536,8 @@ class BuilderIntegrationTests(unittest.TestCase):
                 '{"pid": 1, "started_at": "2026-07-17T00:00:00Z"}\n',
                 encoding="utf-8",
             )
-            output = Path(directory) / "out" / "atlas-graph.json"
-            argv = ["build_atlas_graph.py", directory, str(output)]
+            output = Path(directory) / "graph" / "atlas-graph.json"
+            argv = ["build_atlas_graph.py", str(DEMO), str(output)]
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (
@@ -772,7 +772,7 @@ class BuilderIntegrationTests(unittest.TestCase):
 
     def test_main_writes_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "atlas-graph.json"
+            output = Path(directory) / "graph" / "atlas-graph.json"
             stdout = io.StringIO()
             stderr = io.StringIO()
             argv = ["build_atlas_graph.py", str(DEMO), str(output)]
@@ -787,7 +787,7 @@ class BuilderIntegrationTests(unittest.TestCase):
             self.assertEqual("atlas-graph", graph["format"])
             self.assertEqual(1, graph["version"])
             # §20.2: the write is temp-file + atomic rename — nothing left.
-            self.assertEqual([], list(Path(directory).glob("*.tmp")))
+            self.assertEqual([], list(output.parent.glob("*.tmp")))
 
 
 def _materialize(tree: dict) -> tempfile.TemporaryDirectory:
@@ -983,8 +983,6 @@ class LaneBTests(unittest.TestCase):
             graph = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
 
-    # expectedFailure removed by the durability PR (#60)
-    @unittest.expectedFailure
     def test_missing_input_root_preserves_previous_output(self):
         # §20.2/#60: input validation precedes output handling, so a missing
         # curated tree fails clearly without clobbering the last good graph.
@@ -1005,8 +1003,6 @@ class LaneBTests(unittest.TestCase):
             # artifact may appear beside the previous graph.
             self.assertEqual([output], list(output.parent.iterdir()))
 
-    # expectedFailure removed by the durability PR (#60)
-    @unittest.expectedFailure
     def test_mis_mounted_input_root_preserves_previous_output(self):
         # §20.2/#60: a directory with none of the curated subdirectories is
         # not a valid input mount and must fail before touching the output.
@@ -1029,13 +1025,40 @@ class LaneBTests(unittest.TestCase):
             # artifact may appear beside the previous graph.
             self.assertEqual([output], list(output.parent.iterdir()))
 
-    # expectedFailure removed by the durability PR (#60)
-    @unittest.expectedFailure
+    def test_empty_curated_root_still_builds(self):
+        # §20.1: empty inputs still build — a fresh instance whose atlas/
+        # exists with no domain subdirectories yet is not a mis-mount.
+        with tempfile.TemporaryDirectory() as directory:
+            instance = Path(directory) / "instance"
+            curated = instance / "atlas"
+            curated.mkdir(parents=True)
+            output = instance / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(curated, output)
+            self.assertEqual(0, code, stderr)
+            graph = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual([], graph["nodes"])
+        self.assertNotIn("generated_at", graph)
+
+    def test_mismatched_instance_roots_are_rejected(self):
+        # §25.6: INSTANCE/atlas input with an output deriving a DIFFERENT
+        # instance root would lock the wrong root and race a writer of the
+        # instance actually being read — refused before the lock.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            curated = root / "instance" / "atlas"
+            (curated / "concepts").mkdir(parents=True)
+            other = root / "other"
+            output = other / "graph" / "atlas-graph.json"
+            code, _, stderr = self._run_main(curated, output)
+            self.assertEqual(1, code)
+            self.assertIn("ERROR:", stderr)
+            self.assertIn("instance", stderr)
+            self.assertFalse(other.exists())
+            self.assertEqual([], list(root.rglob(".atlas-lock")))
+
     def test_missing_input_root_is_rejected_before_lock_acquisition(self):
         self._assert_invalid_root_rejected_before_lock(mis_mounted=False)
 
-    # expectedFailure removed by the durability PR (#60)
-    @unittest.expectedFailure
     def test_mis_mounted_input_root_is_rejected_before_lock_acquisition(self):
         self._assert_invalid_root_rejected_before_lock(mis_mounted=True)
 
@@ -1155,14 +1178,11 @@ class LaneBTests(unittest.TestCase):
             graph = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual("2026-01-16T00:00:00Z", graph["generated_at"])
 
-    # expectedFailure removed by the durability PR (#60)
-    @unittest.expectedFailure
     def test_failed_final_rename_preserves_previous_output(self):
         # §20.2: emission uses a same-directory temp plus atomic rename, so
         # a failure at the final rename cannot damage the last good graph —
         # and §25.8 requires the failure be reported as exit 1 with an
-        # ERROR: diagnostic, never an uncaught traceback (today it
-        # propagates; #60 lands the contract).
+        # ERROR: diagnostic, never an uncaught traceback.
         with _materialize({
             "concepts/c.md": _CONCEPT % ("c", "C"),
         }) as directory:
