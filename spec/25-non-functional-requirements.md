@@ -136,6 +136,9 @@ acceptance bound.
 Foreign-input acceptance ceilings (#37, §24.2): intake batches
 ≤ 16,777,216 total bytes, ≤ 16,384 records, ≤ 16,384 bytes per
 record, ≤ 8,192 bytes per string, nesting depth ≤ 8 (§33.2, #56).
+Manual-capture record file (#47, §26.1): ≤ 16,384 total bytes,
+≤ 8,192 bytes per string, nesting depth ≤ 8; the appended row
+keeps the journal-row ceiling above.
 Values remain pending the same measured-floor process for
 imported-plan file bytes (§12), and observer per-file bytes,
 manifest entries, and per-session corpus bytes (§13).

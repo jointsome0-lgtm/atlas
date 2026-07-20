@@ -13,9 +13,11 @@ support links (supported_by in material files, rendered)
 suggested routes
 state journals (JSONL, §8)
 observation floor: documented manual capture (#23) — the §9
-  journal row shapes appended by hand into state/, trail segments
-  hand-authored under atlas/trails/ (§8); enough for a real
-  artifact to become evidence, movement, and influence input
+  journal row shapes appended by hand into state/ or through
+  scripts/append_record.py (#47 — the validated, receipted
+  append; §33.2's manual/ lane), trail segments hand-authored
+  under atlas/trails/ (§8); enough for a real artifact to become
+  evidence, movement, and influence input
 trail template
 influence computation (in the builder)
 graph builder

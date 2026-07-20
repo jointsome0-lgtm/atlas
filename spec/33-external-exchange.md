@@ -76,10 +76,11 @@ source and batch are slugs — lowercase letters, digits, hyphens
 — so intake/<source>/ paths and <source>/<batch>#<n> receipt
 keys parse unambiguously by construction; no escaping scheme
 exists. A delivery violating this is refused in the batch
-report, like a content-mismatched batch id. import and observe
-are reserved — the direct lanes' receipt namespaces (§12.4,
-§13.2) — and a delivery claiming either source is refused the
-same way. Sensitive source and batch slugs follow §34.6:
+report, like a content-mismatched batch id. import, observe,
+and manual are reserved — the direct lanes' receipt namespaces
+(§12.4, §13.2, and §26.1's validated manual append under
+manual/<date-serial>#0 — a batch of one on §12.4's pattern) —
+and a delivery claiming any of them is refused the same way. Sensitive source and batch slugs follow §34.6:
 receipts survive purge (§34.2) carrying <source>/<batch>
 verbatim, so a telling label outlives the content it names;
 atlas cannot tell — source is opaque — and mints no substitute
