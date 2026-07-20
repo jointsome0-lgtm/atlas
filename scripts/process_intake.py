@@ -494,7 +494,11 @@ def _make_report(source: str, batch: str, records: list[dict]) -> dict:
     }
 
 
-def _conflict_report(envelope: dict) -> dict:
+def _conflict_report(
+    envelope: dict,
+    classification: str = "conflict",
+    reason: str = "batch-content-conflict",
+) -> dict:
     records = []
     source = envelope["source"]
     batch = envelope["batch"]
@@ -504,8 +508,8 @@ def _conflict_report(envelope: dict) -> dict:
             _result(
                 index,
                 key,
-                "conflict",
-                "batch-content-conflict",
+                classification,
+                reason,
                 f"/records/{index}",
                 _minted_id(record.get("kind") if isinstance(record, dict) else None,
                            source, batch, index),
@@ -809,17 +813,35 @@ def main(argv: list[str] | None = None) -> int:
                     relative, max_bytes=INTAKE_BATCH_BYTES, delivered=True
                 )
 
-            instance.validate_format(envelope, definition="envelope")
-            display = f"intake/{envelope['source']}/{envelope['batch']}.json"
-            _enforce_batch_structure(envelope, display)
-            canonical = display
+            refusal_line = "batch-content-conflict; expected one immutable delivery"
+            if (
+                isinstance(envelope, Mapping)
+                and envelope.get("source") in atlas_io.RESERVED_RECEIPT_NAMESPACES
+                and isinstance(envelope.get("batch"), str)
+                and _SLUG_RE.fullmatch(envelope["batch"]) is not None
+                and isinstance(envelope.get("records"), list)
+            ):
+                # §33.2: a delivery claiming a reserved direct-lane source is
+                # refused in the batch report, like a content-mismatched
+                # batch id — never preserved, never a bare schema error.
+                display = f"intake/{envelope['source']}/{envelope['batch']}.json"
+                _enforce_batch_structure(envelope, display)
+                report = _conflict_report(envelope, "rejected", "reserved-source")
+                refusal_line = "reserved-source; expected a non-reserved source slug"
+                whole_conflict = True
 
-            if requested is not None and requested != (
+            if report is None:
+                instance.validate_format(envelope, definition="envelope")
+                display = f"intake/{envelope['source']}/{envelope['batch']}.json"
+                _enforce_batch_structure(envelope, display)
+                canonical = display
+
+            if report is None and requested is not None and requested != (
                 envelope["source"], envelope["batch"]
             ):
                 report = _conflict_report(envelope)
                 whole_conflict = True
-            elif delivered_bytes is not None:
+            elif report is None and delivered_bytes is not None:
                 supplied = Path(os.path.abspath(value))
                 canonical_absolute = instance.root / canonical
                 intake_root = instance.root / "intake"
@@ -873,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
         if whole_conflict:
             print(
                 f"ERROR: intake/{report['source']}/{report['batch']}.json: "
-                "batch-content-conflict; expected one immutable delivery",
+                f"{refusal_line}",
                 file=sys.stderr,
             )
         else:

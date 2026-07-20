@@ -39,6 +39,7 @@
         "derived-row-too-large",
         "interrupted-receipt",
         "batch-content-conflict",
+        "reserved-source",
         "id-conflict"
       ]
     },

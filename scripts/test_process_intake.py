@@ -551,21 +551,35 @@ class RefusalAndPlacementTests(unittest.TestCase):
 class EnvelopeAndCeilingTests(unittest.TestCase):
     def test_invalid_slugs_reserved_sources_and_version_refuse_envelope(self):
         cases = [
-            batch([], source="Upper"),
-            batch([], source="import"),
-            batch([], source="observe"),
-            batch([], batch="bad/slash"),
-            batch([], version=2),
+            (batch([], source="Upper"), False),
+            (batch([encounter()], source="import"), True),
+            (batch([encounter()], source="observe"), True),
+            (batch([], batch="bad/slash"), False),
+            (batch([], version=2), False),
         ]
-        for position, value in enumerate(cases):
+        for position, (value, reported) in enumerate(cases):
             with self.subTest(position=position), private_instance() as root, \
                     tempfile.TemporaryDirectory() as outside:
                 delivery = write_batch(Path(outside), value)
                 code, report, stderr = run_main(root, "--batch-file", delivery)
                 self.assertEqual(1, code)
-                self.assertIsNone(report)
                 self.assertTrue(stderr.startswith("ERROR:"), stderr)
                 self.assertEqual([], list((root / "state").glob("*.jsonl")))
+                if reported:
+                    # §33.2: a reserved direct-lane source is refused in the
+                    # batch report like a content-mismatched batch id —
+                    # never preserved, never a bare schema error.
+                    self.assertEqual(
+                        ["rejected"],
+                        [item["class"] for item in report["records"]],
+                    )
+                    self.assertEqual(
+                        "reserved-source", report["records"][0]["reason"]
+                    )
+                    self.assertIn("reserved-source", stderr)
+                    self.assertFalse((root / "intake").exists())
+                else:
+                    self.assertIsNone(report)
 
     def test_each_structural_ceiling_refuses_whole_batch(self):
         cases = [
