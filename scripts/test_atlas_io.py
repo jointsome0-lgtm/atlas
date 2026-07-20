@@ -494,6 +494,31 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_JOURNAL,
                          raised.exception.diagnostic.reason)
 
+    def test_rotated_vs_rotated_reversed_pair_is_invalid(self):
+        key = atlas_io.make_receipt_key("vera-source", "2026-07-19-005", 0)
+        with fake_instance() as root:
+            rotated = root / "state" / "receipts"
+            rotated.mkdir()
+            (rotated / "2025.jsonl").write_text(
+                json.dumps(
+                    {"intake": key, "marker": "processed", "date": "2025-12-31"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (rotated / "2026.jsonl").write_text(
+                json.dumps(
+                    {"intake": key, "marker": "opened", "date": "2026-01-01"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            instance = atlas_io.AtlasInstance(root)
+            with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                instance.receipt_status()
+        self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_JOURNAL,
+                         raised.exception.diagnostic.reason)
+
     def test_processed_without_any_opened_row_is_invalid(self):
         key = atlas_io.make_receipt_key("vera-source", "2026-07-19-003", 0)
         with fake_instance() as root:

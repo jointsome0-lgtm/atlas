@@ -541,14 +541,19 @@ class AtlasInstance:
                         )
                     key = row["intake"]
                     marker = row["marker"]
-                    # Concatenation order is a storage artifact — a processed
-                    # row in the direct file may close an opened row in a
-                    # rotated file — so cross-file order is free, but within
-                    # one journal §33.2's pair is ordered: duplicates and a
-                    # same-file processed-before-opened reversal are illegal.
+                    # §33.2's pair is ordered; the one reversal appends can
+                    # create is a processed row in the direct file closing an
+                    # opened row already rotated away, so only that pairing
+                    # is order-free — duplicates, same-file reversals, and
+                    # rotated-vs-rotated reversals are illegal.
                     if marker == "opened":
+                        reversal_ok = (
+                            key in processed
+                            and processed[key][0] == "state/receipts.jsonl"
+                            and relative != "state/receipts.jsonl"
+                        )
                         illegal = key in opened or (
-                            key in processed and processed[key][0] == relative
+                            key in processed and not reversal_ok
                         )
                     else:
                         illegal = key in processed
