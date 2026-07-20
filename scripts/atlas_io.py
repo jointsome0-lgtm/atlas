@@ -406,7 +406,8 @@ class AtlasInstance:
         Only §8's registered journal shapes are writable — state/<stem>.jsonl
         or a one-level rotation state/<stem>/<file>.jsonl — because those are
         the only paths the fold and the validator read; the row schema is the
-        stem's own.
+        stem's own. Receipts are excluded: their rows carry the §33.2
+        transition contract and go through append_receipt only.
         """
 
         display = _safe_display_path(relative_path)
@@ -422,9 +423,19 @@ class AtlasInstance:
             and journal_path.suffix == ".jsonl"
         ):
             stem = journal_path.stem if len(parts) == 2 else parts[1]
-            schema_name = _JOURNAL_SCHEMAS.get(stem)
+            if stem != "receipts":
+                schema_name = _JOURNAL_SCHEMAS.get(stem)
         if schema_name is None:
             _fail(ReasonCode.INVALID_JOURNAL_PATH)
+        return self._append(relative_path, display, record, schema_name)
+
+    def _append(
+        self,
+        relative_path: str | os.PathLike[str],
+        display: str,
+        record: Mapping[str, object],
+        schema_name: str,
+    ) -> AppendResult:
         self._require_lock()
         self.validate_schema(record, schema_name)
         try:
@@ -497,9 +508,11 @@ class AtlasInstance:
             legal = key in current.opened and key not in current.processed
         if not legal:
             _fail(ReasonCode.INVALID_RECEIPT_TRANSITION, "state/receipts.jsonl")
-        return self.append_record(
+        return self._append(
+            "state/receipts.jsonl",
             "state/receipts.jsonl",
             {"intake": key, "marker": marker, "date": date},
+            "journal-receipt",
         )
 
     def receipt_status(self) -> ReceiptStatus:
@@ -530,12 +543,16 @@ class AtlasInstance:
                     marker = row["marker"]
                     # Concatenation order is a storage artifact — a processed
                     # row in the direct file may close an opened row in a
-                    # rotated file — so only duplicates and, below, orphans
-                    # are illegal, never cross-file order.
-                    duplicate = (
-                        key in opened if marker == "opened" else key in processed
-                    )
-                    if duplicate:
+                    # rotated file — so cross-file order is free, but within
+                    # one journal §33.2's pair is ordered: duplicates and a
+                    # same-file processed-before-opened reversal are illegal.
+                    if marker == "opened":
+                        illegal = key in opened or (
+                            key in processed and processed[key][0] == relative
+                        )
+                    else:
+                        illegal = key in processed
+                    if illegal:
                         _fail(
                             ReasonCode.INVALID_RECEIPT_JOURNAL,
                             relative,

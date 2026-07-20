@@ -454,6 +454,46 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(frozenset({key}), status.processed)
         self.assertEqual(frozenset(), status.interrupted)
 
+    def test_generic_appender_refuses_the_receipts_journal(self):
+        row = {
+            "intake": "vera-source/2026-07-20-001#0",
+            "marker": "processed",
+            "date": "2026-07-20",
+        }
+        with fake_instance() as root:
+            instance = atlas_io.AtlasInstance(root)
+            with instance.lock():
+                for candidate in (
+                    "state/receipts.jsonl",
+                    "state/receipts/2026.jsonl",
+                ):
+                    with self.subTest(candidate=candidate), self.assertRaises(
+                        atlas_io.AtlasIOError
+                    ) as raised:
+                        instance.append_record(candidate, row)
+                    self.assertEqual(
+                        atlas_io.ReasonCode.INVALID_JOURNAL_PATH,
+                        raised.exception.diagnostic.reason,
+                    )
+            self.assertFalse((root / "state" / "receipts.jsonl").exists())
+
+    def test_same_file_reversed_receipt_pair_is_invalid(self):
+        key = atlas_io.make_receipt_key("vera-source", "2026-07-19-004", 0)
+        rows = [
+            {"intake": key, "marker": "processed", "date": "2026-07-19"},
+            {"intake": key, "marker": "opened", "date": "2026-07-19"},
+        ]
+        with fake_instance() as root:
+            (root / "state" / "receipts.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            instance = atlas_io.AtlasInstance(root)
+            with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                instance.receipt_status()
+        self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_JOURNAL,
+                         raised.exception.diagnostic.reason)
+
     def test_processed_without_any_opened_row_is_invalid(self):
         key = atlas_io.make_receipt_key("vera-source", "2026-07-19-003", 0)
         with fake_instance() as root:
