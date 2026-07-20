@@ -395,6 +395,35 @@ class LockAndAppendTests(unittest.TestCase):
                 instance.append_record("state/artifacts.jsonl", second)
                 self.assertEqual(2, len(target.read_bytes().splitlines()))
 
+    def test_failed_parent_fsync_unlinks_the_created_file(self):
+        real_sync_dir = atlas_io._sync_dir
+        calls = {"n": 0}
+
+        def failing_sync_dir(directory):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("synthetic dir fsync failure")
+            return real_sync_dir(directory)
+
+        with fake_instance() as root:
+            instance = atlas_io.AtlasInstance(root)
+            target = root / "state" / "artifacts.jsonl"
+            with instance.lock():
+                with unittest.mock.patch.object(
+                    atlas_io, "_sync_dir", failing_sync_dir
+                ), self.assertRaises(atlas_io.AtlasIOError) as raised:
+                    instance.append_record(
+                        "state/artifacts.jsonl", VALID_ARTIFACT
+                    )
+                self.assertEqual(atlas_io.ReasonCode.APPEND_IO,
+                                 raised.exception.diagnostic.reason)
+                self.assertFalse(target.exists())
+                result = instance.append_record(
+                    "state/artifacts.jsonl", VALID_ARTIFACT
+                )
+                self.assertTrue(result.created)
+                self.assertEqual(1, len(target.read_bytes().splitlines()))
+
     def test_incomplete_existing_jsonl_is_refused_without_append(self):
         with fake_instance() as root:
             target = root / "state" / "artifacts.jsonl"

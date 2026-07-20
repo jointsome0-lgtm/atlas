@@ -499,7 +499,16 @@ class AtlasInstance:
                 os.close(fd)
             created = before is None
             if created:
-                _sync_dir(parent)
+                try:
+                    _sync_dir(parent)
+                except OSError:
+                    # The row is not durable until its new file's directory
+                    # entry is; unlink the created file so a retry does not
+                    # see a phantom row.
+                    with contextlib.suppress(OSError):
+                        path.unlink()
+                        _sync_dir(parent)
+                    _fail(ReasonCode.APPEND_IO, display)
         except AtlasIOError:
             raise
         except OSError:
