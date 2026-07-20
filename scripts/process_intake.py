@@ -12,6 +12,7 @@ from typing import Mapping
 
 import atlas_io
 import build_atlas_graph
+import validate_atlas
 
 
 # Measured-floor corpus (scripts/test_process_intake.py): the Vera Example
@@ -163,7 +164,11 @@ def _enforce_batch_structure(batch: Mapping[str, object], display: str) -> None:
 def _minted_id(kind: object, source: str, batch: str, index: int) -> str | None:
     if not isinstance(kind, str) or kind not in _JOURNALS:
         return None
-    return f"{kind}:{source}-{batch}-{index}"
+    # The trailing source segment count keeps minting injective: slugs may
+    # contain hyphens, so "a-b"/"c" and "a"/"b-c" would otherwise collapse
+    # into one id while their receipt keys stay distinct.
+    segments = source.count("-") + 1
+    return f"{kind}:{source}-{batch}-{index}-{segments}"
 
 
 def _pointer_from_schema_error(error: str, index: int) -> str:
@@ -320,11 +325,22 @@ def _place_record(
     )
 
 
-def _load_known_ids(instance: atlas_io.AtlasInstance) -> dict[str, str]:
-    """Reuse the builder's curated+journal reader and retirement resolution."""
+def _load_known_ids(
+    instance: atlas_io.AtlasInstance, interrupted: frozenset[str]
+) -> dict[str, str]:
+    """Reuse the builder's curated+journal reader and retirement resolution.
+
+    §33.2: an interrupted record's outputs await the user's explicit
+    reconciliation — a journal row whose intake key has no processed receipt
+    must not resolve references, or later records would silently build on
+    state the user has not resolved.
+    """
 
     try:
         graph, errors, _warnings = build_atlas_graph.build(instance.root / "atlas")
+        withheld = _interrupted_output_ids(instance, interrupted)
+    except (atlas_io.AtlasIOError, IntakeFailure):
+        raise
     except Exception as exc:
         raise IntakeFailure("instance-state-invalid") from exc
     if errors:
@@ -332,10 +348,35 @@ def _load_known_ids(instance: atlas_io.AtlasInstance) -> dict[str, str]:
     known: dict[str, str] = {}
     for node in graph["nodes"]:
         node_id = node["id"]
+        if node_id in withheld:
+            continue
         known[node_id] = node_id
         for retired in node.get("formerly", []):
             known[retired] = node_id
     return known
+
+
+def _interrupted_output_ids(
+    instance: atlas_io.AtlasInstance, interrupted: frozenset[str]
+) -> set[str]:
+    """Collect journal ids appended by records that never reached processed."""
+
+    ids: set[str] = set()
+    if not interrupted:
+        return ids
+    state = instance.path("state")
+    for stem in ("encounters", "artifacts", "questions"):
+        for found in validate_atlas._journal_paths(state, stem):
+            relative = found.relative_to(instance.root).as_posix()
+            path = atlas_io._NoFollowPath(instance.root, instance.path(relative))
+            for _number, row in validate_atlas._read_jsonl(path):
+                if (
+                    isinstance(row, dict)
+                    and row.get("intake") in interrupted
+                    and isinstance(row.get("id"), str)
+                ):
+                    ids.add(row["id"])
+    return ids
 
 
 def _crash(point: str, index: int) -> None:
@@ -447,8 +488,8 @@ def _classify_pending(
 def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
     source = envelope["source"]
     batch = envelope["batch"]
-    known = _load_known_ids(instance)
     receipt_status = instance.receipt_status()
+    known = _load_known_ids(instance, receipt_status.interrupted)
     results: dict[int, dict] = {}
     pending: dict[int, tuple[dict, str]] = {}
 

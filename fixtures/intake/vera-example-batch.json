@@ -26,7 +26,7 @@
       "date": "2026-07-20",
       "text": "Which retry boundary should the next Vera Example probe isolate?",
       "refs": [
-        {"id": "artifact:vera-example-2026-07-20-001-1"},
+        {"id": "artifact:vera-example-2026-07-20-001-1-2"},
         {"id": "concept:idempotency"}
       ]
     }

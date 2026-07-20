@@ -129,7 +129,7 @@ class HappyPathTests(unittest.TestCase):
             self.assertEqual(3, len(evidence))
             self.assertTrue(all("intake" in row for row in evidence))
             self.assertEqual(
-                "artifact:vera-example-2026-07-20-001-1",
+                "artifact:vera-example-2026-07-20-001-1-2",
                 rows(root, "questions")[0]["source"]["artifact"],
             )
             before = {
@@ -222,7 +222,7 @@ class RefusalAndPlacementTests(unittest.TestCase):
         # cited record fails instead, the citing record fails with it, never
         # applying on a second pass over the same immutable batch.
         forward = [
-            question(refs=[{"id": "artifact:vera-example-2026-07-20-002-1"}]),
+            question(refs=[{"id": "artifact:vera-example-2026-07-20-002-1-2"}]),
             artifact(),
         ]
         with private_instance() as root, tempfile.TemporaryDirectory() as outside:
@@ -233,7 +233,7 @@ class RefusalAndPlacementTests(unittest.TestCase):
                          [item["class"] for item in report["records"]])
 
         cascade = [
-            question(refs=[{"id": "artifact:vera-example-2026-07-20-002-1"}]),
+            question(refs=[{"id": "artifact:vera-example-2026-07-20-002-1-2"}]),
             {key: value for key, value in artifact().items()
              if key != "evidence_strength"},
         ]
@@ -247,6 +247,60 @@ class RefusalAndPlacementTests(unittest.TestCase):
                          [item["class"] for item in first["records"]])
         self.assertEqual([item["class"] for item in first["records"]],
                          [item["class"] for item in second["records"]])
+
+    def test_hyphenated_slugs_mint_distinct_injective_ids(self):
+        # "a-b"/"c" and "a"/"b-c" have distinct receipt keys and must mint
+        # distinct ids — never collapse into one id and a false id-conflict.
+        with private_instance() as root, tempfile.TemporaryDirectory() as outside:
+            first = write_batch(
+                Path(outside), batch([encounter()], source="a-b", batch="c"),
+                "one.json",
+            )
+            second = write_batch(
+                Path(outside), batch([encounter()], source="a", batch="b-c"),
+                "two.json",
+            )
+            code_one, report_one, stderr_one = run_main(
+                root, "--batch-file", first
+            )
+            code_two, report_two, stderr_two = run_main(
+                root, "--batch-file", second
+            )
+        self.assertEqual(0, code_one, stderr_one)
+        self.assertEqual(0, code_two, stderr_two)
+        self.assertNotEqual(report_one["records"][0]["id"],
+                            report_two["records"][0]["id"])
+
+    def test_interrupted_outputs_do_not_resolve_references(self):
+        # §33.2: a journal row appended by a record that never reached its
+        # processed receipt awaits explicit reconciliation — a later batch
+        # citing its id must not silently build on it.
+        with private_instance() as root, tempfile.TemporaryDirectory() as outside:
+            first = write_batch(
+                Path(outside),
+                batch([artifact()], batch="2026-07-20-003"),
+                "one.json",
+            )
+            with mock.patch.dict(os.environ, {
+                "ATLAS_INTAKE_CRASH": "after-output:0"
+            }, clear=False):
+                code, _, _ = run_main(root, "--batch-file", first)
+            self.assertEqual(1, code)
+            self.assertEqual(1, len(rows(root, "artifacts")))
+            follow = write_batch(
+                Path(outside),
+                batch(
+                    [question(refs=[
+                        {"id": "artifact:vera-example-2026-07-20-003-0-2"}
+                    ])],
+                    batch="2026-07-20-004",
+                ),
+                "two.json",
+            )
+            code, report, stderr = run_main(root, "--batch-file", follow)
+        self.assertEqual(1, code)
+        self.assertEqual("unresolved", report["records"][0]["class"])
+        self.assertEqual(0, len(rows(root, "questions")))
 
     def test_missing_original_with_receipts_refuses_redelivery(self):
         # §33.2: receipts on record with the canonical original gone mean a
@@ -298,7 +352,7 @@ class RefusalAndPlacementTests(unittest.TestCase):
         self.assertNotIn(instruction, stderr)
 
     def test_question_requires_one_source_per_kind_and_keeps_region_pulls(self):
-        base_id = "artifact:vera-example-2026-07-20-002-0"
+        base_id = "artifact:vera-example-2026-07-20-002-0-2"
         records = [
             artifact(),
             question(refs=[{"id": "concept:idempotency"}]),
@@ -355,7 +409,7 @@ class RefusalAndPlacementTests(unittest.TestCase):
 
     def test_minted_id_collision_is_per_record_conflict(self):
         colliding = {
-            "id": "encounter:vera-example-2026-07-20-002-0",
+            "id": "encounter:vera-example-2026-07-20-002-0-2",
             "date": "2026-07-19",
             "target": "material:fastapi-tutorial",
             "depth": "skim",
