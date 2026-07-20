@@ -377,12 +377,80 @@ def _conflict_report(envelope: dict) -> dict:
     return _make_report(source, batch, records)
 
 
+def _classify_pending(
+    instance: atlas_io.AtlasInstance,
+    envelope: dict,
+    known: dict[str, str],
+    pending: dict[int, tuple[dict, str]],
+) -> tuple[dict[int, Placement], dict[int, dict]]:
+    """Classify pending records against a fixpoint of intra-batch ids.
+
+    §33.2 determinism: a reference to any other record of the same delivery
+    resolves in one run — the candidate set starts as every pending record's
+    minted id (self excluded) and shrinks as records fail, so the outcome
+    never depends on record order or on a second pass over the batch.
+    """
+
+    source = envelope["source"]
+    batch = envelope["batch"]
+    failures: dict[int, dict] = {}
+    surviving = dict(pending)
+    while True:
+        placements: dict[int, Placement] = {}
+        candidate_ids = {
+            minted: minted for _, minted in surviving.values()
+        }
+        changed = False
+        for index, (record, minted_id) in list(surviving.items()):
+            key = atlas_io.make_receipt_key(source, batch, index)
+            resolution = {**candidate_ids, **known}
+            resolution.pop(minted_id, None)
+            placement = _place_record(
+                record, envelope, resolution, key, minted_id, index
+            )
+            failure: dict | None = None
+            if placement.row is None:
+                failure = _result(
+                    index, key, placement.classification, placement.reason,
+                    placement.pointer, minted_id,
+                )
+            else:
+                kind = record["kind"]
+                try:
+                    atlas_io.enforce_ceiling(
+                        len(_encoded(placement.row)),
+                        maximum=atlas_io.JOURNAL_ROW_BYTES,
+                        kind="bytes",
+                        relative_path=_JOURNALS[kind],
+                    )
+                except atlas_io.AtlasIOError:
+                    failure = _result(
+                        index, key, "rejected", "derived-row-too-large",
+                        f"/records/{index}", minted_id,
+                    )
+                else:
+                    if instance.schema_errors(placement.row, f"journal-{kind}"):
+                        failure = _result(
+                            index, key, "rejected", "derived-row-invalid",
+                            f"/records/{index}", minted_id,
+                        )
+            if failure is not None:
+                failures[index] = failure
+                del surviving[index]
+                changed = True
+            else:
+                placements[index] = placement
+        if not changed:
+            return placements, failures
+
+
 def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
     source = envelope["source"]
     batch = envelope["batch"]
     known = _load_known_ids(instance)
     receipt_status = instance.receipt_status()
-    results: list[dict] = []
+    results: dict[int, dict] = {}
+    pending: dict[int, tuple[dict, str]] = {}
 
     for index, record in enumerate(envelope["records"]):
         key = atlas_io.make_receipt_key(source, batch, index)
@@ -391,94 +459,73 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
         minted_id = _minted_id(kind, source, batch, index)
 
         if key in receipt_status.processed:
-            results.append(
-                _result(index, key, "replayed", "processed-receipt",
-                        pointer, minted_id)
+            results[index] = _result(
+                index, key, "replayed", "processed-receipt", pointer, minted_id
             )
             continue
         if key in receipt_status.interrupted:
-            results.append(
-                _result(index, key, "interrupted", "interrupted-receipt",
-                        pointer, minted_id)
+            results[index] = _result(
+                index, key, "interrupted", "interrupted-receipt",
+                pointer, minted_id,
             )
             continue
 
         definition = _RECORD_DEFINITIONS.get(kind) if isinstance(kind, str) else None
         if definition is None:
-            results.append(
-                _result(index, key, "rejected", "schema-invalid",
-                        pointer + "/kind", minted_id)
+            results[index] = _result(
+                index, key, "rejected", "schema-invalid",
+                pointer + "/kind", minted_id,
             )
             continue
         schema_errors = instance.schema_errors(
             record, "atlas-intake", definition=definition
         )
         if schema_errors:
-            results.append(
-                _result(
-                    index,
-                    key,
-                    "rejected",
-                    "schema-invalid",
-                    _pointer_from_schema_error(schema_errors[0], index),
-                    minted_id,
-                )
+            results[index] = _result(
+                index,
+                key,
+                "rejected",
+                "schema-invalid",
+                _pointer_from_schema_error(schema_errors[0], index),
+                minted_id,
             )
             continue
 
         if minted_id is not None and minted_id in known:
-            results.append(
-                _result(index, key, "conflict", "id-conflict",
-                        pointer, minted_id)
+            results[index] = _result(
+                index, key, "conflict", "id-conflict", pointer, minted_id
             )
             continue
 
         if kind == "plan":
-            placement = Placement("unsupported", "unsupported-plan", pointer)
-        else:
-            placement = _place_record(
-                record, envelope, known, key, minted_id, index
-            )
-        if placement.row is None:
-            results.append(
-                _result(index, key, placement.classification, placement.reason,
-                        placement.pointer, minted_id)
+            results[index] = _result(
+                index, key, "unsupported", "unsupported-plan",
+                pointer, minted_id,
             )
             continue
+        pending[index] = (record, minted_id)
 
-        try:
-            atlas_io.enforce_ceiling(
-                len(_encoded(placement.row)),
-                maximum=atlas_io.JOURNAL_ROW_BYTES,
-                kind="bytes",
-                relative_path=_JOURNALS[kind],
-            )
-        except atlas_io.AtlasIOError:
-            results.append(
-                _result(index, key, "rejected", "derived-row-too-large",
-                        pointer, minted_id)
-            )
-            continue
-        if instance.schema_errors(placement.row, f"journal-{kind}"):
-            results.append(
-                _result(index, key, "rejected", "derived-row-invalid",
-                        pointer, minted_id)
-            )
-            continue
+    placements, failures = _classify_pending(instance, envelope, known, pending)
+    results.update(failures)
 
+    for index in sorted(placements):
+        record, minted_id = pending[index]
+        key = atlas_io.make_receipt_key(source, batch, index)
+        kind = record["kind"]
         _crash("before-opened", index)
         instance.append_receipt(key, "opened", record["date"])
         _crash("after-opened", index)
-        instance.append_record(_JOURNALS[kind], placement.row)
+        instance.append_record(_JOURNALS[kind], placements[index].row)
         _crash("after-output", index)
         _crash("before-processed", index)
         instance.append_receipt(key, "processed", record["date"])
-        known[minted_id] = minted_id
-        results.append(
-            _result(index, key, "applied", "applied", pointer, minted_id)
+        results[index] = _result(
+            index, key, "applied", "applied", f"/records/{index}", minted_id
         )
 
-    return _make_report(source, batch, results)
+    return _make_report(
+        source, batch, [results[index] for index in sorted(results)]
+    )
 
 
 def _emit_record_diagnostics(report: dict) -> None:

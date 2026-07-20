@@ -216,6 +216,38 @@ class RefusalAndPlacementTests(unittest.TestCase):
         self.assertIn("batch-content-conflict", stderr)
         self.assertEqual(before, after)
 
+    def test_forward_intra_batch_reference_resolves_in_one_run(self):
+        # §33.2 determinism: a question may cite the artifact minted for a
+        # LATER record of the same delivery — one run applies both; when the
+        # cited record fails instead, the citing record fails with it, never
+        # applying on a second pass over the same immutable batch.
+        forward = [
+            question(refs=[{"id": "artifact:vera-example-2026-07-20-002-1"}]),
+            artifact(),
+        ]
+        with private_instance() as root, tempfile.TemporaryDirectory() as outside:
+            delivery = write_batch(Path(outside), batch(forward))
+            code, report, stderr = run_main(root, "--batch-file", delivery)
+        self.assertEqual(0, code, stderr)
+        self.assertEqual(["applied", "applied"],
+                         [item["class"] for item in report["records"]])
+
+        cascade = [
+            question(refs=[{"id": "artifact:vera-example-2026-07-20-002-1"}]),
+            {key: value for key, value in artifact().items()
+             if key != "evidence_strength"},
+        ]
+        with private_instance() as root, tempfile.TemporaryDirectory() as outside:
+            delivery = write_batch(Path(outside), batch(cascade))
+            code, first, _ = run_main(root, "--batch-file", delivery)
+            code_again, second, _ = run_main(root, "--batch-file", delivery)
+        self.assertEqual(1, code)
+        self.assertEqual(1, code_again)
+        self.assertEqual(["unresolved", "unsupported"],
+                         [item["class"] for item in first["records"]])
+        self.assertEqual([item["class"] for item in first["records"]],
+                         [item["class"] for item in second["records"]])
+
     def test_missing_original_with_receipts_refuses_redelivery(self):
         # §33.2: receipts on record with the canonical original gone mean a
         # redelivery cannot be byte-compared — it must fail closed, never
