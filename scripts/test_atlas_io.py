@@ -195,6 +195,24 @@ class CeilingAndSchemaTests(unittest.TestCase):
             )
         self.assertEqual(VALID_INTAKE, value)
 
+    def test_crlf_is_refused_unless_delivered(self):
+        with fake_instance() as root:
+            path = root / "intake" / "value.json"
+            path.write_bytes(
+                json.dumps(VALID_INTAKE, indent=1).replace("\n", "\r\n").encode(
+                    "utf-8"
+                )
+            )
+            instance = atlas_io.AtlasInstance(root)
+            with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                instance.read_json("intake/value.json", max_bytes=1024)
+            self.assertEqual(atlas_io.ReasonCode.INVALID_LINE_ENDING,
+                             raised.exception.diagnostic.reason)
+            value = instance.read_json(
+                "intake/value.json", max_bytes=1024, delivered=True
+            )
+        self.assertEqual(VALID_INTAKE, value)
+
     def test_bounded_reader_rejects_duplicate_keys_without_echo(self):
         secret = "private-key-vera"
         with fake_instance() as root:
@@ -362,6 +380,29 @@ class ReceiptTests(unittest.TestCase):
             ) as raised:
                 instance.append_receipt(key, "processed", "2026-07-20")
             self.assertFalse((root / "state" / "receipts.jsonl").exists())
+        self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_TRANSITION,
+                         raised.exception.diagnostic.reason)
+
+    def test_rotated_receipt_journals_join_the_status_concatenation(self):
+        key = atlas_io.make_receipt_key("vera-source", "2026-07-19-001", 0)
+        rows = [
+            {"intake": key, "marker": "opened", "date": "2026-07-19"},
+            {"intake": key, "marker": "processed", "date": "2026-07-19"},
+        ]
+        with fake_instance() as root:
+            rotated = root / "state" / "receipts"
+            rotated.mkdir()
+            (rotated / "2026.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            instance = atlas_io.AtlasInstance(root)
+            status = instance.receipt_status()
+            self.assertEqual(frozenset({key}), status.processed)
+            with instance.lock(), self.assertRaises(
+                atlas_io.AtlasIOError
+            ) as raised:
+                instance.append_receipt(key, "opened", "2026-07-20")
         self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_TRANSITION,
                          raised.exception.diagnostic.reason)
 

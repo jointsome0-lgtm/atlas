@@ -51,6 +51,7 @@ class ReasonCode(StrEnum):
     BYTE_CEILING_EXCEEDED = "byte-ceiling-exceeded"
     COUNT_CEILING_EXCEEDED = "count-ceiling-exceeded"
     INVALID_UTF8 = "invalid-utf8"
+    INVALID_LINE_ENDING = "invalid-line-ending"
     INVALID_JSON = "invalid-json"
     UNKNOWN_SCHEMA = "unknown-schema"
     SCHEMA_REGISTRY_INVALID = "schema-registry-invalid"
@@ -94,6 +95,7 @@ _EXPECTATIONS = {
         "input at or below the caller-supplied count ceiling"
     ),
     ReasonCode.INVALID_UTF8: "strict UTF-8 JSON",
+    ReasonCode.INVALID_LINE_ENDING: "LF-only Atlas-authored text",
     ReasonCode.INVALID_JSON: (
         "one structurally valid JSON value with unique object keys"
     ),
@@ -289,6 +291,8 @@ class AtlasInstance:
             if not delivered:
                 _fail(ReasonCode.INVALID_UTF8, display)
             data = data[3:]
+        if not delivered and b"\r" in data:
+            _fail(ReasonCode.INVALID_LINE_ENDING, display)
         try:
             text = data.decode("utf-8", errors="strict")
         except UnicodeDecodeError:
@@ -490,42 +494,47 @@ class AtlasInstance:
         )
 
     def receipt_status(self) -> ReceiptStatus:
-        """Report opened, processed, and interrupted receipt keys."""
+        """Report opened, processed, and interrupted receipt keys.
 
-        relative = "state/receipts.jsonl"
-        path = self.path(relative, allow_missing=True)
-        if not path.exists():
-            return ReceiptStatus(frozenset(), frozenset())
+        Reads the §8 concatenation — state/receipts.jsonl plus any rotated
+        state/receipts/*.jsonl — the same set the canonical validator folds.
+        """
+
         opened: set[str] = set()
         processed: set[str] = set()
-        try:
-            for number, row in validate_atlas._read_jsonl(path):
-                if validate_atlas.SchemaValidator(
-                    _schema_registry()["journal-receipt"]
-                ).validate(row):
-                    _fail(
-                        ReasonCode.INVALID_RECEIPT_JOURNAL,
-                        relative,
-                        record_index=number,
-                    )
-                key = row["intake"]
-                marker = row["marker"]
-                if marker == "opened":
-                    legal = key not in opened and key not in processed
-                    opened.add(key)
-                else:
-                    legal = key in opened and key not in processed
-                    processed.add(key)
-                if not legal:
-                    _fail(
-                        ReasonCode.INVALID_RECEIPT_JOURNAL,
-                        relative,
-                        record_index=number,
-                    )
-        except AtlasIOError:
-            raise
-        except (OSError, validate_atlas.JsonInputError, KeyError, TypeError):
-            _fail(ReasonCode.INVALID_RECEIPT_JOURNAL, relative)
+        validator = validate_atlas.SchemaValidator(
+            _schema_registry()["journal-receipt"]
+        )
+        state = self.path("state")
+        for found in validate_atlas._journal_paths(state, "receipts"):
+            relative = found.relative_to(self.root).as_posix()
+            path = self.path(relative)
+            try:
+                for number, row in validate_atlas._read_jsonl(path):
+                    if validator.validate(row):
+                        _fail(
+                            ReasonCode.INVALID_RECEIPT_JOURNAL,
+                            relative,
+                            record_index=number,
+                        )
+                    key = row["intake"]
+                    marker = row["marker"]
+                    if marker == "opened":
+                        legal = key not in opened and key not in processed
+                        opened.add(key)
+                    else:
+                        legal = key in opened and key not in processed
+                        processed.add(key)
+                    if not legal:
+                        _fail(
+                            ReasonCode.INVALID_RECEIPT_JOURNAL,
+                            relative,
+                            record_index=number,
+                        )
+            except AtlasIOError:
+                raise
+            except (OSError, validate_atlas.JsonInputError, KeyError, TypeError):
+                _fail(ReasonCode.INVALID_RECEIPT_JOURNAL, relative)
         return ReceiptStatus(frozenset(opened), frozenset(processed))
 
     def _require_lock(self) -> None:
