@@ -1016,6 +1016,41 @@ class LaneBTests(unittest.TestCase):
         self.assertEqual(
             [], validate_atlas._graph_field_errors(redacted, Path("r")))
 
+    def test_redaction_scrubs_mentions_of_consistency_withheld_ids(self):
+        # §32.6: `withheld` discloses counts only — an id withheld by the
+        # §10.4 consistency pass must not survive in free text either, or
+        # the redacted graph names what was withheld. A supports note
+        # citing the stranded material drops its edge like a classed one.
+        classed = (_CONCEPT % ("x", "X")).replace(
+            "title: X (Vera Example)\n",
+            "title: X (Vera Example)\nsensitivity: medical\n")
+        stranded = ("---\nid: material:q\ntype: material\n"
+                    "title: Q (Vera Example)\nkind: docs\nurl: \"\"\n"
+                    "status: active\noverall_concepts:\n  - concept:x\n"
+                    "parts: []\n---\n")
+        supported = ("---\nid: material:m2\ntype: material\n"
+                     "title: M2 (Vera Example)\nkind: docs\nurl: \"\"\n"
+                     "status: active\noverall_concepts:\n  - concept:c\n"
+                     "supported_by:\n  - id: material:m\n"
+                     "    note: compare with material:q first\n"
+                     "parts: []\n---\n")
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "concepts/x.md": classed,
+            "materials/q.md": stranded,
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "materials/m2.md": supported,
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertNotIn("material:q", json.dumps(redacted))
+        self.assertFalse(any(edge["type"] == "supports"
+                             for edge in redacted["edges"]))
+        self.assertLessEqual(
+            {"material:m", "material:m2", "concept:c"},
+            {node["id"] for node in redacted["nodes"]})
+
     def test_redaction_closes_over_payload_citations(self):
         # §32.6: taint unions through citation — an unclassed encounter
         # whose context cites a classed artifact rests on classed data;

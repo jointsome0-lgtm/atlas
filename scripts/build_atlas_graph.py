@@ -1736,7 +1736,7 @@ def _redact_graph(graph: dict) -> dict:
     # §20 step 12/§32.6: Phase 1 taint lives on whole nodes. Edges resting
     # on those ids and silhouette entries for those zones leave as units;
     # nothing is rewritten and the full graph remains untouched.
-    redacted_ids = {
+    withheld_ids = {
         node["id"] for node in graph["nodes"] if "sensitivity" in node
     }
 
@@ -1757,32 +1757,11 @@ def _redact_graph(graph: dict) -> dict:
                 stack.extend(value.values())
         return "\x00".join(parts)
 
-    # §32.6: taint unions through citation — a retained node whose payload
-    # carries a marked id rests on classed data and leaves whole too, to a
-    # fixpoint. Substring containment on purpose: a marked id embedded in
-    # surviving free text is the same leak as a reference field, and a
-    # deliberate prose mention taints by construction.
-    changed = True
-    while changed:
-        changed = False
-        for node in graph["nodes"]:
-            if node["id"] in redacted_ids:
-                continue
-            text = payload_text(node, {"id"})
-            if any(marked in text for marked in redacted_ids):
-                redacted_ids.add(node["id"])
-                changed = True
-
-    # Withheld ⊇ marked: classed/tainted ids drive the substring scans
-    # above; withheld additionally covers nodes stranded by the §10.4
-    # consistency pass below, whose ids are not themselves classed.
-    withheld_ids = set(redacted_ids)
-
     # An edge leaves whole when ANY id it carries is withheld: endpoints,
     # provenance, and the identity metadata that also holds node ids —
     # context (a route id) and step (a concept id) — or its own class.
-    # Its remaining metadata (note, weight) gets the same substring taint
-    # scan as node payloads: a marked id in edge free text is the same leak.
+    # Its remaining metadata (note, weight) gets the same substring scan
+    # as node payloads: a withheld id in edge free text is the same leak.
     def keep_edge(edge):
         if (edge["source"] in withheld_ids
                 or edge["target"] in withheld_ids
@@ -1793,15 +1772,34 @@ def _redact_graph(graph: dict) -> dict:
             return False
         text = payload_text(
             edge, {"source", "target", "context", "step", "provenance"})
-        return not any(marked in text for marked in redacted_ids)
+        return not any(marked in text for marked in withheld_ids)
 
-    # §10.4/§32.6: fields must stay derivable from the surviving edges. A
-    # surviving node whose stored fields the surviving graph no longer
-    # derives rests on redacted refs — a derived value resting on classed
-    # data is marked by the union, and payloads are never rewritten, so
-    # the node leaves whole too. Withholding it drops its edges, which can
-    # strand further derivations — iterate to a fixpoint.
+    # One withheld set, one fixpoint, two growth rules; `withheld`
+    # discloses counts only (§32.6), so no withheld id — classed, tainted,
+    # or consistency-stranded — may survive anywhere in the output:
+    # - §32.6 citation taint: a retained node whose payload carries a
+    #   withheld id rests on it and leaves whole too. Substring
+    #   containment on purpose: a withheld id embedded in surviving free
+    #   text is the same leak as a reference field, and a deliberate
+    #   prose mention taints by construction.
+    # - §10.4 consistency: fields must stay derivable from the surviving
+    #   edges. A surviving node whose stored fields the surviving graph
+    #   no longer derives rests on redacted refs — a derived value
+    #   resting on classed data is marked by the union, and payloads are
+    #   never rewritten, so the node leaves whole. Withholding it drops
+    #   its edges, which can strand further derivations or surface new
+    #   free-text mentions.
     while True:
+        changed = True
+        while changed:
+            changed = False
+            for node in graph["nodes"]:
+                if node["id"] in withheld_ids:
+                    continue
+                text = payload_text(node, {"id"})
+                if any(marked in text for marked in withheld_ids):
+                    withheld_ids.add(node["id"])
+                    changed = True
         nodes = [node for node in graph["nodes"]
                  if node["id"] not in withheld_ids]
         edges = [edge for edge in graph["edges"] if keep_edge(edge)]
