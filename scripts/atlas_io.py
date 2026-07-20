@@ -32,15 +32,7 @@ _RECEIPT_KEY_RE = re.compile(
 )
 # §8's registered journals — the only paths the §20 fold and the validator
 # ever read; appends anywhere else would silently drop evidence.
-_JOURNAL_SCHEMAS = {
-    "artifacts": "journal-artifact",
-    "encounters": "journal-encounter",
-    "questions": "journal-question",
-    "decisions": "journal-decision",
-    "mapping-decisions": "journal-mapping-decision",
-    "receipts": "journal-receipt",
-    "purges": "journal-purge",
-}
+_JOURNAL_SCHEMAS = validate_atlas.JOURNALS
 
 _IGNORED_DIRECTORY_NAMES = {
     "secrets",
@@ -518,7 +510,7 @@ class AtlasInstance:
         """
 
         opened: set[str] = set()
-        processed: set[str] = set()
+        processed: dict[str, tuple[str, int]] = {}
         validator = validate_atlas.SchemaValidator(
             _schema_registry()["journal-receipt"]
         )
@@ -536,22 +528,34 @@ class AtlasInstance:
                         )
                     key = row["intake"]
                     marker = row["marker"]
-                    if marker == "opened":
-                        legal = key not in opened and key not in processed
-                        opened.add(key)
-                    else:
-                        legal = key in opened and key not in processed
-                        processed.add(key)
-                    if not legal:
+                    # Concatenation order is a storage artifact — a processed
+                    # row in the direct file may close an opened row in a
+                    # rotated file — so only duplicates and, below, orphans
+                    # are illegal, never cross-file order.
+                    duplicate = (
+                        key in opened if marker == "opened" else key in processed
+                    )
+                    if duplicate:
                         _fail(
                             ReasonCode.INVALID_RECEIPT_JOURNAL,
                             relative,
                             record_index=number,
                         )
+                    if marker == "opened":
+                        opened.add(key)
+                    else:
+                        processed[key] = (relative, number)
             except AtlasIOError:
                 raise
             except (OSError, validate_atlas.JsonInputError, KeyError, TypeError):
                 _fail(ReasonCode.INVALID_RECEIPT_JOURNAL, relative)
+        for key, (relative, number) in processed.items():
+            if key not in opened:
+                _fail(
+                    ReasonCode.INVALID_RECEIPT_JOURNAL,
+                    relative,
+                    record_index=number,
+                )
         return ReceiptStatus(frozenset(opened), frozenset(processed))
 
     def _require_lock(self) -> None:

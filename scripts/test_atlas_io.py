@@ -432,6 +432,44 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_TRANSITION,
                          raised.exception.diagnostic.reason)
 
+    def test_rotated_opened_can_be_processed_into_the_direct_file(self):
+        key = atlas_io.make_receipt_key("vera-source", "2026-07-19-002", 0)
+        with fake_instance() as root:
+            rotated = root / "state" / "receipts"
+            rotated.mkdir()
+            (rotated / "2026.jsonl").write_text(
+                json.dumps(
+                    {"intake": key, "marker": "opened", "date": "2026-07-19"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            instance = atlas_io.AtlasInstance(root)
+            self.assertEqual(
+                frozenset({key}), instance.receipt_status().interrupted
+            )
+            with instance.lock():
+                instance.append_receipt(key, "processed", "2026-07-20")
+            status = instance.receipt_status()
+        self.assertEqual(frozenset({key}), status.processed)
+        self.assertEqual(frozenset(), status.interrupted)
+
+    def test_processed_without_any_opened_row_is_invalid(self):
+        key = atlas_io.make_receipt_key("vera-source", "2026-07-19-003", 0)
+        with fake_instance() as root:
+            (root / "state" / "receipts.jsonl").write_text(
+                json.dumps(
+                    {"intake": key, "marker": "processed", "date": "2026-07-19"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            instance = atlas_io.AtlasInstance(root)
+            with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                instance.receipt_status()
+        self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_JOURNAL,
+                         raised.exception.diagnostic.reason)
+
     def test_invalid_receipt_journal_never_echoes_row_content(self):
         secret = "REJECTED-RECEIPT-VERA"
         with fake_instance() as root:
