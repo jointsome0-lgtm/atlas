@@ -703,7 +703,11 @@ def _safe_path(
     parts = relative.parts
     if relative.is_absolute() or any(part in {"", ".", ".."} for part in parts):
         _fail(ReasonCode.UNSAFE_PATH)
-    if any(_is_ignored_name(part) for part in parts):
+    # Ignore paths bind by resolved location (§24.2): they are roots at the
+    # instance top level, not banned names — intake/build/ from an opaque
+    # source named "build" is legal. Symlinks are refused wholesale below,
+    # so the lexical first component is the resolved location.
+    if _is_ignored_name(parts[0]):
         _fail(ReasonCode.IGNORED_PATH)
     candidate = root.joinpath(*parts)
     try:
@@ -750,7 +754,7 @@ def _safe_display_path(relative_path: str | os.PathLike[str]) -> str:
         path.is_absolute()
         or not path.parts
         or any(part in {"", ".", ".."} for part in path.parts)
-        or any(_is_ignored_name(part) for part in path.parts)
+        or _is_ignored_name(path.parts[0])
     ):
         return "."
     return path.as_posix()

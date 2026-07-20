@@ -98,14 +98,24 @@ class InstanceTests(unittest.TestCase):
         self.assertEqual(atlas_io.ReasonCode.UNSAFE_PATH,
                          raised.exception.diagnostic.reason)
 
-    def test_ignore_root_is_refused_at_any_depth(self):
+    def test_ignore_roots_bind_by_location_not_name(self):
         with fake_instance() as root:
-            (root / "state" / "secrets").mkdir()
+            (root / "secrets").mkdir()
+            (root / "intake" / "build").mkdir()
             instance = atlas_io.AtlasInstance(root)
-            with self.assertRaises(atlas_io.AtlasIOError) as raised:
-                instance.path("state/secrets/value.json", allow_missing=True)
-        self.assertEqual(atlas_io.ReasonCode.IGNORED_PATH,
-                         raised.exception.diagnostic.reason)
+            for candidate in ("secrets/value.json", ".env", ".env.local"):
+                with self.subTest(candidate=candidate), self.assertRaises(
+                    atlas_io.AtlasIOError
+                ) as raised:
+                    instance.path(candidate, allow_missing=True)
+                self.assertEqual(atlas_io.ReasonCode.IGNORED_PATH,
+                                 raised.exception.diagnostic.reason)
+            # An opaque §33.2 source may be named like an ignore root: only
+            # the instance-top-level location is ignored, never the name.
+            self.assertEqual(
+                root.resolve() / "intake" / "build" / "b.json",
+                instance.path("intake/build/b.json", allow_missing=True),
+            )
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO requires POSIX")
     def test_special_file_is_refused(self):
