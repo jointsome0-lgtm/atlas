@@ -30,6 +30,18 @@ _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _RECEIPT_KEY_RE = re.compile(
     r"^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*#[0-9]+$"
 )
+# §8's registered journals — the only paths the §20 fold and the validator
+# ever read; appends anywhere else would silently drop evidence.
+_JOURNAL_SCHEMAS = {
+    "artifacts": "journal-artifact",
+    "encounters": "journal-encounter",
+    "questions": "journal-question",
+    "decisions": "journal-decision",
+    "mapping-decisions": "journal-mapping-decision",
+    "receipts": "journal-receipt",
+    "purges": "journal-purge",
+}
+
 _IGNORED_DIRECTORY_NAMES = {
     "secrets",
     "node_modules",
@@ -396,10 +408,14 @@ class AtlasInstance:
         self,
         relative_path: str | os.PathLike[str],
         record: Mapping[str, object],
-        *,
-        schema_name: str,
     ) -> AppendResult:
-        """Schema-check and durably append exactly one strict JSONL row."""
+        """Schema-check and durably append exactly one strict JSONL row.
+
+        Only §8's registered journal shapes are writable — state/<stem>.jsonl
+        or a one-level rotation state/<stem>/<file>.jsonl — because those are
+        the only paths the fold and the validator read; the row schema is the
+        stem's own.
+        """
 
         display = _safe_display_path(relative_path)
         try:
@@ -407,13 +423,15 @@ class AtlasInstance:
         except (TypeError, ValueError):
             _fail(ReasonCode.INVALID_JOURNAL_PATH)
         parts = journal_path.parts
+        schema_name = None
         if (
-            not parts
-            or parts[0] != "state"
-            or journal_path.suffix != ".jsonl"
-            or not isinstance(schema_name, str)
-            or not schema_name.startswith("journal-")
+            len(parts) in (2, 3)
+            and parts[0] == "state"
+            and journal_path.suffix == ".jsonl"
         ):
+            stem = journal_path.stem if len(parts) == 2 else parts[1]
+            schema_name = _JOURNAL_SCHEMAS.get(stem)
+        if schema_name is None:
             _fail(ReasonCode.INVALID_JOURNAL_PATH)
         self._require_lock()
         self.validate_schema(record, schema_name)
@@ -490,7 +508,6 @@ class AtlasInstance:
         return self.append_record(
             "state/receipts.jsonl",
             {"intake": key, "marker": marker, "date": date},
-            schema_name="journal-receipt",
         )
 
     def receipt_status(self) -> ReceiptStatus:

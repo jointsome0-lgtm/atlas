@@ -266,10 +266,40 @@ class LockAndAppendTests(unittest.TestCase):
                 instance.append_record(
                     "state/artifacts.jsonl",
                     VALID_ARTIFACT,
-                    schema_name="journal-artifact",
                 )
         self.assertEqual(atlas_io.ReasonCode.LOCK_REQUIRED,
                          raised.exception.diagnostic.reason)
+
+    def test_unregistered_journal_paths_are_refused(self):
+        with fake_instance() as root:
+            instance = atlas_io.AtlasInstance(root)
+            with instance.lock():
+                for candidate in (
+                    "state/unknown.jsonl",
+                    "state/artifacts/nested/2026.jsonl",
+                    "state/artifacts.json",
+                    "graph/artifacts.jsonl",
+                ):
+                    with self.subTest(candidate=candidate), self.assertRaises(
+                        atlas_io.AtlasIOError
+                    ) as raised:
+                        instance.append_record(candidate, VALID_ARTIFACT)
+                    self.assertEqual(
+                        atlas_io.ReasonCode.INVALID_JOURNAL_PATH,
+                        raised.exception.diagnostic.reason,
+                    )
+
+    def test_rotated_journal_file_accepts_the_stem_schema(self):
+        with fake_instance() as root:
+            (root / "state" / "artifacts").mkdir()
+            instance = atlas_io.AtlasInstance(root)
+            with instance.lock():
+                result = instance.append_record(
+                    "state/artifacts/2026.jsonl", VALID_ARTIFACT
+                )
+            self.assertTrue(result.created)
+            raw = (root / "state" / "artifacts" / "2026.jsonl").read_bytes()
+        self.assertEqual(VALID_ARTIFACT, json.loads(raw))
 
     def test_oversized_record_is_refused_before_any_write(self):
         secret = "OVERSIZED-VERA-CONTENT"
@@ -282,7 +312,6 @@ class LockAndAppendTests(unittest.TestCase):
                 instance.append_record(
                     "state/artifacts.jsonl",
                     record,
-                    schema_name="journal-artifact",
                 )
             self.assertFalse((root / "state" / "artifacts.jsonl").exists())
         self.assertEqual(atlas_io.ReasonCode.BYTE_CEILING_EXCEEDED,
@@ -297,12 +326,10 @@ class LockAndAppendTests(unittest.TestCase):
                 first_result = instance.append_record(
                     "state/artifacts.jsonl",
                     VALID_ARTIFACT,
-                    schema_name="journal-artifact",
                 )
                 second_result = instance.append_record(
                     "state/artifacts.jsonl",
                     second,
-                    schema_name="journal-artifact",
                 )
             raw = (root / "state" / "artifacts.jsonl").read_bytes()
         self.assertTrue(first_result.created)
@@ -323,7 +350,6 @@ class LockAndAppendTests(unittest.TestCase):
                 instance.append_record(
                     "state/artifacts.jsonl",
                     VALID_ARTIFACT,
-                    schema_name="journal-artifact",
                 )
             self.assertEqual(original, target.read_bytes())
 
