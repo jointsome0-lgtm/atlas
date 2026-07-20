@@ -734,6 +734,28 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_JOURNAL,
                          raised.exception.diagnostic.reason)
 
+    def test_swapped_receipt_journal_symlink_is_not_followed(self):
+        def bypass(root, relative_path, *, allow_missing=False):
+            return root.joinpath(*Path(relative_path).parts)
+
+        key = atlas_io.make_receipt_key("vera-source", "2026-07-20-009", 0)
+        with fake_instance() as root, tempfile.TemporaryDirectory() as outside:
+            target = Path(outside) / "receipts.jsonl"
+            target.write_text(
+                json.dumps(
+                    {"intake": key, "marker": "opened", "date": "2026-07-20"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (root / "state" / "receipts.jsonl").symlink_to(target)
+            instance = atlas_io.AtlasInstance(root)
+            with unittest.mock.patch.object(atlas_io, "_safe_path", bypass):
+                with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                    instance.receipt_status()
+        self.assertEqual(atlas_io.ReasonCode.UNSAFE_PATH,
+                         raised.exception.diagnostic.reason)
+
     def test_invalid_receipt_journal_never_echoes_row_content(self):
         secret = "REJECTED-RECEIPT-VERA"
         with fake_instance() as root:
@@ -764,6 +786,17 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(2, len(text.splitlines()))
         self.assertTrue(text.splitlines()[0].startswith("ERROR: "))
         self.assertTrue(text.splitlines()[1].startswith("WARNING: "))
+
+    def test_control_characters_cannot_inject_diagnostic_lines(self):
+        text = atlas_io.format_diagnostics(
+            atlas_io.Diagnostic(
+                atlas_io.ReasonCode.INVALID_JSON,
+                relative_path="intake/bad\npath\x1b.json",
+            )
+        )
+        self.assertEqual(1, len(text.splitlines()))
+        self.assertTrue(text.startswith("ERROR: "))
+        self.assertEqual(".", atlas_io._safe_display_path("intake/bad\nx.json"))
 
 
 if __name__ == "__main__":

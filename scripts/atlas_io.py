@@ -181,6 +181,11 @@ def format_diagnostics(diagnostics: Diagnostic | Iterable[Diagnostic]) -> str:
         location = item.relative_path
         if item.record_index is not None:
             location += f"#{item.record_index}"
+        # POSIX filenames may carry control characters; a raw newline would
+        # inject an unprefixed diagnostic line (§25.8 one-per-line contract).
+        location = "".join(
+            char if char.isprintable() else "?" for char in location
+        )
         lines.append(
             f"{item.level.value}: {location}: {item.reason.value}; "
             f"expected {_EXPECTATIONS[item.reason]}"
@@ -585,7 +590,7 @@ class AtlasInstance:
         for found in files:
             rank = len(files) if found == direct else files.index(found)
             relative = found.relative_to(self.root).as_posix()
-            path = self.path(relative)
+            path = _NoFollowPath(self.root, self.path(relative))
             try:
                 for number, row in validate_atlas._read_jsonl(path):
                     if validator.validate(row):
@@ -774,6 +779,7 @@ def _safe_display_path(relative_path: str | os.PathLike[str]) -> str:
         or not path.parts
         or any(part in {"", ".", ".."} for part in path.parts)
         or _is_ignored_name(path.parts[0])
+        or not path.as_posix().isprintable()
     ):
         return "."
     return path.as_posix()
@@ -785,6 +791,41 @@ _DIR_FLAGS = (
     | getattr(os, "O_NOFOLLOW", 0)
     | getattr(os, "O_CLOEXEC", 0)
 )
+
+
+class _NoFollowPath:
+    """Path stand-in whose open() rebinds the component chain no-follow.
+
+    Lets validate_atlas's journal readers reuse their own streaming logic
+    while the actual open cannot follow a symlink swapped in after the
+    containment check (§24.2).
+    """
+
+    def __init__(self, root: Path, path: Path):
+        self._root = root
+        self._path = path
+
+    def open(self, mode: str = "rb"):
+        if mode != "rb":
+            raise ValueError("only binary reads are supported")
+        relative = self._path.relative_to(self._root)
+        flags = os.O_RDONLY
+        flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        try:
+            fd, parent_fd = _open_under_root(self._root, relative.parts, flags)
+        except OSError:
+            _fail(ReasonCode.UNSAFE_PATH, relative.as_posix())
+        os.close(parent_fd)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            _fail(ReasonCode.UNSAFE_PATH, relative.as_posix())
+        return os.fdopen(fd, mode)
+
+    def __fspath__(self) -> str:
+        return os.fspath(self._path)
+
+    def __str__(self) -> str:
+        return str(self._path)
 
 
 def _open_under_root(
