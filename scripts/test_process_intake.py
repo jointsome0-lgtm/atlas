@@ -381,6 +381,39 @@ class RefusalAndPlacementTests(unittest.TestCase):
         self.assertIn("batch-content-conflict", stderr)
         self.assertEqual(before, after)
 
+    def test_edited_original_with_same_record_count_fails_replay_closed(self):
+        # §33.2: a processed receipt alone does not prove the current record
+        # is the one it covered — an in-place kind or content edit of the
+        # canonical original with an unchanged record count must conflict.
+        for drifted in (artifact(), encounter(depth="applied")):
+            with self.subTest(kind=drifted["kind"]), private_instance() as root, \
+                    tempfile.TemporaryDirectory() as outside:
+                original = batch([encounter()])
+                delivery = write_batch(Path(outside), original)
+                code, _, stderr = run_main(root, "--batch-file", delivery)
+                self.assertEqual(0, code, stderr)
+                canonical = (root / "intake" / original["source"]
+                             / f"{original['batch']}.json")
+                canonical.write_text(
+                    json.dumps(batch([drifted]), ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+                before = {p.name: p.read_bytes()
+                          for p in (root / "state").glob("*.jsonl")}
+                code, report, stderr = run_main(
+                    root, "--batch",
+                    f"{original['source']}/{original['batch']}",
+                )
+                after = {p.name: p.read_bytes()
+                         for p in (root / "state").glob("*.jsonl")}
+                self.assertEqual(1, code)
+                self.assertEqual(
+                    ["conflict"],
+                    [item["class"] for item in report["records"]],
+                )
+                self.assertIn("batch-content-conflict", stderr)
+                self.assertEqual(before, after)
+
     def test_missing_original_with_receipts_refuses_redelivery(self):
         # §33.2: receipts on record with the canonical original gone mean a
         # redelivery cannot be byte-compared — it must fail closed, never

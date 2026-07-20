@@ -326,20 +326,19 @@ def _place_record(
 
 
 def _load_known_ids(
-    instance: atlas_io.AtlasInstance, interrupted: frozenset[str]
+    instance: atlas_io.AtlasInstance, withheld: set[str]
 ) -> dict[str, str]:
     """Reuse the builder's curated+journal reader and retirement resolution.
 
     §33.2: an interrupted record's outputs await the user's explicit
     reconciliation — a journal row whose intake key has no processed receipt
-    must not resolve references, or later records would silently build on
-    state the user has not resolved.
+    must not resolve references (the caller passes those ids as withheld),
+    or later records would silently build on state the user has not
+    resolved.
     """
 
-    _preflight_tree(instance)
     try:
         graph, errors, _warnings = build_atlas_graph.build(instance.root / "atlas")
-        withheld = _interrupted_output_ids(instance, interrupted)
     except (atlas_io.AtlasIOError, IntakeFailure):
         raise
     except Exception as exc:
@@ -402,27 +401,75 @@ def _preflight_fail(instance: atlas_io.AtlasInstance, path) -> None:
     )
 
 
-def _interrupted_output_ids(
-    instance: atlas_io.AtlasInstance, interrupted: frozenset[str]
-) -> set[str]:
-    """Collect journal ids appended by records that never reached processed."""
+def _journal_outputs(
+    instance: atlas_io.AtlasInstance,
+) -> dict[str, tuple[str, dict]]:
+    """Map every journal row's intake key to its (record kind, row)."""
 
-    ids: set[str] = set()
-    if not interrupted:
-        return ids
+    outputs: dict[str, tuple[str, dict]] = {}
     state = instance.path("state")
-    for stem in ("encounters", "artifacts", "questions"):
+    for stem, kind in (
+        ("encounters", "encounter"),
+        ("artifacts", "artifact"),
+        ("questions", "question"),
+    ):
         for found in validate_atlas._journal_paths(state, stem):
             relative = found.relative_to(instance.root).as_posix()
             path = atlas_io._NoFollowPath(instance.root, instance.path(relative))
             for _number, row in validate_atlas._read_jsonl(path):
-                if (
-                    isinstance(row, dict)
-                    and row.get("intake") in interrupted
-                    and isinstance(row.get("id"), str)
-                ):
-                    ids.add(row["id"])
-    return ids
+                if isinstance(row, dict) and isinstance(row.get("intake"), str):
+                    outputs[row["intake"]] = (kind, row)
+    return outputs
+
+
+class _IdentityResolution(dict):
+    """Resolution stand-in that maps every id to itself.
+
+    Replay verification compares verbatim-copied row fields only, so the
+    reference fields recomputed through this map are dropped before the
+    comparison — resolution may legitimately drift under §34.4 retirement.
+    """
+
+    def get(self, key, default=None):
+        return key if isinstance(key, str) else default
+
+
+def _replay_matches(
+    instance: atlas_io.AtlasInstance,
+    record: object,
+    envelope: dict,
+    key: str,
+    minted_id: str | None,
+    index: int,
+    recorded: tuple[str, dict] | None,
+) -> bool:
+    """Check a replayed record still matches its recorded durable output."""
+
+    if recorded is None or not isinstance(record, dict):
+        return False
+    kind, row = recorded
+    if record.get("kind") != kind or row.get("id") != minted_id:
+        return False
+    definition = _RECORD_DEFINITIONS.get(kind)
+    if definition is None or instance.schema_errors(
+        record, "atlas-intake", definition=definition
+    ):
+        return False
+    placement = _place_record(
+        record, envelope, _IdentityResolution(), key, minted_id, index
+    )
+    if placement.row is None:
+        return False
+    drop = set(_ROW_REFERENCE_FIELDS[kind])
+    expected = {
+        field: value
+        for field, value in placement.row.items()
+        if field not in drop
+    }
+    durable = {
+        field: value for field, value in row.items() if field not in drop
+    }
+    return expected == durable
 
 
 def _crash(point: str, index: int) -> None:
@@ -619,7 +666,14 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
         if key.startswith(prefix)
     ):
         return _conflict_report(envelope)
-    known = _load_known_ids(instance, receipt_status.interrupted)
+    _preflight_tree(instance)
+    outputs = _journal_outputs(instance)
+    withheld = {
+        outputs[key][1]["id"]
+        for key in receipt_status.interrupted
+        if key in outputs and isinstance(outputs[key][1].get("id"), str)
+    }
+    known = _load_known_ids(instance, withheld)
     results: dict[int, dict] = {}
     pending: dict[int, tuple[dict, str]] = {}
 
@@ -630,6 +684,14 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
         minted_id = _minted_id(kind, source, batch, index)
 
         if key in receipt_status.processed:
+            # §33.2: the receipt alone does not prove the current record is
+            # the one it covered — an in-place edit of the canonical
+            # original with the same record count must not replay clean.
+            if not _replay_matches(
+                instance, record, envelope, key, minted_id, index,
+                outputs.get(key),
+            ):
+                return _conflict_report(envelope)
             results[index] = _result(
                 index, key, "replayed", "processed-receipt", pointer, minted_id
             )
