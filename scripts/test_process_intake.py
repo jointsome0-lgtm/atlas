@@ -553,6 +553,7 @@ class EnvelopeAndCeilingTests(unittest.TestCase):
         cases = [
             (batch([], source="Upper"), False),
             (batch([encounter()], source="import"), True),
+            (batch([encounter()], source="manual"), True),
             (batch([encounter()], source="observe"), True),
             (batch([], batch="bad/slash"), False),
             (batch([], version=2), False),

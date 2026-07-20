@@ -589,7 +589,7 @@ class ReceiptTests(unittest.TestCase):
             atlas_io.make_receipt_key("import", "2026-07-20-001", 0),
         )
         self.assertEqual(
-            frozenset({"import", "observe"}),
+            frozenset({"import", "manual", "observe"}),
             atlas_io.RESERVED_RECEIPT_NAMESPACES,
         )
         for source, batch, index in (

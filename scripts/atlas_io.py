@@ -24,7 +24,7 @@ import validate_atlas
 
 
 JOURNAL_ROW_BYTES = validate_atlas.JOURNAL_ROW_BYTES
-RESERVED_RECEIPT_NAMESPACES = frozenset({"import", "observe"})
+RESERVED_RECEIPT_NAMESPACES = frozenset({"import", "manual", "observe"})
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _RECEIPT_KEY_RE = re.compile(
@@ -310,12 +310,14 @@ class AtlasInstance:
         path: str | os.PathLike[str],
         *,
         max_bytes: int | None,
+        delivered: bool = True,
     ) -> DeliveredJSON:
         """Read an explicit external delivery no-follow, bounded by fstat.
 
         The caller still chooses the instance destination.  Returning the
         original bytes lets the lane preserve exactly what was decoded,
-        without a second path open or a check/copy race.
+        without a second path open or a check/copy race. ``delivered=False``
+        applies Atlas-authored no-BOM/LF-only decoding to the same safe read.
         """
 
         try:
@@ -348,7 +350,7 @@ class AtlasInstance:
             _fail(ReasonCode.UNSAFE_PATH)
         os.close(parent_fd)
         data = _read_bounded_fd(fd, max_bytes, ".")
-        value = _decode_json(data, delivered=True, display=".")
+        value = _decode_json(data, delivered=delivered, display=".")
         return DeliveredJSON(value=value, data=data)
 
     def preserve_bytes(
