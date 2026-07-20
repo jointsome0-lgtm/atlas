@@ -543,10 +543,31 @@ def main(argv: list[str] | None = None) -> int:
                     inside_intake = True
                 except ValueError:
                     inside_intake = False
-                if inside_intake and supplied != canonical_absolute:
-                    try:
-                        instance.path(canonical)
-                    except atlas_io.AtlasIOError:
+                try:
+                    instance.path(canonical)
+                    canonical_present = True
+                except atlas_io.AtlasIOError:
+                    canonical_present = False
+                if (
+                    inside_intake
+                    and supplied != canonical_absolute
+                    and not canonical_present
+                ):
+                    report = _conflict_report(envelope)
+                    whole_conflict = True
+                if report is None and not canonical_present:
+                    # §33.2: a batch id names one immutable delivery. With
+                    # receipts already on record but the canonical original
+                    # gone, a redelivery cannot be byte-compared against
+                    # what those receipts covered — replay verification is
+                    # impossible, so the whole batch fails closed; a
+                    # corrected batch is a new id.
+                    prefix = f"{envelope['source']}/{envelope['batch']}#"
+                    status = instance.receipt_status()
+                    if any(
+                        key.startswith(prefix)
+                        for key in status.opened | status.processed
+                    ):
                         report = _conflict_report(envelope)
                         whole_conflict = True
                 if report is None:
