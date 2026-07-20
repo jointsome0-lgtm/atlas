@@ -975,6 +975,28 @@ class LaneBTests(unittest.TestCase):
         payload = json.dumps(redacted)
         self.assertNotIn("artifact:2026-07-16-001", payload)
 
+    def test_redaction_taints_free_text_mentions(self):
+        # §32.6: a marked id embedded in surviving free text is the same
+        # leak as a reference field — the mentioning node leaves whole.
+        artifact = json.loads(_ARTIFACT_ROW)
+        artifact["sensitivity"] = "medical"
+        mentioning = json.loads(_ARTIFACT_ROW)
+        mentioning["id"] = "artifact:2026-07-17-001"
+        mentioning["observed_at"] = "2026-07-17"
+        mentioning["summary"] = ("s (Vera Example), see "
+                                 "artifact:2026-07-16-001 for details")
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": (json.dumps(artifact) + "\n"
+                                      + json.dumps(mentioning) + "\n"),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertNotIn("artifact:2026-07-16-001", json.dumps(redacted))
+        self.assertNotIn("artifact:2026-07-17-001",
+                         {node["id"] for node in redacted["nodes"]})
+
     def test_non_redact_run_removes_the_stale_redacted_variant(self):
         # §32.6: content classed after the agent-facing variant was emitted
         # must not keep leaking through the old file — a write run without

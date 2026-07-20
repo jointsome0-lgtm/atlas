@@ -1651,30 +1651,35 @@ def _redact_graph(graph: dict) -> dict:
         node["id"] for node in graph["nodes"] if "sensitivity" in node
     }
 
-    def payload_refs(node):
+    def payload_text(node):
         # Every string anywhere in the payload except the node's own id —
-        # target, context/source values, via/from/resulting_questions
-        # items, probe, direction — is a potential id reference.
+        # reference fields (target, context/source values, via items,
+        # probe, direction) and free text (summary, reason, notes) alike.
+        parts = []
         stack = [value for key, value in node.items() if key != "id"]
         while stack:
             value = stack.pop()
             if isinstance(value, str):
-                yield value
+                parts.append(value)
             elif isinstance(value, list):
                 stack.extend(value)
             elif isinstance(value, dict):
                 stack.extend(value.values())
+        return "\x00".join(parts)
 
     # §32.6: taint unions through citation — a retained node whose payload
-    # cites a marked id rests on classed data and leaves whole too, to a
-    # fixpoint (an id inside a surviving payload is already a leak).
+    # carries a marked id rests on classed data and leaves whole too, to a
+    # fixpoint. Substring containment on purpose: a marked id embedded in
+    # surviving free text is the same leak as a reference field, and a
+    # deliberate prose mention taints by construction.
     changed = True
     while changed:
         changed = False
         for node in graph["nodes"]:
             if node["id"] in redacted_ids:
                 continue
-            if any(ref in redacted_ids for ref in payload_refs(node)):
+            text = payload_text(node)
+            if any(marked in text for marked in redacted_ids):
                 redacted_ids.add(node["id"])
                 changed = True
 
