@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "spec" / "schemas"
 GRAMMAR_DIR = ROOT / "fixtures" / "grammar"
 JOURNAL_ROW_BYTES = _builder.JOURNAL_ROW_BYTES  # §25.8 — one source
+_JOURNAL_READ_BYTES = 8_192
 
 SCHEMA_NAMES = {
     "concept",
@@ -252,7 +253,7 @@ class SchemaValidator:
             if expected not in predicates:
                 raise SchemaSubsetError(f"unsupported schema type {expected!r}")
             if not predicates[expected](instance):
-                errors.append(f"{path}: expected {expected}, got {type(instance).__name__}")
+                errors.append(f"{path}: expected type {expected}")
                 return
 
         if "const" in schema and not _json_equal(instance, schema["const"]):
@@ -260,13 +261,16 @@ class SchemaValidator:
         if "enum" in schema and not any(
             _json_equal(instance, choice) for choice in schema["enum"]
         ):
-            errors.append(f"{path}: value {instance!r} is outside {schema['enum']!r}")
+            errors.append(f"{path}: value is outside allowed choices "
+                          f"{schema['enum']!r}")
         if "pattern" in schema and isinstance(instance, str):
             if not _ecma_search(schema["pattern"], instance):
-                errors.append(f"{path}: string {instance!r} does not match {schema['pattern']!r}")
+                errors.append(f"{path}: string does not match pattern "
+                              f"{schema['pattern']!r}")
         if "minimum" in schema and isinstance(instance, int) and not isinstance(instance, bool):
             if instance < schema["minimum"]:
-                errors.append(f"{path}: value {instance} is below minimum {schema['minimum']}")
+                errors.append(f"{path}: value is below minimum "
+                              f"{schema['minimum']}")
 
         if isinstance(instance, dict):
             required = schema.get("required", [])
@@ -275,7 +279,8 @@ class SchemaValidator:
                     errors.append(f"{path}: missing required property {key!r}")
             if "minProperties" in schema and len(instance) < schema["minProperties"]:
                 errors.append(
-                    f"{path}: has {len(instance)} properties; minimum is {schema['minProperties']}"
+                    f"{path}: has fewer properties than minimum "
+                    f"{schema['minProperties']}"
                 )
             properties = schema.get("properties", {})
             for key, value in instance.items():
@@ -283,7 +288,11 @@ class SchemaValidator:
                 if key in properties:
                     self._validate(value, properties[key], child_path, errors)
                 elif schema.get("additionalProperties") is False:
-                    errors.append(f"{path}: unknown property {key!r}")
+                    # §24.4: the rejected key name is rejected content —
+                    # the closed key set is the expectation shown instead.
+                    errors.append(
+                        f"{path}: unknown property outside the closed key "
+                        f"set {sorted(properties)!r}")
                 elif isinstance(schema.get("additionalProperties"), dict):
                     self._validate(
                         value, schema["additionalProperties"], child_path, errors
@@ -292,7 +301,8 @@ class SchemaValidator:
         if isinstance(instance, list):
             if "minItems" in schema and len(instance) < schema["minItems"]:
                 errors.append(
-                    f"{path}: has {len(instance)} items; minimum is {schema['minItems']}"
+                    f"{path}: has fewer items than minimum "
+                    f"{schema['minItems']}"
                 )
             if schema.get("uniqueItems"):
                 for index, item in enumerate(instance):
@@ -379,20 +389,17 @@ def _journal_paths(state: Path, stem: str):
 
 
 def _read_jsonl(path: Path):
-    data = path.read_bytes()
-    if data.startswith(b"\xef\xbb\xbf"):
-        raise JsonInputError(f"{path}:1: UTF-8 BOM is unsupported")
-    if b"\r" in data:
-        line = data.count(b"\n", 0, data.index(b"\r")) + 1
-        raise JsonInputError(f"{path}:{line}: CR/CRLF is unsupported; use LF")
-    for number, raw in enumerate(data.split(b"\n"), 1):
-        if not raw and number == len(data.split(b"\n")):
-            continue
+    for number, raw, oversized in _journal_lines(path):
+        if oversized:
+            raise JsonInputError(
+                f"{path}:{number}: journal row exceeds "
+                f"{JOURNAL_ROW_BYTES} bytes"
+            )
         if not raw:
             raise JsonInputError(f"{path}:{number}: blank JSONL row is unsupported")
-        if len(raw) > JOURNAL_ROW_BYTES:
+        if b"\r" in raw:
             raise JsonInputError(
-                f"{path}:{number}: journal row exceeds {JOURNAL_ROW_BYTES} bytes"
+                f"{path}:{number}: CR/CRLF is unsupported; use LF"
             )
         try:
             text = raw.decode("utf-8", errors="strict")
@@ -404,6 +411,44 @@ def _read_jsonl(path: Path):
             raise JsonInputError(f"{path}:{number}: invalid JSON: {message}") from None
 
 
+def _journal_lines(path: Path):
+    """Yield rows without retaining more than the §25.8 ceiling plus one."""
+    number = 1
+    row = bytearray()
+    discarding = False
+    first = True
+    with path.open("rb") as stream:
+        while chunk := stream.read(_JOURNAL_READ_BYTES):
+            if first:
+                first = False
+                if chunk.startswith(b"\xef\xbb\xbf"):
+                    raise JsonInputError(
+                        f"{path}:1: UTF-8 BOM is unsupported")
+            offset = 0
+            while offset < len(chunk):
+                newline = chunk.find(b"\n", offset)
+                end = len(chunk) if newline < 0 else newline
+                if not discarding:
+                    room = JOURNAL_ROW_BYTES + 1 - len(row)
+                    row.extend(chunk[offset:end][:room])
+                    if end - offset > room or len(row) > JOURNAL_ROW_BYTES:
+                        # §25.8/§24.4: surface the ceiling immediately and
+                        # discard the refused remainder without echoing it.
+                        yield number, b"", True
+                        row.clear()
+                        discarding = True
+                if newline < 0:
+                    break
+                if not discarding:
+                    yield number, bytes(row), False
+                number += 1
+                row.clear()
+                discarding = False
+                offset = newline + 1
+    if row:
+        yield number, bytes(row), False
+
+
 _EVIDENCE_PREFIXES = ("artifact:", "encounter:", "question:")
 _SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _REGION_ID_RE = re.compile(rf"^(?:concept|pattern|zone):{_SLUG}$")
@@ -413,13 +458,6 @@ _ZONE_ID_RE = re.compile(rf"^zone:{_SLUG}$")
 
 
 
-_REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
-                    "pattern": {"body"}}
-_FIELD_DERIVED_KINDS = {"material", "material_part", "suggested_route",
-                        "direction", "probe", "question", "artifact",
-                        "encounter", "trail_segment", "plan"}
-_PART_EDGE_ROLES = {"prerequisite_of", "extends", "contradicts", "implements",
-                    "explains", "demonstrates", "critiques", "mentions"}
 # §10.3: provenance is the direct derivation basis, so per edge kind it must
 # name the owning record — the authored species' authoring endpoint (§9.3
 # concept_edges on the source, §9.14 supported_by on the receiving target),
@@ -437,72 +475,17 @@ _PROVENANCE_TARGET_OWNED = {
 
 def _graph_field_errors(instance: dict, path: Path) -> list[str]:
     """§10.4: fields membership is derivable from the emitted edges —
-    recompute it for the derived kinds and require the persisted value to
-    match (region kinds are pinned by the schema itself)."""
+    recompute it for the derived kinds (via the builder's shared
+    derivation, one source) and require the persisted value to match
+    (region kinds are pinned by the schema itself)."""
     errors: list[str] = []
-    types = {}
-    for node in _as_list(instance.get("nodes")):
-        if isinstance(node, dict) and isinstance(node.get("id"), str):
-            # A non-string type already carries its schema diagnostic —
-            # None keeps every set membership below hashable.
-            node_type = node.get("type")
-            types[node["id"]] = node_type if isinstance(node_type, str) else None
-    refs: dict = {}
-    for edge in _as_list(instance.get("edges")):
-        if not isinstance(edge, dict):
-            continue
-        src, tgt = edge.get("source"), edge.get("target")
-        kind = edge.get("type")
-        if not (isinstance(src, str) and isinstance(tgt, str)
-                and isinstance(kind, str)):
-            continue
-        if kind in ("overall_concept", "has_part"):
-            refs.setdefault(src, []).append(tgt)
-        elif (kind in _PART_EDGE_ROLES
-                and types.get(src) == "material_part"):
-            refs.setdefault(src, []).append(tgt)
-        elif kind in ("step_of_route", "part_of_direction", "probed_by",
-                      "pulled_by"):
-            refs.setdefault(tgt, []).append(src)
-        elif kind in ("influences", "updates_state", "visited"):
-            refs.setdefault(src, []).append(tgt)
-
+    expected_by_id = _builder.graph_field_expectations(instance)
     for node in _as_list(instance.get("nodes")):
         if not (isinstance(node, dict) and isinstance(node.get("id"), str)):
             continue
-        # §10.4 payload-held refs: trail segments derive from ∪ to; a plan
-        # derives its routes' fields through their source_plan.
-        if (types.get(node["id"]) == "encounter"
-                and isinstance(node.get("target"), str)):
-            refs.setdefault(node["id"], []).append(node["target"])
-        if types.get(node["id"]) == "trail_segment":
-            origin = node.get("from")
-            origins = origin if isinstance(origin, list) else [origin]
-            for ref in origins + [node.get("to")]:
-                if isinstance(ref, str):
-                    refs.setdefault(node["id"], []).append(ref)
-        source_plan = node.get("source_plan")
-        if (types.get(node["id"]) == "suggested_route"
-                and isinstance(source_plan, str)):
-            refs.setdefault(source_plan, []).append(node["id"])
-
-    def fields_of(node_id, seen=frozenset()):
-        if node_id in seen:
-            return set()
-        registry = _REGISTRY_FIELDS.get(types.get(node_id))
-        if registry is not None:
-            return set(registry)
-        result = set()
-        for ref in refs.get(node_id, []):
-            result |= fields_of(ref, seen | {node_id})
-        return result
-
-    for node in _as_list(instance.get("nodes")):
-        if not (isinstance(node, dict) and isinstance(node.get("id"), str)):
+        expected = expected_by_id.get(node["id"])
+        if expected is None:
             continue
-        if types.get(node["id"]) not in _FIELD_DERIVED_KINDS:
-            continue
-        expected = sorted(fields_of(node["id"]))
         found = node.get("fields")
         if (isinstance(found, list)
                 and sorted(x for x in found if isinstance(x, str)) != expected):
@@ -1435,6 +1418,20 @@ def validate_instance(root: Path):
                     errors.append(
                         f"{path}: the redacted graph must carry withheld (§20)"
                     )
+                if redacted:
+                    # §32.6/§24.3: everything the union marks is OMITTED
+                    # from the agent-facing variant — a surviving classed
+                    # entry means the gate would certify classed content
+                    # into agent context.
+                    for section in ("nodes", "edges"):
+                        for position, entry in enumerate(
+                                _as_list(instance.get(section))):
+                            if (isinstance(entry, dict)
+                                    and "sensitivity" in entry):
+                                errors.append(
+                                    f"{path}: {section}[{position}] still "
+                                    "carries sensitivity in the redacted "
+                                    "graph (§32.6)")
                 if not redacted and "withheld" in instance:
                     errors.append(
                         f"{path}: the full graph never carries withheld (§20)"

@@ -69,6 +69,88 @@ AUTHORED_ROLES = {
     "explains", "demonstrates", "critiques", "mentions", "loads",
 }
 
+# §10.4: fields = union of the fields of the region nodes reachable through
+# the kind's listed refs; chains bottom out at the §10.1 registry (concept →
+# knowledge; zone, pattern → body), so resolution is acyclic.
+REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
+                   "pattern": {"body"}}
+FIELD_DERIVED_KINDS = {"material", "material_part", "suggested_route",
+                       "direction", "probe", "question", "artifact",
+                       "encounter", "trail_segment", "plan"}
+PART_EDGE_ROLES = {"prerequisite_of", "extends", "contradicts", "implements",
+                   "explains", "demonstrates", "critiques", "mentions"}
+
+
+def graph_field_expectations(instance: dict) -> dict[str, list[str]]:
+    """§10.4 over an emitted graph: recompute every derived-kind node's
+    fields from the instance's own edges and payload-held refs. Shared
+    canon — the boundary validator checks emissions against it and
+    redaction withholds nodes it strands — so it is hardened for
+    arbitrary JSON, not just the builder's own output."""
+    def as_list(value):
+        return value if isinstance(value, list) else []
+
+    types: dict[str, str | None] = {}
+    for node in as_list(instance.get("nodes")):
+        if isinstance(node, dict) and isinstance(node.get("id"), str):
+            # A non-string type already carries its schema diagnostic —
+            # None keeps every set membership below hashable.
+            node_type = node.get("type")
+            types[node["id"]] = node_type if isinstance(node_type, str) else None
+    refs: dict = {}
+    for edge in as_list(instance.get("edges")):
+        if not isinstance(edge, dict):
+            continue
+        src, tgt = edge.get("source"), edge.get("target")
+        kind = edge.get("type")
+        if not (isinstance(src, str) and isinstance(tgt, str)
+                and isinstance(kind, str)):
+            continue
+        if kind in ("overall_concept", "has_part"):
+            refs.setdefault(src, []).append(tgt)
+        elif (kind in PART_EDGE_ROLES
+                and types.get(src) == "material_part"):
+            refs.setdefault(src, []).append(tgt)
+        elif kind in ("step_of_route", "part_of_direction", "probed_by",
+                      "pulled_by"):
+            refs.setdefault(tgt, []).append(src)
+        elif kind in ("influences", "updates_state", "visited"):
+            refs.setdefault(src, []).append(tgt)
+
+    for node in as_list(instance.get("nodes")):
+        if not (isinstance(node, dict) and isinstance(node.get("id"), str)):
+            continue
+        # §10.4 payload-held refs: trail segments derive from ∪ to; a plan
+        # derives its routes' fields through their source_plan.
+        if (types.get(node["id"]) == "encounter"
+                and isinstance(node.get("target"), str)):
+            refs.setdefault(node["id"], []).append(node["target"])
+        if types.get(node["id"]) == "trail_segment":
+            origin = node.get("from")
+            origins = origin if isinstance(origin, list) else [origin]
+            for ref in origins + [node.get("to")]:
+                if isinstance(ref, str):
+                    refs.setdefault(node["id"], []).append(ref)
+        source_plan = node.get("source_plan")
+        if (types.get(node["id"]) == "suggested_route"
+                and isinstance(source_plan, str)):
+            refs.setdefault(source_plan, []).append(node["id"])
+
+    def fields_of(node_id, seen=frozenset()):
+        if node_id in seen:
+            return set()
+        registry = REGISTRY_FIELDS.get(types.get(node_id))
+        if registry is not None:
+            return set(registry)
+        result = set()
+        for ref in refs.get(node_id, []):
+            result |= fields_of(ref, seen | {node_id})
+        return result
+
+    return {node_id: sorted(fields_of(node_id))
+            for node_id, kind in types.items()
+            if kind in FIELD_DERIVED_KINDS}
+
 # §32.1: patterns are concept-kind nodes — a program part maps to patterns
 # exactly as a chapter maps to concepts.
 CONCEPT_KIND = {"concept", "pattern"}
@@ -116,6 +198,7 @@ EDGE_WEIGHTS = {"low", "medium", "high"}
 # §25.8: journal row byte ceiling — a policy ceiling shared with the
 # boundary reader (validate_atlas aliases this constant).
 JOURNAL_ROW_BYTES = 16_384
+_JOURNAL_READ_BYTES = 8_192
 
 # §8: at least one domain directory distinguishes the curated tree from a
 # missing or mis-mounted instance path.
@@ -806,19 +889,15 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         # journal — duplicate detection spans it, not each file.
         seen_rows: set = set()
         for path in paths:
-            data = path.read_bytes()
-            chunks = data.split(b"\n")
-            for number, raw in enumerate(chunks, 1):
-                if not raw:
-                    if number == len(chunks):
-                        continue  # trailing newline
-                    errors.append(f"{path}:{number}: blank journal row")
-                    continue
-                if len(raw) > JOURNAL_ROW_BYTES:
+            for number, raw, oversized in _journal_lines(path):
+                if oversized:
                     # §25.8: the boundary reader enforces the same ceiling
                     # — an oversize row must never project.
                     errors.append(f"{path}:{number}: journal row exceeds "
                                   f"{JOURNAL_ROW_BYTES} bytes")
+                    continue
+                if not raw:
+                    errors.append(f"{path}:{number}: blank journal row")
                     continue
                 if raw in seen_rows:
                     # §20.1: a byte-identical row repeated within a journal
@@ -1371,14 +1450,9 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         edge.pop("_origin", None)
         edge.pop("_lenient", None)
 
-    # §10.4: fields = union of the fields of the region nodes reachable
-    # through the kind's listed refs; chains bottom out at the §10.1
-    # registry (concept → knowledge; zone, pattern → body), so resolution
-    # is acyclic. Dangling refs contribute nothing; fields: [] is legal —
-    # the viewer flags it, the builder never substitutes.
-    REGISTRY_FIELDS = {"concept": {"knowledge"}, "zone": {"body"},
-                       "pattern": {"body"}}
-
+    # §10.4 (REGISTRY_FIELDS at module level). Dangling refs contribute
+    # nothing; fields: [] is legal — the viewer flags it, the builder
+    # never substitutes.
     def fields_of(node_id, seen=frozenset()):
         node = nodes.get(node_id)
         if node is None or node_id in seen:
@@ -1427,9 +1501,42 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     return graph, errors, warnings
 
 
+def _journal_lines(path: Path):
+    """Yield bounded journal rows, discarding an oversize row in place."""
+    number = 1
+    row = bytearray()
+    discarding = False
+    with path.open("rb") as stream:
+        while chunk := stream.read(_JOURNAL_READ_BYTES):
+            offset = 0
+            while offset < len(chunk):
+                newline = chunk.find(b"\n", offset)
+                end = len(chunk) if newline < 0 else newline
+                if not discarding:
+                    room = JOURNAL_ROW_BYTES + 1 - len(row)
+                    row.extend(chunk[offset:end][:room])
+                    if end - offset > room or len(row) > JOURNAL_ROW_BYTES:
+                        # §25.8: report as soon as byte N+1 arrives, then
+                        # drain to LF without retaining rejected content.
+                        yield number, b"", True
+                        row.clear()
+                        discarding = True
+                if newline < 0:
+                    break
+                if not discarding:
+                    yield number, bytes(row), False
+                number += 1
+                row.clear()
+                discarding = False
+                offset = newline + 1
+    if row:
+        yield number, bytes(row), False
+
+
 def main() -> int:
     args = sys.argv[1:]
     check_only = False
+    redact = False
     as_of = None
     positional = []
     index = 0
@@ -1441,6 +1548,12 @@ def main() -> int:
                       file=sys.stderr)
                 return _print_usage()
             check_only = True
+        elif arg == "--redact":
+            if redact:
+                print("ERROR: --redact may be specified only once",
+                      file=sys.stderr)
+                return _print_usage()
+            redact = True
         elif arg == "--as-of":
             if as_of is not None:
                 print("ERROR: --as-of may be specified only once",
@@ -1455,6 +1568,10 @@ def main() -> int:
             positional.append(arg)
         index += 1
     if len(positional) != 2:
+        return _print_usage()
+    if check_only and redact:
+        print("ERROR: --check and --redact cannot be combined",
+              file=sys.stderr)
         return _print_usage()
 
     curated = Path(positional[0]).resolve()
@@ -1522,7 +1639,7 @@ def main() -> int:
             print(f"ERROR: cannot write {lock}: {exc}", file=sys.stderr)
             return 1
     try:
-        return _run(curated, output, check_only, as_of)
+        return _run(curated, output, check_only, as_of, redact)
     finally:
         if lock_fd is not None:
             _release_lock(lock_fd, lock)
@@ -1530,7 +1647,7 @@ def main() -> int:
 
 def _print_usage() -> int:
     print(
-        f"usage: {Path(sys.argv[0]).name} [--check] "
+        f"usage: {Path(sys.argv[0]).name} [--check | --redact] "
         "[--as-of YYYY-MM-DD] CURATED_TREE "
         "OUTPUT_JSON (graph/atlas-graph.json)",
         file=sys.stderr,
@@ -1564,7 +1681,7 @@ def _valid_as_of(value: str) -> bool:
 
 
 def _run(curated: Path, output: Path, check_only: bool,
-         as_of: str | None = None) -> int:
+         as_of: str | None = None, redact: bool = False) -> int:
     try:
         graph, errors, warnings = build(curated, as_of)
     except FrontmatterError as exc:
@@ -1579,6 +1696,32 @@ def _run(curated: Path, output: Path, check_only: bool,
     if not check_only:
         if not _emit_graph(output, graph):
             return 1
+        redacted_output = output.with_name("atlas-graph.redacted.json")
+        if redact:
+            if not _emit_graph(redacted_output, _redact_graph(graph)):
+                return 1
+        else:
+            # §32.6: a stale agent-facing variant must never outlive the
+            # build that obsoleted it — content classed after the variant
+            # was emitted would keep leaking through the old file.
+            try:
+                redacted_output.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                print(f"ERROR: cannot remove stale {redacted_output}: {exc}",
+                      file=sys.stderr)
+                return 1
+            else:
+                # §25.6: the removal is only durable once graph/'s entry
+                # is synced — a crash before that could resurrect the
+                # stale variant next to a newer full graph.
+                try:
+                    _sync_dir(redacted_output.parent)
+                except OSError as exc:
+                    print(f"ERROR: cannot remove stale {redacted_output}: "
+                          f"{exc}", file=sys.stderr)
+                    return 1
     try:
         output_display = output.relative_to(ROOT)
     except ValueError:
@@ -1587,6 +1730,114 @@ def _run(curated: Path, output: Path, check_only: bool,
           f"{len(graph['nodes'])} nodes, {len(graph['edges'])} edges"
           + ("" if check_only else f" -> {output_display}"))
     return 0
+
+
+def _redact_graph(graph: dict) -> dict:
+    # §20 step 12/§32.6: Phase 1 taint lives on whole nodes. Edges resting
+    # on those ids and silhouette entries for those zones leave as units;
+    # nothing is rewritten and the full graph remains untouched.
+    withheld_ids = {
+        node["id"] for node in graph["nodes"] if "sensitivity" in node
+    }
+
+    def payload_text(mapping, skip):
+        # Every string anywhere in the payload except the identity fields
+        # the caller already checks exactly — reference fields (target,
+        # context/source values, via items, probe, direction) and free
+        # text (summary, reason, notes) alike.
+        parts = []
+        stack = [value for key, value in mapping.items() if key not in skip]
+        while stack:
+            value = stack.pop()
+            if isinstance(value, str):
+                parts.append(value)
+            elif isinstance(value, list):
+                stack.extend(value)
+            elif isinstance(value, dict):
+                stack.extend(value.values())
+        return "\x00".join(parts)
+
+    # An edge leaves whole when ANY id it carries is withheld: endpoints,
+    # provenance, and the identity metadata that also holds node ids —
+    # context (a route id) and step (a concept id) — or its own class.
+    # Its remaining metadata (note, weight) gets the same substring scan
+    # as node payloads: a withheld id in edge free text is the same leak.
+    def keep_edge(edge):
+        if (edge["source"] in withheld_ids
+                or edge["target"] in withheld_ids
+                or edge.get("context") in withheld_ids
+                or edge.get("step") in withheld_ids
+                or "sensitivity" in edge
+                or withheld_ids.intersection(edge["provenance"])):
+            return False
+        text = payload_text(
+            edge, {"source", "target", "context", "step", "provenance"})
+        return not any(marked in text for marked in withheld_ids)
+
+    # One withheld set, one fixpoint, two growth rules; `withheld`
+    # discloses counts only (§32.6), so no withheld id — classed, tainted,
+    # or consistency-stranded — may survive anywhere in the output:
+    # - §32.6 citation taint: a retained node whose payload carries a
+    #   withheld id rests on it and leaves whole too. Substring
+    #   containment on purpose: a withheld id embedded in surviving free
+    #   text is the same leak as a reference field, and a deliberate
+    #   prose mention taints by construction.
+    # - §10.4 consistency: fields must stay derivable from the surviving
+    #   edges. A surviving node whose stored fields the surviving graph
+    #   no longer derives rests on redacted refs — a derived value
+    #   resting on classed data is marked by the union, and payloads are
+    #   never rewritten, so the node leaves whole. Withholding it drops
+    #   its edges, which can strand further derivations or surface new
+    #   free-text mentions.
+    while True:
+        changed = True
+        while changed:
+            changed = False
+            for node in graph["nodes"]:
+                if node["id"] in withheld_ids:
+                    continue
+                text = payload_text(node, {"id"})
+                if any(marked in text for marked in withheld_ids):
+                    withheld_ids.add(node["id"])
+                    changed = True
+        nodes = [node for node in graph["nodes"]
+                 if node["id"] not in withheld_ids]
+        edges = [edge for edge in graph["edges"] if keep_edge(edge)]
+        expected = graph_field_expectations({"nodes": nodes, "edges": edges})
+        stale = {node["id"] for node in nodes
+                 if node["id"] in expected
+                 and node.get("fields") != expected[node["id"]]}
+        if not stale:
+            break
+        withheld_ids |= stale
+
+    projections = {
+        zone: region for zone, region in graph["projections"].items()
+        if zone not in withheld_ids
+    }
+    redacted = dict(graph)
+    redacted["nodes"] = nodes
+    redacted["edges"] = edges
+    redacted["projections"] = projections
+    # atlas-graph.schema.json requires every §10 payload key, zeros included.
+    redacted["withheld"] = {
+        "nodes": len(graph["nodes"]) - len(nodes),
+        "edges": len(graph["edges"]) - len(edges),
+        "trails": 0,
+        "state": 0,
+        "influence": 0,
+        "frontier": 0,
+        "projections": len(graph["projections"]) - len(projections),
+    }
+    return redacted
+
+
+def _sync_dir(directory: Path) -> None:
+    fd = os.open(str(directory), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _emit_graph(output: Path, graph: dict) -> bool:
@@ -1611,12 +1862,7 @@ def _emit_graph(output: Path, graph: dict) -> bool:
             os.fsync(stream.fileno())
         os.replace(tmp, output)
         replaced = True
-        directory_fd = os.open(
-            str(output.parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        _sync_dir(output.parent)
     except OSError as exc:
         # A post-rename directory-sync failure is observable as a failed
         # emission too; restore the last good bytes before returning.
