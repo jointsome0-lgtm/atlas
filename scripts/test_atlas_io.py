@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -340,6 +341,31 @@ class LockAndAppendTests(unittest.TestCase):
         self.assertEqual(2, len(lines))
         self.assertEqual([VALID_ARTIFACT, second], [json.loads(line) for line in lines])
 
+    def test_short_write_rolls_back_to_the_pre_append_size(self):
+        real_write = os.write
+
+        def short_write(fd, data):
+            return real_write(fd, data[: len(data) // 2])
+
+        with fake_instance() as root:
+            instance = atlas_io.AtlasInstance(root)
+            with instance.lock():
+                instance.append_record("state/artifacts.jsonl", VALID_ARTIFACT)
+                target = root / "state" / "artifacts.jsonl"
+                intact = target.read_bytes()
+                with unittest.mock.patch.object(
+                    atlas_io.os, "write", short_write
+                ), self.assertRaises(atlas_io.AtlasIOError) as raised:
+                    instance.append_record(
+                        "state/artifacts.jsonl", VALID_ARTIFACT
+                    )
+                self.assertEqual(atlas_io.ReasonCode.APPEND_IO,
+                                 raised.exception.diagnostic.reason)
+                self.assertEqual(intact, target.read_bytes())
+                second = {**VALID_ARTIFACT, "id": "artifact:vera-after"}
+                instance.append_record("state/artifacts.jsonl", second)
+                self.assertEqual(2, len(target.read_bytes().splitlines()))
+
     def test_incomplete_existing_jsonl_is_refused_without_append(self):
         with fake_instance() as root:
             target = root / "state" / "artifacts.jsonl"
@@ -509,6 +535,31 @@ class ReceiptTests(unittest.TestCase):
             (rotated / "2026.jsonl").write_text(
                 json.dumps(
                     {"intake": key, "marker": "opened", "date": "2026-01-01"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            instance = atlas_io.AtlasInstance(root)
+            with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                instance.receipt_status()
+        self.assertEqual(atlas_io.ReasonCode.INVALID_RECEIPT_JOURNAL,
+                         raised.exception.diagnostic.reason)
+
+    def test_direct_opened_with_rotated_processed_is_invalid(self):
+        key = atlas_io.make_receipt_key("vera-source", "2026-07-19-006", 0)
+        with fake_instance() as root:
+            rotated = root / "state" / "receipts"
+            rotated.mkdir()
+            (rotated / "2025.jsonl").write_text(
+                json.dumps(
+                    {"intake": key, "marker": "processed", "date": "2025-12-31"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (root / "state" / "receipts.jsonl").write_text(
+                json.dumps(
+                    {"intake": key, "marker": "opened", "date": "2026-07-19"}
                 )
                 + "\n",
                 encoding="utf-8",

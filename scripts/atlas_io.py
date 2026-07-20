@@ -479,7 +479,17 @@ class AtlasInstance:
                     if os.read(fd, 1) != b"\n":
                         _fail(ReasonCode.INVALID_JSONL, display)
                 line = payload + b"\n"
-                if os.write(fd, line) != len(line):
+                try:
+                    written = os.write(fd, line)
+                except OSError:
+                    written = -1
+                if written != len(line):
+                    # The lock excludes other Atlas writers, so truncating
+                    # back to the pre-append size cannot lose foreign rows;
+                    # a torn tail would block every later append.
+                    with contextlib.suppress(OSError):
+                        os.ftruncate(fd, info.st_size)
+                        os.fsync(fd)
                     _fail(ReasonCode.APPEND_IO, display)
                 os.fsync(fd)
             finally:
@@ -522,13 +532,20 @@ class AtlasInstance:
         state/receipts/*.jsonl — the same set the canonical validator folds.
         """
 
-        opened: set[str] = set()
-        processed: dict[str, tuple[str, int]] = {}
+        # (chronological file rank, line): the direct file is the newest —
+        # rotation moves old rows out — so rotated files rank first in sorted
+        # order and state/receipts.jsonl last. §33.2's pair is ordered by this
+        # position: opened must precede processed; duplicates are illegal.
+        opened: dict[str, tuple[int, int]] = {}
+        processed: dict[str, tuple[int, int, str]] = {}
         validator = validate_atlas.SchemaValidator(
             _schema_registry()["journal-receipt"]
         )
         state = self.path("state")
-        for found in validate_atlas._journal_paths(state, "receipts"):
+        files = list(validate_atlas._journal_paths(state, "receipts"))
+        direct = state / "receipts.jsonl"
+        for found in files:
+            rank = len(files) if found == direct else files.index(found)
             relative = found.relative_to(self.root).as_posix()
             path = self.path(relative)
             try:
@@ -540,39 +557,24 @@ class AtlasInstance:
                             record_index=number,
                         )
                     key = row["intake"]
-                    marker = row["marker"]
-                    # §33.2's pair is ordered; the one reversal appends can
-                    # create is a processed row in the direct file closing an
-                    # opened row already rotated away, so only that pairing
-                    # is order-free — duplicates, same-file reversals, and
-                    # rotated-vs-rotated reversals are illegal.
-                    if marker == "opened":
-                        reversal_ok = (
-                            key in processed
-                            and processed[key][0] == "state/receipts.jsonl"
-                            and relative != "state/receipts.jsonl"
-                        )
-                        illegal = key in opened or (
-                            key in processed and not reversal_ok
-                        )
-                    else:
-                        illegal = key in processed
-                    if illegal:
+                    target = opened if row["marker"] == "opened" else processed
+                    if key in target:
                         _fail(
                             ReasonCode.INVALID_RECEIPT_JOURNAL,
                             relative,
                             record_index=number,
                         )
-                    if marker == "opened":
-                        opened.add(key)
+                    if row["marker"] == "opened":
+                        opened[key] = (rank, number)
                     else:
-                        processed[key] = (relative, number)
+                        processed[key] = (rank, number, relative)
             except AtlasIOError:
                 raise
             except (OSError, validate_atlas.JsonInputError, KeyError, TypeError):
                 _fail(ReasonCode.INVALID_RECEIPT_JOURNAL, relative)
-        for key, (relative, number) in processed.items():
-            if key not in opened:
+        for key, (rank, number, relative) in processed.items():
+            begun = opened.get(key)
+            if begun is None or begun >= (rank, number):
                 _fail(
                     ReasonCode.INVALID_RECEIPT_JOURNAL,
                     relative,
