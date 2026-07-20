@@ -128,6 +128,46 @@ class InstanceTests(unittest.TestCase):
 
 
 class CeilingAndSchemaTests(unittest.TestCase):
+    def test_external_delivery_reader_returns_exact_bytes_and_refuses_symlink(self):
+        with fake_instance() as root, tempfile.TemporaryDirectory() as outside:
+            data = (json.dumps(VALID_INTAKE, indent=2) + "\n").encode("utf-8")
+            target = Path(outside) / "delivery.json"
+            target.write_bytes(data)
+            linked = Path(outside) / "linked.json"
+            linked.symlink_to(target)
+            instance = atlas_io.AtlasInstance(root)
+            delivered = instance.read_delivered_json(target, max_bytes=1024)
+            self.assertEqual(VALID_INTAKE, delivered.value)
+            self.assertEqual(data, delivered.data)
+            with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                instance.read_delivered_json(linked, max_bytes=1024)
+        self.assertEqual(atlas_io.ReasonCode.UNSAFE_PATH,
+                         raised.exception.diagnostic.reason)
+
+    def test_delivery_under_ignored_roots_is_refused_before_reading(self):
+        # §24: read no secrets, never scan .env — inside the instance the
+        # ignore roots bind by location; outside, an ignore-named path
+        # component refuses the delivery before decoding or preservation.
+        data = (json.dumps(VALID_INTAKE) + "\n").encode("utf-8")
+        with fake_instance() as root, tempfile.TemporaryDirectory() as outside:
+            instance = atlas_io.AtlasInstance(root)
+            (root / "secrets").mkdir()
+            inside_secret = root / "secrets" / "delivery.json"
+            inside_secret.write_bytes(data)
+            outside_secret = Path(outside) / "secrets" / "delivery.json"
+            outside_secret.parent.mkdir()
+            outside_secret.write_bytes(data)
+            dotenv = Path(outside) / ".env.delivery.json"
+            dotenv.write_bytes(data)
+            for path in (inside_secret, outside_secret, dotenv):
+                with self.subTest(path=path.name), \
+                        self.assertRaises(atlas_io.AtlasIOError) as raised:
+                    instance.read_delivered_json(path, max_bytes=1024)
+                self.assertEqual(
+                    atlas_io.ReasonCode.IGNORED_PATH,
+                    raised.exception.diagnostic.reason,
+                )
+
     def test_unbounded_read_is_refused(self):
         with fake_instance() as root:
             path = root / "intake" / "value.json"
@@ -256,6 +296,20 @@ class CeilingAndSchemaTests(unittest.TestCase):
 
 
 class LockAndAppendTests(unittest.TestCase):
+    def test_preserve_bytes_is_durable_idempotent_and_conflict_safe(self):
+        data = b'{"fixture":"Vera Example"}\r\n'
+        with fake_instance() as root:
+            instance = atlas_io.AtlasInstance(root)
+            relative = "intake/vera-new/2026-07-20-001.json"
+            with instance.lock():
+                self.assertTrue(instance.preserve_bytes(relative, data))
+                self.assertFalse(instance.preserve_bytes(relative, data))
+                with self.assertRaises(atlas_io.AtlasIOError) as raised:
+                    instance.preserve_bytes(relative, data + b" ")
+            self.assertEqual(data, (root / relative).read_bytes())
+        self.assertEqual(atlas_io.ReasonCode.CONTENT_CONFLICT,
+                         raised.exception.diagnostic.reason)
+
     def test_lock_contention_refuses_and_context_exit_releases(self):
         with fake_instance() as root:
             first = atlas_io.AtlasInstance(root)

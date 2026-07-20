@@ -51,6 +51,7 @@ SCHEMA_NAMES = {
     "atlas-graph",
     "atlas-snapshot",
     "atlas-intake",
+    "report-batch",
 }
 
 SUPPORTED_KEYWORDS = {
@@ -776,10 +777,38 @@ def validate_instance(root: Path):
         # §33.2/§25.7: delivered batches are a persisted format; the JSON
         # envelope validates structurally — batch content stays as delivered
         # and is never term-scanned here (§19 keeps out of intake/ entirely).
+        # A schema-invalid record inside a valid envelope is the flow's
+        # per-record refusal (its outcome lives in the batch report), while
+        # the delivery is preserved as the audit original — so it surfaces
+        # here as a warning, never as instance invalidity.
+        intake_validator = SchemaValidator(schemas["atlas-intake"])
+        envelope_schema = intake_validator.resolve("#/$defs/envelope")
+        record_schema = intake_validator.resolve("#/$defs/record")
         for path in sorted(intake.rglob("*.json")):
             try:
                 instance = _read_json(path, delivered=True)
-                errors.extend(_schema_errors(instance, schemas["atlas-intake"], path))
+                envelope_messages: list[str] = []
+                intake_validator._validate(
+                    instance, envelope_schema, "$", envelope_messages
+                )
+                errors.extend(
+                    f"{path}: {message}" for message in envelope_messages
+                )
+                if not envelope_messages and isinstance(instance, dict):
+                    for index, record in enumerate(instance.get("records", [])):
+                        record_messages: list[str] = []
+                        intake_validator._validate(
+                            record,
+                            record_schema,
+                            f"$.records[{index}]",
+                            record_messages,
+                        )
+                        if record_messages:
+                            warnings.append(
+                                f"{path}: {record_messages[0]}"
+                                " (record refused per §33.2; delivery"
+                                " preserved as delivered)"
+                            )
                 # §33.2: source scopes the intake/ path and batch names the
                 # delivery — the <source>/<batch>#n provenance and receipt
                 # keys must point back at exactly this file.
@@ -1483,6 +1512,36 @@ def check_constants():
             errors.append(
                 f"build_atlas_graph.py {code_name}={code_value!r} does not match "
                 f"{schema_name}={schema_value!r}"
+            )
+    # §25.8/#56: the intake reader's named ceilings are code constants, but
+    # the SDD remains canonical.  Parse the one normative line so either-side
+    # drift fails the existing check-constants gate.
+    import process_intake
+
+    nfr = (ROOT / "spec" / "25-non-functional-requirements.md").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r"intake batches\s+≤ ([0-9,]+) total bytes, ≤ ([0-9,]+) records, "
+        r"≤ ([0-9,]+) bytes per\s+record, ≤ ([0-9,]+) bytes per string, "
+        r"nesting depth ≤ ([0-9,]+)",
+        nfr,
+    )
+    if match is None:
+        errors.append("§25.8 intake ceiling registry line is missing or malformed")
+    else:
+        spec_values = tuple(int(value.replace(",", "")) for value in match.groups())
+        code_values = (
+            process_intake.INTAKE_BATCH_BYTES,
+            process_intake.INTAKE_RECORDS,
+            process_intake.INTAKE_RECORD_BYTES,
+            process_intake.INTAKE_STRING_BYTES,
+            process_intake.INTAKE_NESTING_DEPTH,
+        )
+        if code_values != spec_values:
+            errors.append(
+                "process_intake.py intake ceilings do not match §25.8: "
+                f"code={code_values!r}, spec={spec_values!r}"
             )
     return errors
 

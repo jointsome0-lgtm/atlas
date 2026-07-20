@@ -78,6 +78,7 @@ atlas/
 
   scripts/
     import_plan.py
+    process_intake.py
     observe_artifacts.py
     build_atlas_graph.py
     export_snapshot.py

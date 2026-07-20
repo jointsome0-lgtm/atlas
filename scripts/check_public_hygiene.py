@@ -73,7 +73,8 @@ FIXTURE_PATH_PATTERNS = ("fixtures/**",)
 
 DENIED_PATH_ALLOWLIST: frozenset[str] = frozenset(
     {
-        # Add only exact paths here, with a comment explaining each exception.
+        # Invented, marked public acceptance fixture for deterministic intake.
+        "fixtures/intake/vera-example-batch.json",
     }
 )
 

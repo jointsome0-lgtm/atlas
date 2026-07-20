@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/report-batch.schema.json",
+  "description": "Closed deterministic intake batch report, transcribing §33.2 and #56.",
+  "type": "object",
+  "properties": {
+    "format": {"const": "report-batch"},
+    "version": {"type": "integer", "const": 1},
+    "source": {"$ref": "#/$defs/slug"},
+    "batch": {"$ref": "#/$defs/slug"},
+    "records": {"type": "array", "items": {"$ref": "#/$defs/result"}},
+    "counts": {"$ref": "#/$defs/counts"}
+  },
+  "required": ["format", "version", "source", "batch", "records", "counts"],
+  "additionalProperties": false,
+  "$defs": {
+    "slug": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "intakeKey": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*#[0-9]+$"},
+    "nodeId": {"type": "string", "pattern": "^(?:artifact|encounter|question):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "pointer": {"type": "string", "pattern": "^/records/[0-9]+(?:/[a-z_]+(?:/[0-9]+)*)*$"},
+    "class": {
+      "type": "string",
+      "enum": ["applied", "replayed", "unresolved", "unsupported", "rejected", "interrupted", "conflict"]
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "applied",
+        "processed-receipt",
+        "unresolved-reference",
+        "unsupported-plan",
+        "unsupported-target-kind",
+        "unsupported-reference-kind",
+        "missing-evidence-strength",
+        "missing-question-source",
+        "duplicate-question-source-kind",
+        "schema-invalid",
+        "derived-row-invalid",
+        "derived-row-too-large",
+        "interrupted-receipt",
+        "batch-content-conflict",
+        "reserved-source",
+        "id-conflict"
+      ]
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "intake": {"$ref": "#/$defs/intakeKey"},
+        "id": {"$ref": "#/$defs/nodeId"},
+        "class": {"$ref": "#/$defs/class"},
+        "pointer": {"$ref": "#/$defs/pointer"},
+        "reason": {"$ref": "#/$defs/reason"}
+      },
+      "required": ["index", "intake", "class", "pointer", "reason"],
+      "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "applied": {"type": "integer", "minimum": 0},
+        "replayed": {"type": "integer", "minimum": 0},
+        "unresolved": {"type": "integer", "minimum": 0},
+        "unsupported": {"type": "integer", "minimum": 0},
+        "rejected": {"type": "integer", "minimum": 0},
+        "interrupted": {"type": "integer", "minimum": 0},
+        "conflict": {"type": "integer", "minimum": 0}
+      },
+      "required": ["total", "applied", "replayed", "unresolved", "unsupported", "rejected", "interrupted", "conflict"],
+      "additionalProperties": false
+    }
+  }
+}
