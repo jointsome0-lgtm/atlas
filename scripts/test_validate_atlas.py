@@ -1222,6 +1222,26 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertEqual([], validator.validate(valid))
         self.assertTrue(validator.validate(invalid))
 
+    def test_invalid_intake_record_in_valid_envelope_warns_never_errors(self):
+        # §33.2/#56: a schema-invalid record is the flow's per-record
+        # refusal, recorded in the batch report, while the delivery stays
+        # preserved as the audit original — the validator surfaces it as a
+        # warning, never as permanent instance invalidity.
+        tree = {
+            "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH.replace(
+                '"text": "synthetic Vera Example question?"',
+                '"text": "synthetic Vera Example question?", "stray": "x"',
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(tree, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("WARNING:", stderr)
+        self.assertNotIn("ERROR:", stderr)
+        self.assertNotIn("stray", stderr)
+        self.assertIn("1 warnings", stdout)
+
     def test_check_constants(self):
         code, stdout, stderr = self.run_cli("check-constants")
         self.assertEqual(0, code, stderr)

@@ -272,12 +272,19 @@ class RefusalAndPlacementTests(unittest.TestCase):
         with private_instance() as root, tempfile.TemporaryDirectory() as outside:
             delivery = write_batch(Path(outside), batch(records))
             code, report, stderr = run_main(root, "--batch-file", delivery)
+            # §33.2: the delivery with refused records stays preserved as
+            # the audit original and must not leave the instance permanently
+            # invalid — the refusal surfaces as a validator warning instead.
+            errors, warnings, _counts = validate_atlas.validate_instance(root)
         self.assertEqual(1, code)
         self.assertEqual(["rejected", "rejected", "rejected", "applied"],
                          [item["class"] for item in report["records"]])
         self.assertEqual("/records/0", report["records"][0]["pointer"])
         self.assertNotIn(secret_key, json.dumps(report))
         self.assertNotIn(secret_key, stderr)
+        self.assertEqual([], errors)
+        self.assertTrue(warnings)
+        self.assertNotIn(secret_key, "".join(warnings))
 
     def test_invalid_record_sensitivity_is_rejected_individually(self):
         records = [artifact(sensitivity="private-vera"), encounter()]

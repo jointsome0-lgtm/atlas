@@ -777,10 +777,38 @@ def validate_instance(root: Path):
         # §33.2/§25.7: delivered batches are a persisted format; the JSON
         # envelope validates structurally — batch content stays as delivered
         # and is never term-scanned here (§19 keeps out of intake/ entirely).
+        # A schema-invalid record inside a valid envelope is the flow's
+        # per-record refusal (its outcome lives in the batch report), while
+        # the delivery is preserved as the audit original — so it surfaces
+        # here as a warning, never as instance invalidity.
+        intake_validator = SchemaValidator(schemas["atlas-intake"])
+        envelope_schema = intake_validator.resolve("#/$defs/envelope")
+        record_schema = intake_validator.resolve("#/$defs/record")
         for path in sorted(intake.rglob("*.json")):
             try:
                 instance = _read_json(path, delivered=True)
-                errors.extend(_schema_errors(instance, schemas["atlas-intake"], path))
+                envelope_messages: list[str] = []
+                intake_validator._validate(
+                    instance, envelope_schema, "$", envelope_messages
+                )
+                errors.extend(
+                    f"{path}: {message}" for message in envelope_messages
+                )
+                if not envelope_messages and isinstance(instance, dict):
+                    for index, record in enumerate(instance.get("records", [])):
+                        record_messages: list[str] = []
+                        intake_validator._validate(
+                            record,
+                            record_schema,
+                            f"$.records[{index}]",
+                            record_messages,
+                        )
+                        if record_messages:
+                            warnings.append(
+                                f"{path}: {record_messages[0]}"
+                                " (record refused per §33.2; delivery"
+                                " preserved as delivered)"
+                            )
                 # §33.2: source scopes the intake/ path and batch names the
                 # delivery — the <source>/<batch>#n provenance and receipt
                 # keys must point back at exactly this file.
