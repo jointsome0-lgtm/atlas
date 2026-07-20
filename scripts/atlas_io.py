@@ -492,8 +492,15 @@ class AtlasInstance:
                     durable = False
                 if not durable:
                     with contextlib.suppress(OSError):
-                        os.ftruncate(fd, info.st_size)
-                        os.fsync(fd)
+                        if before is None:
+                            # This call created the file: truncation would
+                            # leave an empty journal whose directory entry a
+                            # retry never syncs — unlink it instead.
+                            path.unlink()
+                            _sync_dir(parent)
+                        else:
+                            os.ftruncate(fd, info.st_size)
+                            os.fsync(fd)
                     _fail(ReasonCode.APPEND_IO, display)
             finally:
                 os.close(fd)
