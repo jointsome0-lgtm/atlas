@@ -365,21 +365,28 @@ class RefusalAndPlacementTests(unittest.TestCase):
             self.assertEqual(0, code, stderr)
             canonical = (root / "intake" / two["source"]
                          / f"{two['batch']}.json")
-            truncated = batch([encounter()])
-            canonical.write_text(
-                json.dumps(truncated, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
             before = {p.name: p.read_bytes() for p in (root / "state").glob("*.jsonl")}
-            code, report, stderr = run_main(
-                root, "--batch", f"{two['source']}/{two['batch']}"
-            )
-            after = {p.name: p.read_bytes() for p in (root / "state").glob("*.jsonl")}
-        self.assertEqual(1, code)
-        self.assertEqual(["conflict"],
-                         [item["class"] for item in report["records"]])
-        self.assertIn("batch-content-conflict", stderr)
-        self.assertEqual(before, after)
+            for truncated, classes in (
+                (batch([encounter()]), ["conflict"]),
+                (batch([]), []),
+            ):
+                with self.subTest(records=len(truncated["records"])):
+                    canonical.write_text(
+                        json.dumps(truncated, ensure_ascii=False) + "\n",
+                        encoding="utf-8",
+                    )
+                    code, report, stderr = run_main(
+                        root, "--batch", f"{two['source']}/{two['batch']}"
+                    )
+                    after = {p.name: p.read_bytes()
+                             for p in (root / "state").glob("*.jsonl")}
+                    self.assertEqual(1, code)
+                    self.assertEqual(
+                        classes,
+                        [item["class"] for item in report["records"]],
+                    )
+                    self.assertIn("batch-content-conflict", stderr)
+                    self.assertEqual(before, after)
 
     def test_edited_original_with_same_record_count_fails_replay_closed(self):
         # §33.2: a processed receipt alone does not prove the current record

@@ -652,7 +652,9 @@ def _append_order(
     return order
 
 
-def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
+def _process_records(
+    instance: atlas_io.AtlasInstance, envelope: dict
+) -> tuple[dict, bool]:
     source = envelope["source"]
     batch = envelope["batch"]
     receipt_status = instance.receipt_status()
@@ -668,7 +670,7 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
         for key in receipt_status.opened | receipt_status.processed
         if key.startswith(prefix)
     ):
-        return _conflict_report(envelope)
+        return _conflict_report(envelope), True
     _preflight_tree(instance)
     outputs = _journal_outputs(instance)
     withheld = {
@@ -694,7 +696,7 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
                 instance, record, envelope, known, key, minted_id, index,
                 outputs.get(key),
             ):
-                return _conflict_report(envelope)
+                return _conflict_report(envelope), True
             results[index] = _result(
                 index, key, "replayed", "processed-receipt", pointer, minted_id
             )
@@ -761,7 +763,7 @@ def _process_records(instance: atlas_io.AtlasInstance, envelope: dict) -> dict:
 
     return _make_report(
         source, batch, [results[index] for index in sorted(results)]
-    )
+    ), False
 
 
 def _emit_record_diagnostics(report: dict) -> None:
@@ -864,7 +866,8 @@ def main(argv: list[str] | None = None) -> int:
                             raise
 
             if report is None:
-                report = _process_records(instance, envelope)
+                report, records_conflict = _process_records(instance, envelope)
+                whole_conflict = whole_conflict or records_conflict
 
         _emit_report(instance, report)
         if whole_conflict:
