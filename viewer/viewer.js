@@ -191,11 +191,6 @@ async function dispatch() {
     renderAddressState("NOT_IN_SLICE", address.mode);
     return;
   }
-  if (accepted.graph.nodes.length === 0) {
-    renderEmpty();
-    return;
-  }
-
   const nodeById = new Map(accepted.graph.nodes.map((node) => [node.id, node]));
   let selected = null;
   let field = DEFAULT_FIELD;
@@ -215,6 +210,14 @@ async function dispatch() {
     } else {
       banner = {kind: "UNKNOWN_FIELD", value: address.field};
     }
+  }
+
+  if (accepted.graph.nodes.length === 0) {
+    // §16.4: an unknown focus/field is still visibly flagged on a fresh
+    // empty instance — EMPTY never swallows a bad embed link.
+    renderEmpty();
+    if (banner) appendBanner(banner.kind, banner.value);
+    return;
   }
 
   if (field === "body") {

@@ -125,6 +125,10 @@ class ViewerBrowserTests(unittest.TestCase):
         # §16.5: address hardening precedes the empty-graph shortcut.
         self.open_state("#mode=%ZZ", "BAD_ADDRESS")
 
+        # §16.4: unknown field/focus still flags visibly on an empty graph.
+        self.open_state("#mode=field&field=ocean", "EMPTY")
+        self.assertEqual("UNKNOWN_FIELD", self.page.locator(".banner").get_attribute("data-banner"))
+
         shutil.copyfile(DEMO_GRAPH, self.graph_path)
         self.open_state("#mode=%ZZ", "BAD_ADDRESS")
         self.assertIn("This view address isn't valid", self.page.locator("#main").inner_text())
@@ -215,6 +219,32 @@ class ViewerBrowserTests(unittest.TestCase):
             "discriminant on the wrong edge type": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "order": 1}]),
+            "reversed related_to pair": self.graph_envelope(
+                nodes=[alone, other],
+                edges=[{**related, "source": "concept:other",
+                        "target": "concept:alone"}]),
+            "primary and supporting role conflict": self.graph_envelope(
+                nodes=[alone, {
+                    "id": "material:m", "type": "material", "title": "M",
+                    "fields": ["knowledge"], "kind": "docs", "url": "",
+                    "status": "active",
+                }, {
+                    "id": "question:q", "type": "question", "title": "",
+                    "fields": ["knowledge"], "text": "t",
+                    "created_at": "2026-07-10",
+                    "source": {"artifact": "artifact:a"},
+                }, {
+                    "id": "artifact:a", "type": "artifact", "title": "",
+                    "fields": ["knowledge"], "kind": "script", "path": "p",
+                    "observed_at": "2026-07-10", "summary": "s",
+                    "evidence_strength": "applied",
+                }],
+                edges=[
+                    {"source": "material:m", "target": "question:q",
+                     "type": "primary_for", "provenance": ["question:q"]},
+                    {"source": "material:m", "target": "question:q",
+                     "type": "supporting_for", "provenance": ["question:q"]},
+                ]),
         }
         for name, graph in variants.items():
             with self.subTest(variant=name):

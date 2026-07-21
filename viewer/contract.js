@@ -330,6 +330,7 @@ export function validateGraph(value) {
     }
   }
   const identities = new Set();
+  const roleConflicts = new Map();
   for (let index = 0; index < value.edges.length; index += 1) {
     const failure = validateEdge(value.edges[index], index);
     if (failure) return failure;
@@ -346,10 +347,26 @@ export function validateGraph(value) {
     for (const ref of edge.provenance) {
       if (!nodeIds.has(ref)) return diagnostic("/edges/" + index + "/provenance", "danglingRef");
     }
+    // §20.3: related_to is canonicalized — endpoints sorted before anything
+    // else sees the edge; a reversed pair is a non-canonical emission.
+    if (edge.type === "related_to" && edge.source > edge.target) {
+      return diagnostic("/edges/" + index, "canonicalOrder");
+    }
     // §20.3: one identity emits one edge — duplicates are malformed.
     const identity = edgeIdentity(edge);
     if (identities.has(identity)) return diagnostic("/edges/" + index, "duplicateIdentity");
     identities.add(identity);
+    // §9.4/§20.3: per (material, context, step) the primary and supporting
+    // role sets are disjoint — a same-key pair across the two types is the
+    // role conflict the builder errors on.
+    if (edge.type === "primary_for" || edge.type === "supporting_for") {
+      const roleKey = JSON.stringify([edge.source, edge.target, edge.step ?? ""]);
+      const previous = roleConflicts.get(roleKey);
+      if (previous !== undefined && previous !== edge.type) {
+        return diagnostic("/edges/" + index, "roleConflict");
+      }
+      roleConflicts.set(roleKey, edge.type);
+    }
   }
   return null;
 }
