@@ -846,8 +846,9 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                                  step=step)
                 if meta.get("source_plan"):
                     warnings.append(
-                        f"{path}: source_plan {meta['source_plan']!r} kept as metadata "
-                        "(plan nodes land with the §12 importer)")
+                        f"{path}: source_plan {meta['source_plan']!r} embedded; "
+                        "plan nodes are not emitted until the §12 importer lands, "
+                        "so the ref dangles in this build (§20 step 5)")
 
     # §20 step 8 (#31): the structural journal projection — artifact,
     # encounter, and question rows become nodes plus their §10.2 derived
