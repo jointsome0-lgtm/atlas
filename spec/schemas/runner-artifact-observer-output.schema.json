@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/runner-artifact-observer-output.schema.json",
+  "description": "Closed model-authored proposal output for the §17.7 artifact-observer boundary (#46); Atlas resolves every local reference and owns ids, dates, sensitivity, decisions, reports, and writes.",
+  "type": "object",
+  "properties": {
+    "format": {"const": "runner-artifact-observer-output"},
+    "version": {"type": "integer", "const": 1},
+    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
+    "encounters": {"type": "array", "items": {"$ref": "#/$defs/encounter"}},
+    "questions": {"type": "array", "items": {"$ref": "#/$defs/question"}},
+    "trail_segments": {"type": "array", "items": {"$ref": "#/$defs/trailSegment"}},
+    "state_proposals": {"type": "array", "items": {"$ref": "#/$defs/stateProposal"}},
+    "warnings": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/slug"}}
+  },
+  "required": ["format", "version", "artifacts", "encounters", "questions", "trail_segments", "state_proposals", "warnings"],
+  "additionalProperties": false,
+  "$defs": {
+    "slug": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "sourceRef": {"type": "string", "pattern": "^source:[0-9]+$"},
+    "nodeRef": {"type": "string", "pattern": "^node:[0-9]+$"},
+    "edgeRef": {"type": "string", "pattern": "^edge:[0-9]+$"},
+    "journalRef": {"type": "string", "pattern": "^journal:[0-9]+$"},
+    "proposalRef": {"type": "string", "pattern": "^proposal:[0-9]+$"},
+    "targetRef": {"type": "string", "pattern": "^(?:node|edge|proposal):[0-9]+$"},
+    "viaRef": {"type": "string", "pattern": "^(?:node|proposal):[0-9]+$"},
+    "evidenceRef": {"type": "string", "pattern": "^(?:journal|proposal):[0-9]+$"},
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/proposalRef"},
+        "source_ref": {"$ref": "#/$defs/sourceRef"},
+        "artifact_type": {"type": "string", "pattern": "\\S"},
+        "summary": {"type": "string"},
+        "touches": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/nodeRef"}},
+        "supports_state_updates": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/nodeRef"}},
+        "evidence_strength": {
+          "type": "string",
+          "enum": ["noticed", "read", "summarized", "applied", "explained", "reviewed", "performed", "drilled"],
+          "description": "Artifact evidence strengths transcribed verbatim from §9.6."
+        },
+        "probe_ref": {"$ref": "#/$defs/nodeRef"}
+      },
+      "required": ["ref", "source_ref", "artifact_type", "summary", "touches", "supports_state_updates", "evidence_strength"],
+      "additionalProperties": false
+    },
+    "encounter": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/proposalRef"},
+        "source_ref": {"$ref": "#/$defs/sourceRef"},
+        "target_ref": {"$ref": "#/$defs/nodeRef"},
+        "depth": {
+          "type": "string",
+          "enum": ["skim", "read", "summarized", "applied", "taught"],
+          "description": "Encounter depths transcribed verbatim from §9.7."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["plan-driven", "question-driven", "artifact-driven", "background"],
+          "description": "Encounter modes transcribed verbatim from §9.7."
+        },
+        "context_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceRef"}}
+      },
+      "required": ["ref", "source_ref", "target_ref", "depth", "mode", "context_refs"],
+      "additionalProperties": false
+    },
+    "question": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/proposalRef"},
+        "source_ref": {"$ref": "#/$defs/sourceRef"},
+        "text": {"type": "string", "pattern": "\\S"},
+        "pulls": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/nodeRef"}},
+        "source_proposal_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/proposalRef"}}
+      },
+      "required": ["ref", "source_ref", "text", "pulls", "source_proposal_refs"],
+      "additionalProperties": false
+    },
+    "trailSegment": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/proposalRef"},
+        "source_ref": {"$ref": "#/$defs/sourceRef"},
+        "direction_ref": {"$ref": "#/$defs/nodeRef"},
+        "from_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/nodeRef"}},
+        "to_ref": {"$ref": "#/$defs/nodeRef"},
+        "via_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/viaRef"}},
+        "reason": {"type": "string"},
+        "question_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/proposalRef"}}
+      },
+      "required": ["ref", "source_ref", "direction_ref", "from_refs", "to_ref", "via_refs", "reason", "question_refs"],
+      "additionalProperties": false
+    },
+    "stateProposal": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/proposalRef"},
+        "target_ref": {"$ref": "#/$defs/targetRef"},
+        "dimension": {
+          "type": "string",
+          "enum": ["confidence", "clarity", "coverage", "weight", "status", "strength", "endurance", "mobility", "condition"],
+          "description": "Review-gated dimensions transcribed from §9.8, §14.2–§14.4, §14.9, and §32.2."
+        },
+        "proposed_value": {
+          "type": "string",
+          "enum": ["unknown", "low", "medium", "high", "vague", "rough", "stable", "disputed", "none", "partial", "broad", "open", "clarified", "resolved", "stale", "fine", "irritated", "recovering", "restricted", "chronic"],
+          "description": "Union of the owning dimension values; allOf narrows the value by dimension."
+        },
+        "evidence_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceRef"}}
+      },
+      "required": ["ref", "target_ref", "dimension", "proposed_value", "evidence_refs"],
+      "additionalProperties": false,
+      "allOf": [
+        {"if": {"properties": {"dimension": {"const": "confidence"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["unknown", "low", "medium", "high"]}}}},
+        {"if": {"properties": {"dimension": {"const": "clarity"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["vague", "rough", "stable", "disputed"]}}}},
+        {"if": {"properties": {"dimension": {"const": "coverage"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["none", "partial", "broad"]}}}},
+        {"if": {"properties": {"dimension": {"const": "weight"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["low", "medium", "high"]}}}},
+        {"if": {"properties": {"dimension": {"const": "status"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["open", "clarified", "resolved", "stale"]}}}},
+        {"if": {"properties": {"dimension": {"enum": ["strength", "endurance", "mobility"]}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["unknown", "low", "medium", "high"]}}}},
+        {"if": {"properties": {"dimension": {"const": "condition"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["unknown", "fine", "irritated", "recovering", "restricted", "chronic"]}}}}
+      ]
+    }
+  }
+}

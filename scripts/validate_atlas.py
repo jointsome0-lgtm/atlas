@@ -53,6 +53,10 @@ SCHEMA_NAMES = {
     "atlas-intake",
     "report-batch",
     "run-manifest",
+    "runner-plan-importer-input",
+    "runner-plan-importer-output",
+    "runner-artifact-observer-input",
+    "runner-artifact-observer-output",
 }
 
 SUPPORTED_KEYWORDS = {

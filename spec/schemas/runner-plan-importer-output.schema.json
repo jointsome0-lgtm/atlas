@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/runner-plan-importer-output.schema.json",
+  "description": "Closed model-authored proposal output for the §17.7 plan-importer boundary (#46); all references are workspace-local and Atlas owns ids, sensitivity, decisions, reports, and writes.",
+  "type": "object",
+  "properties": {
+    "format": {"const": "runner-plan-importer-output"},
+    "version": {"type": "integer", "const": 1},
+    "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+    "relations": {"type": "array", "items": {"$ref": "#/$defs/relation"}},
+    "routes": {"type": "array", "items": {"$ref": "#/$defs/route"}},
+    "mapping_questions": {"type": "array", "items": {"$ref": "#/$defs/mappingQuestion"}},
+    "self_claims": {"type": "array", "items": {"$ref": "#/$defs/selfClaim"}},
+    "warnings": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/slug"}}
+  },
+  "required": ["format", "version", "candidates", "relations", "routes", "mapping_questions", "self_claims", "warnings"],
+  "additionalProperties": false,
+  "$defs": {
+    "slug": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "sourceRef": {"type": "string", "pattern": "^source:[0-9]+$"},
+    "nodeRef": {"type": "string", "pattern": "^node:[0-9]+$"},
+    "candidateRef": {"type": "string", "pattern": "^candidate:[0-9]+$"},
+    "entityRef": {"type": "string", "pattern": "^(?:node|candidate):[0-9]+$"},
+    "sourceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/sourceRef"}
+    },
+    "candidate": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/candidateRef"},
+        "kind": {
+          "type": "string",
+          "enum": ["direction", "concept", "material", "material_part", "probe"],
+          "description": "Candidate kinds transcribed from the §12.2 plan-import steps."
+        },
+        "label": {"type": "string", "pattern": "\\S"},
+        "parent_ref": {"$ref": "#/$defs/entityRef"},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      },
+      "required": ["ref", "kind", "label", "source_refs"],
+      "additionalProperties": false
+    },
+    "relation": {
+      "type": "object",
+      "properties": {
+        "source_ref": {"$ref": "#/$defs/entityRef"},
+        "target_ref": {"$ref": "#/$defs/entityRef"},
+        "role": {
+          "type": "string",
+          "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "overall_concept", "supports"],
+          "description": "Importer-relevant authored relations transcribed from §10.2; overall_concept is §9.2's whole-material mapping and supports is §9.14's standing-helper relation."
+        },
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      },
+      "required": ["source_ref", "target_ref", "role", "source_refs"],
+      "additionalProperties": false
+    },
+    "materialRole": {
+      "type": "object",
+      "properties": {
+        "step_ref": {"$ref": "#/$defs/entityRef"},
+        "material_ref": {"$ref": "#/$defs/entityRef"},
+        "role": {
+          "type": "string",
+          "enum": ["primary", "supporting"],
+          "description": "Contextual material roles transcribed from §11.1 and §12.2."
+        }
+      },
+      "required": ["step_ref", "material_ref", "role"],
+      "additionalProperties": false
+    },
+    "route": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/candidateRef"},
+        "title": {"type": "string", "pattern": "\\S"},
+        "step_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/entityRef"}},
+        "material_roles": {"type": "array", "items": {"$ref": "#/$defs/materialRole"}},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      },
+      "required": ["ref", "title", "step_refs", "material_roles", "source_refs"],
+      "additionalProperties": false
+    },
+    "mappingQuestion": {
+      "type": "object",
+      "properties": {
+        "candidate_ref": {"$ref": "#/$defs/candidateRef"},
+        "existing_ref": {"$ref": "#/$defs/nodeRef"},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      },
+      "required": ["candidate_ref", "existing_ref", "source_refs"],
+      "additionalProperties": false
+    },
+    "selfClaim": {
+      "type": "object",
+      "properties": {
+        "target_ref": {"$ref": "#/$defs/entityRef"},
+        "dimension": {
+          "type": "string",
+          "enum": ["confidence", "clarity", "coverage"],
+          "description": "Plan self-claim proposal dimensions transcribed from §12.2 and the §14.6 review gate."
+        },
+        "proposed_value": {
+          "type": "string",
+          "enum": ["unknown", "low", "medium", "high", "vague", "rough", "stable", "disputed", "none", "partial", "broad"],
+          "description": "Union of the §14.2–§14.4 values; allOf narrows the value by dimension."
+        },
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      },
+      "required": ["target_ref", "dimension", "proposed_value", "source_refs"],
+      "additionalProperties": false,
+      "allOf": [
+        {"if": {"properties": {"dimension": {"const": "confidence"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["unknown", "low", "medium", "high"]}}}},
+        {"if": {"properties": {"dimension": {"const": "clarity"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["vague", "rough", "stable", "disputed"]}}}},
+        {"if": {"properties": {"dimension": {"const": "coverage"}}, "required": ["dimension"]}, "then": {"properties": {"proposed_value": {"enum": ["none", "partial", "broad"]}}}}
+      ]
+    }
+  }
+}

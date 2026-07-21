@@ -1051,6 +1051,82 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual(validate_atlas.SCHEMA_NAMES, set(schemas))
 
+    def test_runner_contract_envelopes_are_closed(self):
+        # §17.7/#46: the four transient role boundaries accept their minimal
+        # envelopes, while model-authored sensitivity or write authority has
+        # no structural channel.
+        schemas, errors = validate_atlas._load_registry()
+        self.assertEqual([], errors)
+        for name in (
+                "runner-plan-importer-input",
+                "runner-plan-importer-output",
+                "runner-artifact-observer-input",
+                "runner-artifact-observer-output"):
+            stack = [schemas[name]]
+            while stack:
+                value = stack.pop()
+                if isinstance(value, dict):
+                    if value.get("type") == "object":
+                        self.assertIs(value.get("additionalProperties"), False,
+                                      name)
+                    stack.extend(value.values())
+                elif isinstance(value, list):
+                    stack.extend(value)
+        instances = {
+            "runner-plan-importer-input": {
+                "format": "runner-plan-importer-input",
+                "version": 1,
+                "run_id": "run:2026-07-21-001",
+                "source": {"kind": "plan", "fragments": [
+                    {"ref": "source:0", "kind": "heading",
+                     "text": "Vera Example plan"},
+                ]},
+                "nodes": [],
+            },
+            "runner-plan-importer-output": {
+                "format": "runner-plan-importer-output",
+                "version": 1,
+                "candidates": [],
+                "relations": [],
+                "routes": [],
+                "mapping_questions": [],
+                "self_claims": [],
+                "warnings": [],
+            },
+            "runner-artifact-observer-input": {
+                "format": "runner-artifact-observer-input",
+                "version": 1,
+                "run_id": "run:2026-07-21-001",
+                "units": [{
+                    "ref": "source:0",
+                    "kind": "file",
+                    "media_type": "text/plain",
+                    "label": "Vera Example note",
+                    "text": "Vera Example studied one invented topic.",
+                }],
+                "nodes": [],
+                "edges": [],
+                "journal_context": [],
+            },
+            "runner-artifact-observer-output": {
+                "format": "runner-artifact-observer-output",
+                "version": 1,
+                "artifacts": [],
+                "encounters": [],
+                "questions": [],
+                "trail_segments": [],
+                "state_proposals": [],
+                "warnings": [],
+            },
+        }
+        for name, instance in instances.items():
+            with self.subTest(name=name):
+                validator = validate_atlas.SchemaValidator(schemas[name])
+                self.assertEqual([], validator.validate(instance))
+                for forbidden in ("sensitivity", "write_path", "decision"):
+                    attacked = {**instance, forbidden: "model-asserted"}
+                    self.assertTrue(validator.validate(attacked), forbidden)
+
     def test_unsupported_schema_keyword_fails_closed(self):
         with self.assertRaises(validate_atlas.SchemaSubsetError):
             validate_atlas.SchemaValidator({"type": "string", "format": "date"})
@@ -1121,9 +1197,19 @@ class SchemaValidatorTests(unittest.TestCase):
                   "parameters": [{"name": "temperature", "value": "0.2"}]},
         "engine_revision": "0" * 40,
         "runner_version": "0.1.0",
+        "runner_protocol": {
+            "version": 1,
+            "commit": "be83303bfbe3a1523c72ebaa3f0baa03389c5832",
+        },
         "prompt_bundle": {
-            "components": [{"id": "plan-importer-core", "version": "1",
-                            "sha256": "a" * 64}],
+            "components": [
+                {"id": "plan-importer-core", "version": "1",
+                 "sha256": "a" * 64},
+                {"id": "runner-plan-importer-input", "version": "1",
+                 "sha256": "c" * 64},
+                {"id": "runner-plan-importer-output", "version": "1",
+                 "sha256": "d" * 64},
+            ],
             "sha256": "b" * 64},
         "inputs": {
             "included": [{"path": "plans/imported/example.md", "bytes": 123}],
@@ -1188,6 +1274,20 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertIn("closed key set", stderr)
         self.assertNotIn("transcript", stderr)
         self.assertNotIn("rendered prompt text", stderr)
+
+    def test_run_manifest_requires_exact_runner_protocol_pin(self):
+        # §17.7: version and defining commit are one fail-closed pin.
+        manifest = json.loads(self.VALID_RUN_MANIFEST)
+        manifest["runner_protocol"]["commit"] = "f" * 40
+        instance = {
+            **VALID_INSTANCE,
+            "runs/2026-07-21-001.json": json.dumps(manifest),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("$.runner_protocol.commit", stderr)
 
     def test_stale_route_step_resolves_through_formerly(self):
         # §34.4: steps already use the survivor while material_roles[].step

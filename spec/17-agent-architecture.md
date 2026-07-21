@@ -121,7 +121,8 @@ One per model-assisted run, dry-run included — the audit line §25.3 needs bey
 
 ```text
 Carries: run_id, role, model (provider, model id, declared
-parameters), engine git revision, runner version, the prompt
+parameters), engine git revision, runner version, the §17.7
+runner-protocol pin, the prompt
 bundle, the input manifest (included entries by path and byte
 size; unavailable entries with a reason — excluded,
 out-of-row, missing, over-budget), the recorded budget and
@@ -160,5 +161,44 @@ closure of its inputs (§34.2) — never by default, never
 referenced by the manifest.
 ```
 
----
+## §17.7 Isolated Runner Boundary
 
+Atlas adopts the process/isolation layer of Exp2Res §15.12, **agent-runner protocol version 1**, pinned to defining spec commit `be83303bfbe3a1523c72ebaa3f0baa03389c5832` (exp2res#69, merged PR #107). The version and commit are one pin: an implementation that cannot declare and preflight that exact pair aborts before provider transit. Atlas never copies the upstream rules; changing the pair is an Atlas decision and an edit here.
+
+The ownership boundary is closed:
+
+```text
+owner                         | authority
+------------------------------|------------------------------------
+pinned Exp2Res protocol       | generic process/isolation mechanics
+§17.3 + §17.4                 | Atlas role authority, selected input,
+                              | exclusions, budgets, timeout, retry
+the four schemas below        | exact transient bytes crossing the
+                              | role boundary
+§12/§13/§14/§21 owning flows  | Atlas reference and role semantics,
+                              | review, reports, and persistence
+```
+
+The contract-workspace formats are version 1, closed JSON Schema 2020-12 documents registered in §25.7:
+
+```text
+runner-plan-importer-input    — one selected plan or plan record as
+                                typed source fragments plus the
+                                minimum graph identity subset
+runner-plan-importer-output   — candidate, relation, route, mapping,
+                                and review-only self-claim proposals
+runner-artifact-observer-input
+                              — selected bounded observation units
+                                plus minimum graph/journal context
+runner-artifact-observer-output
+                              — artifact, encounter, question, trail,
+                                and review-gated state proposals
+```
+
+These files are transient runner transport, never instance state. Each input carries the service-assigned `run_id`; before transit Atlas validates its schema, unique local references, role membership, and node/edge kinds against the exact §17.4 selection. Output uses only workspace-local opaque references. Importer `source_refs` are source provenance, never §9.12 evidence (§5.3). The output schemas deliberately expose no instance path, canonical id/date, `run_id`, producer, decision, sensitivity, or write instruction. Atlas strictly parses the result (duplicate keys and non-finite numbers are errors), validates the output schema again locally, requires document-wide uniqueness of output-local refs, then resolves every reference against that exact input or an allowed same-output proposal, checks the §17.3 role row and the owning flow's semantics, and derives the `model` marking and the §32.6 union class. An unknown or wrong-kind reference, an extra field, or an attempted class/write assertion aborts before presentation or persistence. Only the owning flow can turn a validated proposal into a report or, after the existing user gate, an instance write.
+
+Version 1 admits only `plan-importer` and `artifact-observer`. A `field-cartographer` or `state-auditor` model run fails preflight until its own closed input/output pair is registered; it never falls through to a generic payload.
+
+Every model-assisted execution binds to §17.6: `runner_protocol` records the exact pin above, and the prompt bundle component list records the selected input and output schema ids, versions, and hashes. Only output that passes both structural and Atlas semantic validation may contribute ids or report refs to `outputs`. Malformed output, cancellation, timeout, or protocol/preflight failure closes the manifest as `aborted`, with no outputs and a stable no-echo warning code; §17.6's hard-crash exception is unchanged. A retry remains a new §17.4 run and manifest.
+
+---

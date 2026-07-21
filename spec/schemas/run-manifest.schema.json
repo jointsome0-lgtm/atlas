@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://atlas-sdd.local/schemas/run-manifest.schema.json",
-  "description": "Closed per-run audit manifest for model-assisted agent runs, transcribing §17.6 (#41). Written whole at run close by the #46 runner; no prompt text, no instance-content hashes, no free text — refs and codes are single tokens, warnings are slug reason codes (§24.4).",
+  "description": "Closed per-run audit manifest for model-assisted agent runs, transcribing §17.6 (#41) and the exact §17.7 runner-protocol pin (#46). Written whole at run close by the runner; no prompt text, no instance-content hashes, no free text — refs and codes are single tokens, warnings are slug reason codes (§24.4).",
   "type": "object",
   "properties": {
     "format": {
@@ -34,6 +34,9 @@
     "runner_version": {
       "type": "string",
       "pattern": "^\\S+$"
+    },
+    "runner_protocol": {
+      "$ref": "#/$defs/runnerProtocol"
     },
     "prompt_bundle": {
       "$ref": "#/$defs/promptBundle"
@@ -89,6 +92,7 @@
     "model",
     "engine_revision",
     "runner_version",
+    "runner_protocol",
     "prompt_bundle",
     "inputs",
     "budget",
@@ -111,6 +115,25 @@
     "instant": {
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "runnerProtocol": {
+      "type": "object",
+      "description": "Exact reusable process/isolation pin owned by §17.7 (#46).",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "commit": {
+          "type": "string",
+          "const": "be83303bfbe3a1523c72ebaa3f0baa03389c5832"
+        }
+      },
+      "required": [
+        "version",
+        "commit"
+      ],
+      "additionalProperties": false
     },
     "model": {
       "type": "object",

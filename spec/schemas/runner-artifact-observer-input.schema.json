@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/runner-artifact-observer-input.schema.json",
+  "description": "Closed transient input for the §17.7 artifact-observer runner boundary (#46); only selected units and minimum graph/journal context enter the contract workspace.",
+  "type": "object",
+  "properties": {
+    "format": {"const": "runner-artifact-observer-input"},
+    "version": {"type": "integer", "const": 1},
+    "run_id": {"$ref": "#/$defs/runId"},
+    "units": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/unit"}},
+    "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+    "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}},
+    "journal_context": {"type": "array", "items": {"$ref": "#/$defs/journalContext"}}
+  },
+  "required": ["format", "version", "run_id", "units", "nodes", "edges", "journal_context"],
+  "additionalProperties": false,
+  "$defs": {
+    "runId": {"type": "string", "pattern": "^run:[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$"},
+    "sourceRef": {"type": "string", "pattern": "^source:[0-9]+$"},
+    "nodeRef": {"type": "string", "pattern": "^node:[0-9]+$"},
+    "edgeRef": {"type": "string", "pattern": "^edge:[0-9]+$"},
+    "journalRef": {"type": "string", "pattern": "^journal:[0-9]+$"},
+    "unit": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/sourceRef"},
+        "kind": {
+          "type": "string",
+          "enum": ["file", "commit", "diff", "review-comment", "diagram", "manual-declaration", "intake-record"],
+          "description": "Bounded observation unit kinds transcribed from §13.1 and §33.2."
+        },
+        "media_type": {"type": "string", "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$"},
+        "label": {"type": "string"},
+        "text": {"type": "string"}
+      },
+      "required": ["ref", "kind", "media_type", "label", "text"],
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/nodeRef"},
+        "id": {
+          "type": "string",
+          "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["plan", "concept", "material", "material_part", "direction", "suggested_route", "personal_trail", "trail_segment", "artifact", "encounter", "question", "probe", "zone", "pattern"],
+          "description": "Closed node kinds transcribed verbatim from §10.1."
+        },
+        "label": {"type": "string"}
+      },
+      "required": ["ref", "id", "kind", "label"],
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/edgeRef"},
+        "kind": {
+          "type": "string",
+          "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"],
+          "description": "Closed edge kinds transcribed verbatim from §10.2."
+        },
+        "source_ref": {"$ref": "#/$defs/nodeRef"},
+        "target_ref": {"$ref": "#/$defs/nodeRef"},
+        "weight": {
+          "type": "string",
+          "enum": ["unassessed", "low", "medium", "high"],
+          "description": "Emitted edge weights transcribed from §14.9."
+        }
+      },
+      "required": ["ref", "kind", "source_ref", "target_ref"],
+      "additionalProperties": false
+    },
+    "journalContext": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/journalRef"},
+        "kind": {
+          "type": "string",
+          "enum": ["artifact", "encounter", "question", "decision", "trail-segment"],
+          "description": "Observer recognition context admitted by §13.2 and §17.3."
+        },
+        "summary": {"type": "string"}
+      },
+      "required": ["ref", "kind", "summary"],
+      "additionalProperties": false
+    }
+  }
+}
