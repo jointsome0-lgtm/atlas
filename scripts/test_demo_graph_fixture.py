@@ -9,6 +9,7 @@ import validate_atlas
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "fixtures" / "demo-graph" / "atlas-graph.json"
+VIEWER_ACCEPTANCE = ROOT / "fixtures" / "viewer-acceptance"
 
 
 def strict_json(raw: bytes):
@@ -72,6 +73,24 @@ class DemoGraphFixtureTests(unittest.TestCase):
         self.assertFalse(self.raw.endswith(b"\n\n"))
         self.assertIsInstance(self.graph, dict)
         self.assertIn("Vera Example", self.text)
+
+
+class ViewerAcceptanceFixtureTests(unittest.TestCase):
+    def test_persisted_json_bytes_are_canonical(self):
+        fixtures = sorted(path for path in VIEWER_ACCEPTANCE.rglob("*")
+                          if path.is_file())
+        self.assertTrue(fixtures)
+        for fixture in fixtures:
+            with self.subTest(fixture=fixture.relative_to(VIEWER_ACCEPTANCE)):
+                self.assertEqual(".json", fixture.suffix)
+                raw = fixture.read_bytes()
+                text = raw.decode("utf-8")
+                graph = strict_json(raw)
+                self.assertNotIn(b"\r", raw)
+                self.assertTrue(raw.endswith(b"\n"))
+                self.assertFalse(raw.endswith(b"\n\n"))
+                self.assertIsInstance(graph, dict)
+                self.assertIn("Vera Example", text)
 
 
 if __name__ == "__main__":

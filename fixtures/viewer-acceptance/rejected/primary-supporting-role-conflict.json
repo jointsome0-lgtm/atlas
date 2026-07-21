@@ -1,0 +1,75 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "concept:alone",
+      "type": "concept",
+      "title": "Alone (Vera Example)",
+      "fields": [
+        "knowledge"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "material:m",
+      "type": "material",
+      "title": "M",
+      "fields": [
+        "knowledge"
+      ],
+      "kind": "docs",
+      "url": "",
+      "status": "active"
+    },
+    {
+      "id": "question:q",
+      "type": "question",
+      "title": "",
+      "fields": [
+        "knowledge"
+      ],
+      "text": "t",
+      "created_at": "2026-07-10",
+      "source": {
+        "artifact": "artifact:a"
+      }
+    },
+    {
+      "id": "artifact:a",
+      "type": "artifact",
+      "title": "",
+      "fields": [
+        "knowledge"
+      ],
+      "kind": "script",
+      "path": "p",
+      "observed_at": "2026-07-10",
+      "summary": "s",
+      "evidence_strength": "applied"
+    }
+  ],
+  "edges": [
+    {
+      "source": "material:m",
+      "target": "question:q",
+      "type": "primary_for",
+      "provenance": [
+        "question:q"
+      ]
+    },
+    {
+      "source": "material:m",
+      "target": "question:q",
+      "type": "supporting_for",
+      "provenance": [
+        "question:q"
+      ]
+    }
+  ],
+  "trails": [],
+  "state": {},
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}

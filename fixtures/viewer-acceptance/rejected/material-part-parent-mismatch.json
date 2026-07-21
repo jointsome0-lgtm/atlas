@@ -1,0 +1,52 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "material:a",
+      "type": "material",
+      "title": "A (Vera Example)",
+      "fields": [
+        "knowledge"
+      ],
+      "kind": "docs",
+      "url": "",
+      "status": "active"
+    },
+    {
+      "id": "material:b",
+      "type": "material",
+      "title": "B",
+      "fields": [
+        "knowledge"
+      ],
+      "kind": "docs",
+      "url": "",
+      "status": "active"
+    },
+    {
+      "id": "part:a/p",
+      "type": "material_part",
+      "title": "P",
+      "fields": [
+        "knowledge"
+      ],
+      "material": "material:b"
+    }
+  ],
+  "edges": [
+    {
+      "source": "material:b",
+      "target": "part:a/p",
+      "type": "has_part",
+      "provenance": [
+        "material:b"
+      ]
+    }
+  ],
+  "trails": [],
+  "state": {},
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}

@@ -1,0 +1,22 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "concept:alone",
+      "type": "concept",
+      "title": "Alone (Vera Example)",
+      "fields": [
+        "knowledge"
+      ],
+      "aliases": [],
+      "url": "https://example.test"
+    }
+  ],
+  "edges": [],
+  "trails": [],
+  "state": {},
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}
