@@ -76,6 +76,10 @@ graph/…redacted.json | ″         | agent-facing builds | §32.6 · abort, ne
 graph/atlas-snapshot | ″         | OUT adapters        | closed schema ·
   .json              |           | (§33.4)             | export refused
 reports              | T2        | the user; purgeable | no echo (§24.4)
+runs/ manifests      | envelope  | the user; default   | closed schema (§25.7)
+  (§17.6)            | T0, no    | context only if     | · refuse file
+                     | quoted    | unclassed (§32.6);  |
+                     | text      | purgeable           |
 observer scan roots  | T2        | observer (§13),     | budget (§24.2) ·
   (§13.1)            |           | user-initiated,     | skip via visible ask
                      |           | minus ignore paths  |
@@ -124,9 +128,9 @@ gate is a security property, not workflow: nothing a foreign
 text proposes becomes state without the user's confirming hand.
 Enforcement — a fixed precomputed input manifest, no tool,
 file, or scope expansion at the text's request — is the
-isolated-runner contract (#46) under the §17 role×path×tool
-matrix (#41); model-assisted import and observation wait for
-both.
+isolated-runner contract (#46) under the §17.3 role matrix
+and §17.4 session contract; model-assisted import and
+observation wait for the runner.
 Redaction before context: a session consuming graph state
 builds and validates graph/atlas-graph.redacted.json (§32.6)
 immediately before context assembly. Missing, stale, or failed

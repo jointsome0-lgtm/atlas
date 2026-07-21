@@ -29,7 +29,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §14 State Update Rules — scales; evidence→exposure transitions; review-gated dimensions; freshness decay; material state; edge weight (§14.9)
 - §15 Frontier Computation — inputs, output format, allowed/forbidden wording; deterministic baseline v1 (§15.4)
 - §16 Viewer Design — modes, per-geometry visual semantics (node-link, silhouette), required UI behavior, embedding (§16.4), input hardening (§16.5)
-- §17 Agent Architecture — four core roles and agent rules
+- §17 Agent Architecture — four core roles and agent rules; role×path×tool matrix (§17.3), session contract (§17.4), deterministic/model marking (§17.5), run manifest (§17.6)
 - §18 Codex Role — checkpoints and challenge questions
 - §19 Boundary Checker — forbidden terms, scanned paths
 - §20 Graph Builder — build steps, stdlib-only MVP; fold ordering + as-of (§20.1), write discipline (§20.2), edge emission discipline (§20.3), frontmatter grammar (§20.4)

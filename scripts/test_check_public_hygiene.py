@@ -18,6 +18,7 @@ REQUIRED_PATTERNS = {
     "intake/",
     "graph/",
     "plans/",
+    "runs/",
     "secrets/",
     "*.sqlite*",
     "*.db*",

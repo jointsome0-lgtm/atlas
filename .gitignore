@@ -17,6 +17,7 @@ intake/
 !fixtures/intake/vera-example-batch.json
 graph/
 plans/
+runs/
 secrets/
 
 # Local agent and tool state

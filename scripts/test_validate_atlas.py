@@ -1112,6 +1112,83 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertIn("0 errors", stdout)
         self.assertEqual("", stderr)
 
+    VALID_RUN_MANIFEST = json.dumps({
+        "format": "run-manifest",
+        "version": 1,
+        "run_id": "run:2026-07-21-001",
+        "role": "plan-importer",
+        "model": {"provider": "example", "id": "model-1",
+                  "parameters": [{"name": "temperature", "value": "0.2"}]},
+        "engine_revision": "0" * 40,
+        "runner_version": "0.1.0",
+        "prompt_bundle": {
+            "components": [{"id": "plan-importer-core", "version": "1",
+                            "sha256": "a" * 64}],
+            "sha256": "b" * 64},
+        "inputs": {
+            "included": [{"path": "plans/imported/example.md", "bytes": 123}],
+            "unavailable": [{"path": "atlas/concepts/example.md",
+                             "reason": "excluded"}]},
+        "budget": {"model_calls": 1, "timeout_seconds": 600,
+                   "input_bytes": 123, "input_entries": 1},
+        "timings": {"started_at": "2026-07-21T10:00:00Z",
+                    "ended_at": "2026-07-21T10:05:00Z"},
+        "outcome": "processed",
+        "outputs": ["report:plan:example"],
+        "warnings": [],
+        "decisions": [],
+    })
+
+    def test_valid_run_manifest_passes_the_boundary(self):
+        # §17.6/§25.7: a runs/ manifest validates against the closed
+        # run-manifest schema like any emitted file.
+        instance = {
+            **VALID_INSTANCE,
+            "runs/2026-07-21-001.json": self.VALID_RUN_MANIFEST,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("0 errors", stdout)
+
+    def test_run_manifest_id_must_match_its_file_name(self):
+        # §17.6: run_id is the file's date-serial — a disagreeing pair
+        # would let one manifest impersonate another run's audit line.
+        instance = {
+            **VALID_INSTANCE,
+            "runs/2026-07-21-002.json": self.VALID_RUN_MANIFEST,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("does not match the file name (§17.6)", stderr)
+        # §24.4: the mismatched value itself is never echoed.
+        self.assertNotIn("run:2026-07-21-001", stderr)
+
+    def test_run_manifest_rejects_free_text_and_unknown_keys(self):
+        # §24.1/§24.4: no quoted text — a prose warning and an unknown
+        # key both fail closed.
+        manifest = json.loads(self.VALID_RUN_MANIFEST)
+        manifest["warnings"] = ["secret was seen in file X"]
+        manifest["transcript"] = "rendered prompt text"
+        instance = {
+            **VALID_INSTANCE,
+            "runs/2026-07-21-001.json": json.dumps(manifest),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("$.warnings[0]", stderr)
+        self.assertNotIn("secret was seen", stderr)
+        # §25.7: the unknown key is refused, and its name and value stay
+        # out of the diagnostic (§24.4) — the closed key set is shown.
+        self.assertIn("closed key set", stderr)
+        self.assertNotIn("transcript", stderr)
+        self.assertNotIn("rendered prompt text", stderr)
+
     def test_stale_route_step_resolves_through_formerly(self):
         # §34.4: steps already use the survivor while material_roles[].step
         # still names the retired id — the ref resolves through the map

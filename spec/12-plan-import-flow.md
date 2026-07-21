@@ -177,9 +177,12 @@ without new evidence.
 A partially reviewed import surfaces like an interrupted
 intake record (§33.2): opened without processed goes to the
 report, never silently reprocessed or overwritten.
-Import is dry-run by default (§21.1): a dry run writes
-nothing; only an explicit commit run takes the lock, writes,
-and receipts.
+Import is dry-run by default (§21.1): a dry run writes no
+journal rows, no receipts, no candidate files; a
+model-assisted dry run's one write is its §17.6 run manifest —
+the runner's audit of the transit — and a manifest write takes
+the instance lock like every writer (§25.6). Only an explicit
+commit run writes and receipts.
 ```
 
 ---

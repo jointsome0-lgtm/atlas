@@ -52,6 +52,7 @@ SCHEMA_NAMES = {
     "atlas-snapshot",
     "atlas-intake",
     "report-batch",
+    "run-manifest",
 }
 
 SUPPORTED_KEYWORDS = {
@@ -839,6 +840,27 @@ def validate_instance(root: Path):
                         counts["rows"] += 1
                 except JsonInputError as exc:
                     errors.append(str(exc))
+
+    runs_dir = root / "runs"
+    if runs_dir.is_dir():
+        for path in sorted(runs_dir.glob("*.json")):
+            try:
+                instance = _read_json(path)
+                errors.extend(
+                    _schema_errors(instance, schemas["run-manifest"], path))
+                # §17.6: the file name is the manifest's date-serial —
+                # run_id and path never disagree. The mismatched value is
+                # not echoed (§24.4).
+                if isinstance(instance, dict):
+                    run_id = instance.get("run_id")
+                    expected = f"run:{path.name.removesuffix('.json')}"
+                    if isinstance(run_id, str) and run_id != expected:
+                        errors.append(
+                            f"{path}: run_id does not match the "
+                            "file name (§17.6)")
+                counts["emitted"] += 1
+            except JsonInputError as exc:
+                errors.append(str(exc))
 
     for filename, schema_name in (
         ("atlas-graph.json", "atlas-graph"),

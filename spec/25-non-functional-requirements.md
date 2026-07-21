@@ -53,7 +53,8 @@ Versioning — stated here once for every persisted format (the boundary formats
 
 ```text
 Emitted files — the graph (§10), the snapshot (§33.4), the
-redacted variant, every report — carry format + integer version.
+redacted variant, every report, the run manifest (§17.6) —
+carry format + integer version.
 Additive change is the norm, landed with its schema in the
 emitting change — the schemas are closed (#37), so an emitted
 file never carries a field its schema lacks; a rename, removal,
@@ -93,6 +94,9 @@ atlas-graph            — graph emission (§10); the redacted
 atlas-snapshot         — state snapshot (§33.4)
 atlas-intake           — intake envelope + records (§33.2)
 report-batch           — deterministic intake result (§33.2, #56)
+run-manifest           — per-run audit of a model-assisted
+                         agent run (§17.6, #41); the #46 runner
+                         is its one writer
 report-import, report-build
                        — reserved derived, purgeable reports (§12.2
                          step 11, §20); their shapes stay their

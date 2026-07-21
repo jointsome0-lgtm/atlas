@@ -54,7 +54,9 @@ in the set: the record's originals (intake/<source>/ lines,
     only it. Plus every generated file whose only provenance is the
     record: the SuggestedRoute and candidate stubs a classed input
     created (§33.3) — they carry its class until the user re-authors
-    them. In current state and in historical blobs.
+    them. Plus every run manifest (§17.6) whose entries cite the
+    record's path or ids — purgeable audit, removed whole. In
+    current state and in historical blobs.
 survives whole, refs dangling (§20 warns and skips): any row with
     other live bases — a segment or decision citing the record among
     others, a decision targeting a purged node on live evidence. Row

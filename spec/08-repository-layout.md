@@ -21,8 +21,8 @@ Placement principles:
    never edited by atlas, never checker-scanned (§19).
 7. Two repositories realize this tree: the public engine (docs/,
    scripts/, viewer/) and the private instance holding the data
-   dirs (atlas/, plans/, intake/, state/; graph/ is derived and
-   untracked — §25.6). The instance pins an engine revision; the
+   dirs (atlas/, plans/, intake/, state/, runs/; graph/ is derived
+   and untracked — §25.6). The instance pins an engine revision; the
    layout table is the composing shell's (§25.1, §34).
 ```
 
@@ -57,6 +57,8 @@ atlas/
     extracted/
 
   intake/
+
+  runs/             # §17.6 run manifests — one per model-assisted run
 
   state/
     artifacts.jsonl
