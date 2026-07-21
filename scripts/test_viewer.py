@@ -301,7 +301,14 @@ class ViewerBrowserTests(unittest.TestCase):
             "2401 nodes is past the node-link ceiling (2,400) — showing the list.",
             self.page.locator('.list-ceiling-note[role="status"]').inner_text(),
         )
-        self.assertEqual(2401, self.page.locator(".node-list-row").count())
+        # Sections preview; the tail renders only on explicit request.
+        self.assertEqual(500, self.page.locator(".node-list-row").count())
+        show_all = self.page.locator(".list-show-all")
+        self.assertEqual("Show all 2401 concept rows", show_all.inner_text())
+        show_all.click()
+        self.page.wait_for_function(
+            "document.querySelectorAll('.node-list-row').length === 2401")
+        self.assertEqual(0, self.page.locator(".list-show-all").count())
         graph_button = self.page.locator("#graph-view")
         self.assertTrue(graph_button.is_disabled())
         self.assertEqual(
@@ -428,6 +435,24 @@ class ViewerBrowserTests(unittest.TestCase):
         selection_radius = float(
             selected.locator(".selection-ring").get_attribute("r"))
         self.assertGreater(focus_radius, selection_radius)
+
+    def test_header_controls_reachable_in_narrow_embed(self):
+        self.page.set_viewport_size({"width": 360, "height": 640})
+        self.open_state("#mode=field", "FIELD")
+        box = self.page.locator("#legend-toggle").bounding_box()
+        self.assertIsNotNone(box)
+        self.assertLessEqual(box["x"] + box["width"], 360)
+        self.page.locator("#legend-toggle").click()
+        self.assertTrue(self.page.locator("#legend").is_visible())
+
+    def test_legend_receives_focus_for_keyboard_scrolling(self):
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#legend-toggle").click()
+        self.assertTrue(self.page.evaluate(
+            "document.activeElement?.id === 'legend'"))
+        self.page.keyboard.press("Escape")
+        self.assertTrue(self.page.evaluate(
+            "document.activeElement?.id === 'legend-toggle'"))
 
     def test_escape_dismisses_layers_topmost_first(self):
         self.open_state("#mode=field&focus=concept:rest-api", "FIELD")

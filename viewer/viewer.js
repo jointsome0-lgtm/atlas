@@ -264,6 +264,41 @@ function setLensControls(pastCeiling) {
   listView.setAttribute("aria-pressed", String(effectiveMode === "list"));
 }
 
+// An accepted graph may hold up to the §25.8 node ceiling; the list stays
+// responsive by previewing each section and expanding on explicit request
+// (never silently), in frame-sized chunks.
+const LIST_SECTION_PREVIEW = 500;
+const LIST_EXPAND_CHUNK = 1000;
+
+function makeListRow(node, selected) {
+  const row = htmlElement("button", "node-list-row");
+  row.type = "button";
+  row.dataset.nodeId = node.id;
+  appendNodeGlyph(row, node);
+  row.append(htmlElement("span", "node-list-title", displayTitle(node)));
+  row.append(htmlElement("span", "node-list-id", node.id));
+  if (node.fields.length === 0) row.append(htmlElement("span", "badge", "field undefined"));
+  if (selected && selected.id === node.id) row.classList.add("selected");
+  row.addEventListener("click", () => updateFocus(node.id));
+  return row;
+}
+
+async function expandSection(rows, typeNodes, selected, showAll) {
+  const generation = renderGeneration;
+  showAll.remove();
+  // The out-of-order selected row (appended after the preview) is recreated
+  // at its sorted position by the tail.
+  const misplaced = rows.querySelector(".node-list-row.out-of-order");
+  if (misplaced) misplaced.remove();
+  for (let start = LIST_SECTION_PREVIEW; start < typeNodes.length; start += LIST_EXPAND_CHUNK) {
+    for (const node of typeNodes.slice(start, start + LIST_EXPAND_CHUNK)) {
+      rows.append(makeListRow(node, selected));
+    }
+    await nextFrame();
+    if (generation !== renderGeneration) return;
+  }
+}
+
 function renderList(field, nodes, edges, selected, banner, pastCeiling) {
   resetScreen(field);
   setMainState("LIST");
@@ -285,23 +320,26 @@ function renderList(field, nodes, edges, selected, banner, pastCeiling) {
     section.dataset.nodeType = type;
     section.append(htmlElement("h2", "", type.replaceAll("_", " ") + " (" + typeNodes.length + ")"));
     const rows = htmlElement("div", "node-list-rows");
-    for (const node of typeNodes) {
-      const row = htmlElement("button", "node-list-row");
-      row.type = "button";
-      row.dataset.nodeId = node.id;
-      appendNodeGlyph(row, node);
-      row.append(htmlElement("span", "node-list-title", displayTitle(node)));
-      row.append(htmlElement("span", "node-list-id", node.id));
-      if (node.fields.length === 0) row.append(htmlElement("span", "badge", "field undefined"));
-      if (selected && selected.id === node.id) {
-        row.classList.add("selected");
-        selectedRow = row;
-      }
-      row.addEventListener("click", () => updateFocus(node.id));
+    const preview = typeNodes.slice(0, LIST_SECTION_PREVIEW);
+    for (const node of preview) rows.append(makeListRow(node, selected));
+    if (selected && typeNodes.length > preview.length
+        && typeNodes.slice(preview.length).some((node) => node.id === selected.id)) {
+      // The selection is always visible, even past the preview.
+      const row = makeListRow(selected, selected);
+      row.classList.add("out-of-order");
       rows.append(row);
     }
     section.append(rows);
+    if (typeNodes.length > preview.length) {
+      const showAll = htmlElement("button", "list-show-all",
+        "Show all " + typeNodes.length + " " + type.replaceAll("_", " ") + " rows");
+      showAll.type = "button";
+      showAll.addEventListener("click", () => { void expandSection(rows, typeNodes, selected, showAll); });
+      section.append(showAll);
+    }
     list.append(section);
+    const marked = rows.querySelector(".node-list-row.selected");
+    if (marked) selectedRow = marked;
   }
   main.append(list);
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
@@ -805,8 +843,13 @@ function renderLegend() {
 
 function setLegendOpen(open) {
   if (open && !legend.childNodes.length) renderLegend();
+  const hadFocus = legend.contains(document.activeElement);
   legend.hidden = !open;
   legendToggle.setAttribute("aria-expanded", String(open));
+  // The legend is a focusable scroll region: focus moves in on open so
+  // keyboard users can scroll overflowing rows, and back on close.
+  if (open) legend.focus({preventScroll: true});
+  else if (hadFocus || focusOrphaned()) legendToggle.focus();
 }
 
 function updateFocus(nodeId) {
