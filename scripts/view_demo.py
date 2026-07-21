@@ -36,6 +36,12 @@ class ContractArgumentParser(argparse.ArgumentParser):
         raise SystemExit(2)
 
 
+class QuietDemoHandler(http.server.SimpleHTTPRequestHandler):
+    # §25.8: request lines are not ERROR:-prefixed diagnostics — stay silent.
+    def log_message(self, _format, *_args):
+        pass
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = ContractArgumentParser(
         description="Build and serve the Atlas demo viewer.")
@@ -75,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         if build_demo(root) != 0:
             return 1
         shutil.copytree(ROOT / "viewer", root / "viewer")
-        handler = http.server.SimpleHTTPRequestHandler
+        handler = QuietDemoHandler
         try:
             server = http.server.ThreadingHTTPServer(
                 ("127.0.0.1", args.port),

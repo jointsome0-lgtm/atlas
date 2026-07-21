@@ -35,12 +35,20 @@ EXPECTED_REJECTED_FIXTURES = {
     "discriminant-on-wrong-edge-type.json",
     "duplicate-edge-identity.json",
     "duplicate-node-id.json",
+    "duplicate-provenance.json",
     "formerly-on-journal-backed-kind.json",
     "kind-changing-formerly-redirect.json",
     "living-formerly-redirect.json",
+    "material-part-parent-mismatch.json",
+    "non-canonical-edge-array-order.json",
     "one-to-n-formerly-redirect.json",
+    "payload-on-wrong-node-kind.json",
     "primary-supporting-role-conflict.json",
+    "projection-key-not-zone-id.json",
     "reversed-related-to-pair.json",
+    "step-on-non-route-material-role.json",
+    "unsorted-provenance.json",
+    "zone-without-projection.json",
 }
 NODE_TYPE_ORDER = [
     "plan", "concept", "material", "material_part", "direction",
@@ -353,14 +361,26 @@ class ViewerBrowserTests(unittest.TestCase):
         self.page.locator("#list-view").click()
         self.page.wait_for_selector('#main[data-state="LIST"]')
         self.page.wait_for_selector("#details:not([hidden])")
+
+        def status_edge_count():
+            return self.page.locator("#status-bar").evaluate(
+                "bar => Number(bar.textContent.match(/· (\\d+) edges/)[1])")
+
         def headings():
             return [text.lower() for text in
                     self.page.locator("#details .edge-groups h3").all_inner_texts()]
 
         self.assertIn("step_of_route", headings())
+        all_edge_count = status_edge_count()
         self.page.locator("#routes-toggle").click()
         self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.wait_for_function(
+            "before => Number(document.querySelector('#status-bar')"
+            ".textContent.match(/· (\\d+) edges/)[1]) < before",
+            arg=all_edge_count,
+        )
         without_routes = headings()
+        self.assertLess(status_edge_count(), all_edge_count)
         self.assertNotIn("step_of_route", without_routes)
         self.assertNotIn("suggested_next", without_routes)
 
@@ -533,8 +553,12 @@ class ViewerBrowserTests(unittest.TestCase):
         initial_hash = self.page.evaluate("location.hash")
         self.page.locator("#routes-toggle").uncheck()
         self.page.wait_for_selector('#main[data-state="FIELD"]')
-        self.assertLess(
-            self.page.locator("svg .edge-line").count(), len(visible_edges))
+        rendered_edge_count = self.page.locator("svg .edge-line").count()
+        self.assertLess(rendered_edge_count, len(visible_edges))
+        self.assertIn(
+            f"{len(visible_ids)} nodes · {rendered_edge_count} edges in view",
+            self.page.locator("#status-bar").inner_text(),
+        )
         self.assertEqual(initial_hash, self.page.evaluate("location.hash"))
 
     def test_focus_opens_panel_for_each_rendered_kind(self):

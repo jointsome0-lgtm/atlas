@@ -311,7 +311,7 @@ async function expandSection(rows, typeNodes, selected, showAll) {
 function renderList(field, nodes, edges, selected, banner, pastCeiling) {
   resetScreen(field);
   setMainState("LIST");
-  setStatus(nodes.length, edges.length);
+  setStatus(nodes.length, visibleEdges(edges).length);
   const list = htmlElement("div", "node-list");
   if (banner) list.classList.add("has-banner");
   if (pastCeiling) {
@@ -481,9 +481,10 @@ async function calculateLayout(nodes, edges, generation) {
 async function renderField(field, nodes, edges, selected, banner) {
   resetScreen(field);
   const generation = renderGeneration;
+  const renderedEdges = visibleEdges(edges);
   setMainState("LAYOUT");
   main.append(htmlElement("div", "layout-message", "Laying out " + nodes.length + " nodes…"));
-  setStatus(nodes.length, edges.length);
+  setStatus(nodes.length, renderedEdges.length);
   const positions = await calculateLayout(nodes, edges, generation);
   if (!positions || generation !== renderGeneration) return;
   main.replaceChildren();
@@ -499,8 +500,7 @@ async function renderField(field, nodes, edges, selected, banner) {
   main.append(stage);
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  for (const edge of edges) {
-    if (!routesToggle.checked && isRouteEdge(edge, nodeById)) continue;
+  for (const edge of renderedEdges) {
     viewport.append(makeEdge(edge, positions, nodeById));
   }
   let selectedGroup = null;
