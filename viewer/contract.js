@@ -47,13 +47,12 @@ const DERIVED_WEIGHT_TYPES = new Set(EDGE_TYPES.filter((type) => !AUTHORED_WEIGH
 const STATUS_FORBIDDEN = new Set(["concept", "pattern", "zone", "material_part", "personal_trail", "trail_segment", "artifact", "encounter", "question", "plan"]);
 const EDGE_DISCRIMINANTS = {
   "step_of_route": ["order"],
-  "suggested_next": ["context"],
-  "primary_for": ["step"],
-  "supporting_for": ["step"]
+  "suggested_next": ["context"]
 };
 // §34.4: journal record ids get no redirect machinery — hand-editing the
 // row is the owner's mechanism, so formerly never appears on these kinds.
 const NO_REDIRECT_KINDS = new Set(["trail_segment", "artifact", "encounter", "question"]);
+const NODE_COMMON_KEYS = new Set(["id", "type", "title", "fields", "formerly", "sensitivity"]);
 
 const NODE_PAYLOAD_FIELDS = {
   "concept": ["aliases"],
@@ -160,6 +159,15 @@ function validateNode(node, index) {
   if (node.type === "concept" && (node.fields.length !== 1 || node.fields[0] !== "knowledge")) return diagnostic(path + "/fields", "registryField");
   if ((node.type === "zone" || node.type === "pattern") && (node.fields.length !== 1 || node.fields[0] !== "body")) return diagnostic(path + "/fields", "registryField");
 
+  // §10.4 is a closed per-kind emission table. A globally known payload key
+  // on the wrong kind is malformed input, not an unknown forward-compatible
+  // field: projectNode would otherwise drop it and render only part of a node.
+  for (const key of Object.keys(node)) {
+    if (!NODE_COMMON_KEYS.has(key) && !NODE_PAYLOAD_FIELDS[node.type].includes(key)) {
+      return diagnostic(path + "/" + key, "kindProperty");
+    }
+  }
+
   for (const key of NODE_KEYS) {
     if (["id", "type", "title", "fields"].includes(key) || !Object.prototype.hasOwnProperty.call(node, key)) continue;
     if (!validateOptionalNodeProperty(node, key, path + "/" + key)) return diagnostic(path + "/" + key, "shape");
@@ -176,6 +184,12 @@ function validateNode(node, index) {
     "personal_trail": ["direction"], "plan": []
   };
   if (!hasKeys(node, requiredByType[node.type])) return diagnostic(path, "kindRequired");
+  // §10.1/§10.4: a part id embeds its owning material slug; the payload's
+  // material reference must name that same parent, as validate_atlas enforces.
+  if (node.type === "material_part") {
+    const parentSlug = node.id.slice("part:".length, node.id.indexOf("/"));
+    if (node.material !== "material:" + parentSlug) return diagnostic(path + "/material", "partParent");
+  }
   if (STATUS_FORBIDDEN.has(node.type) && Object.prototype.hasOwnProperty.call(node, "status")) return diagnostic(path + "/status", "forbidden");
   if ((node.type === "material" || node.type === "probe" || node.type === "direction") && !LIFECYCLE_STATUSES.includes(node.status)) return diagnostic(path + "/status", "enum");
   if (node.type === "material" && !MATERIAL_KINDS.includes(node.kind)) return diagnostic(path + "/kind", "enum");
@@ -198,6 +212,13 @@ function validateEdge(edge, index) {
   if (typeof edge.target !== "string" || !NODE_ID_RE.test(edge.target)) return diagnostic(path + "/target", "nodeId");
   if (!EDGE_TYPES.includes(edge.type)) return diagnostic(path + "/type", "enum");
   if (!isStringArray(edge.provenance, (item) => NODE_ID_RE.test(item)) || edge.provenance.length === 0) return diagnostic(path + "/provenance", "nonEmptyNodeIds");
+  // §10.3/§20.3: provenance is a canonical set — dedup unions it, then the
+  // builder emits it sorted. A non-increasing pair is duplicate or shuffled.
+  for (let item = 1; item < edge.provenance.length; item += 1) {
+    if (edge.provenance[item - 1] >= edge.provenance[item]) {
+      return diagnostic(path + "/provenance", "canonicalSet");
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(edge, "sensitivity") && !SENSITIVITY_CLASSES.includes(edge.sensitivity)) return diagnostic(path + "/sensitivity", "enum");
   if (Object.prototype.hasOwnProperty.call(edge, "weight") && !EDGE_WEIGHTS.includes(edge.weight)) return diagnostic(path + "/weight", "enum");
   if (Object.prototype.hasOwnProperty.call(edge, "order") && (!Number.isInteger(edge.order) || edge.order < 1)) return diagnostic(path + "/order", "positiveInteger");
@@ -211,9 +232,12 @@ function validateEdge(edge, index) {
   // order on step_of_route, context on suggested_next, step on the
   // route-context role edges. Anywhere else they could mint duplicate
   // identities past the §20.3 dedup, so a stray one rejects the file.
+  const routeRole = (edge.type === "primary_for" || edge.type === "supporting_for")
+    && edge.target.startsWith("suggested-route:");
   for (const meta of ["order", "context", "step"]) {
     if (Object.prototype.hasOwnProperty.call(edge, meta)
-        && !(EDGE_DISCRIMINANTS[edge.type] || []).includes(meta)) {
+        && !(EDGE_DISCRIMINANTS[edge.type] || []).includes(meta)
+        && !(routeRole && meta === "step")) {
       return diagnostic(path + "/" + meta, "forbiddenDiscriminant");
     }
   }
@@ -280,9 +304,21 @@ export function hasDuplicateJsonKeys(text) {
   return false;
 }
 
+function edgeKey(edge) {
+  return [edge.type, edge.source, edge.target,
+    edge.context ?? "", edge.order ?? 0, edge.step ?? ""];
+}
+
+function compareEdgeKeys(left, right) {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] < right[index]) return -1;
+    if (left[index] > right[index]) return 1;
+  }
+  return 0;
+}
+
 function edgeIdentity(edge) {
-  return JSON.stringify([edge.type, edge.source, edge.target,
-    edge.context ?? "", edge.order ?? 0, edge.step ?? ""]);
+  return JSON.stringify(edgeKey(edge));
 }
 
 export function validateGraph(value) {
@@ -297,6 +333,11 @@ export function validateGraph(value) {
   if (!isPlainObject(value.influence) || Object.keys(value.influence).length !== 0) return diagnostic("/influence", "producerClosed");
   if (!Array.isArray(value.frontier) || value.frontier.length !== 0) return diagnostic("/frontier", "producerClosed");
   if (!isPlainObject(value.projections) || !Object.values(value.projections).every((item) => typeof item === "string" && SLUG_RE.test(item))) return diagnostic("/projections", "slugMap");
+  // §20 step 12/§32.1: projections is the curated zone → figure_region map —
+  // a key that is not a zone id cannot be audited against any node.
+  for (const key of Object.keys(value.projections)) {
+    if (!key.startsWith("zone:") || !NODE_ID_RE.test(key)) return diagnostic("/projections", "zoneKey");
+  }
   // §20: the full graph never carries withheld — that key marks the redacted
   // variant, which lives beside the full graph, never at the viewer's single
   // input path. A withheld-bearing file here is a partial graph presented as
@@ -311,6 +352,14 @@ export function validateGraph(value) {
     // resolve ambiguously (§16.5).
     if (nodeIds.has(value.nodes[index].id)) return diagnostic("/nodes/" + index + "/id", "duplicateId");
     nodeIds.add(value.nodes[index].id);
+  }
+  // §20 step 12/§32.1: every emitted zone carries its curated figure_region —
+  // a zone the silhouette cannot place never leaves the build, so a missing
+  // entry is a malformed file, rejected whole (§16.5).
+  for (let index = 0; index < value.nodes.length; index += 1) {
+    if (value.nodes[index].type === "zone" && !Object.prototype.hasOwnProperty.call(value.projections, value.nodes[index].id)) {
+      return diagnostic("/projections", "zoneWithoutProjection");
+    }
   }
   // §34.4 over the whole file: a formerly entry that is itself a living id,
   // or one retired id redirecting to two survivors, is unrepresentable in a
@@ -331,10 +380,18 @@ export function validateGraph(value) {
   }
   const identities = new Set();
   const roleConflicts = new Map();
+  let previousEdgeKey = null;
   for (let index = 0; index < value.edges.length; index += 1) {
     const failure = validateEdge(value.edges[index], index);
     if (failure) return failure;
     const edge = value.edges[index];
+    // §20.3: the builder emits the edge array in canonical identity order;
+    // accepting a shuffle would make layout and detail ordering input-driven.
+    const currentEdgeKey = edgeKey(edge);
+    if (previousEdgeKey !== null && compareEdgeKeys(previousEdgeKey, currentEdgeKey) > 0) {
+      return diagnostic("/edges/" + index, "canonicalOrder");
+    }
+    previousEdgeKey = currentEdgeKey;
     // The builder never emits an edge resting on an absent node: endpoints
     // are filtered (§20 step 11), provenance is the direct derivation basis
     // (§10.3), context/step are identity discriminants naming live nodes —

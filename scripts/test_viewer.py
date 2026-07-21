@@ -205,8 +205,23 @@ class ViewerBrowserTests(unittest.TestCase):
             "dangling provenance": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "provenance": ["concept:absent"]}]),
+            "duplicate provenance": self.graph_envelope(
+                nodes=[alone, other],
+                edges=[{**related, "provenance": [
+                    "concept:alone", "concept:alone"]}]),
+            "unsorted provenance": self.graph_envelope(
+                nodes=[alone, other],
+                edges=[{**related, "provenance": [
+                    "concept:other", "concept:alone"]}]),
             "duplicate edge identity": self.graph_envelope(
                 nodes=[alone, other], edges=[related, dict(related)]),
+            "non-canonical edge array order": self.graph_envelope(
+                nodes=[alone, other], edges=[related, {
+                    "source": "concept:alone", "target": "concept:other",
+                    "type": "prerequisite_of",
+                    "provenance": ["concept:alone"],
+                    "weight": "unassessed",
+                }]),
             "living formerly redirect": self.graph_envelope(
                 nodes=[alone, {**other, "formerly": ["concept:alone"]}]),
             "1-to-n formerly redirect": self.graph_envelope(
@@ -221,9 +236,55 @@ class ViewerBrowserTests(unittest.TestCase):
                     "text": "t", "created_at": "2026-07-10",
                     "source": {"artifact": "artifact:a"},
                 }]),
+            "projection key that is not a zone id": {
+                **self.graph_envelope(nodes=[alone]),
+                "projections": {"concept:alone": "torso"}},
+            "zone without a projections entry": self.graph_envelope(
+                nodes=[alone, {
+                    "id": "zone:core", "type": "zone", "title": "Core",
+                    "fields": ["body"], "notes": "",
+                }]),
+            "payload field on the wrong node kind": self.graph_envelope(
+                nodes=[{**alone, "url": "https://example.test"}]),
+            "material-part parent mismatch": self.graph_envelope(nodes=[
+                {
+                    "id": "material:a", "type": "material", "title": "A",
+                    "fields": ["knowledge"], "kind": "docs", "url": "",
+                    "status": "active",
+                }, {
+                    "id": "material:b", "type": "material", "title": "B",
+                    "fields": ["knowledge"], "kind": "docs", "url": "",
+                    "status": "active",
+                }, {
+                    "id": "part:a/p", "type": "material_part", "title": "P",
+                    "fields": ["knowledge"], "material": "material:b",
+                }], edges=[{
+                    "source": "material:b", "target": "part:a/p",
+                    "type": "has_part", "provenance": ["material:b"],
+                }]),
             "discriminant on the wrong edge type": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "order": 1}]),
+            "step on a non-route material role": self.graph_envelope(
+                nodes=[alone, {
+                    "id": "material:m", "type": "material", "title": "M",
+                    "fields": ["knowledge"], "kind": "docs", "url": "",
+                    "status": "active",
+                }, {
+                    "id": "question:q", "type": "question", "title": "",
+                    "fields": ["knowledge"], "text": "t",
+                    "created_at": "2026-07-10",
+                    "source": {"artifact": "artifact:a"},
+                }, {
+                    "id": "artifact:a", "type": "artifact", "title": "",
+                    "fields": ["knowledge"], "kind": "script", "path": "p",
+                    "observed_at": "2026-07-10", "summary": "s",
+                    "evidence_strength": "applied",
+                }], edges=[{
+                    "source": "material:m", "target": "question:q",
+                    "type": "primary_for", "provenance": ["question:q"],
+                    "step": "concept:alone",
+                }]),
             "reversed related_to pair": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "source": "concept:other",
@@ -569,8 +630,12 @@ class ViewerBrowserTests(unittest.TestCase):
         initial_hash = self.page.evaluate("location.hash")
         self.page.locator("#routes-toggle").uncheck()
         self.page.wait_for_selector('#main[data-state="FIELD"]')
-        self.assertLess(
-            self.page.locator("svg .edge-line").count(), len(visible_edges))
+        rendered_edge_count = self.page.locator("svg .edge-line").count()
+        self.assertLess(rendered_edge_count, len(visible_edges))
+        self.assertIn(
+            f"{len(visible_ids)} nodes · {rendered_edge_count} edges in view",
+            self.page.locator("#status-bar").inner_text(),
+        )
         self.assertEqual(initial_hash, self.page.evaluate("location.hash"))
 
     def test_focus_opens_panel_for_each_rendered_kind(self):
