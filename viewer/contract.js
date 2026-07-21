@@ -212,6 +212,13 @@ function validateEdge(edge, index) {
   if (typeof edge.target !== "string" || !NODE_ID_RE.test(edge.target)) return diagnostic(path + "/target", "nodeId");
   if (!EDGE_TYPES.includes(edge.type)) return diagnostic(path + "/type", "enum");
   if (!isStringArray(edge.provenance, (item) => NODE_ID_RE.test(item)) || edge.provenance.length === 0) return diagnostic(path + "/provenance", "nonEmptyNodeIds");
+  // §10.3/§20.3: provenance is a canonical set — dedup unions it, then the
+  // builder emits it sorted. A non-increasing pair is duplicate or shuffled.
+  for (let item = 1; item < edge.provenance.length; item += 1) {
+    if (edge.provenance[item - 1] >= edge.provenance[item]) {
+      return diagnostic(path + "/provenance", "canonicalSet");
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(edge, "sensitivity") && !SENSITIVITY_CLASSES.includes(edge.sensitivity)) return diagnostic(path + "/sensitivity", "enum");
   if (Object.prototype.hasOwnProperty.call(edge, "weight") && !EDGE_WEIGHTS.includes(edge.weight)) return diagnostic(path + "/weight", "enum");
   if (Object.prototype.hasOwnProperty.call(edge, "order") && (!Number.isInteger(edge.order) || edge.order < 1)) return diagnostic(path + "/order", "positiveInteger");

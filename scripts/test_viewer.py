@@ -200,6 +200,14 @@ class ViewerBrowserTests(unittest.TestCase):
             "dangling provenance": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "provenance": ["concept:absent"]}]),
+            "duplicate provenance": self.graph_envelope(
+                nodes=[alone, other],
+                edges=[{**related, "provenance": [
+                    "concept:alone", "concept:alone"]}]),
+            "unsorted provenance": self.graph_envelope(
+                nodes=[alone, other],
+                edges=[{**related, "provenance": [
+                    "concept:other", "concept:alone"]}]),
             "duplicate edge identity": self.graph_envelope(
                 nodes=[alone, other], edges=[related, dict(related)]),
             "non-canonical edge array order": self.graph_envelope(
