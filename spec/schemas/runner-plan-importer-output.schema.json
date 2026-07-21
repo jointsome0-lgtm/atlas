@@ -50,8 +50,8 @@
         "target_ref": {"$ref": "#/$defs/entityRef"},
         "role": {
           "type": "string",
-          "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "overall_concept", "supports"],
-          "description": "Importer-relevant authored relations transcribed from §10.2; overall_concept is §9.2's whole-material mapping and supports is §9.14's standing-helper relation."
+          "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "overall_concept", "supports"],
+          "description": "Runner v1 importer relations transcribed from §10.2; overall_concept is §9.2's whole-material mapping and supports is §9.14's standing-helper relation. Body Atlas's loads relation stays gated by #45."
         },
         "source_refs": {"$ref": "#/$defs/sourceRefs"}
       },

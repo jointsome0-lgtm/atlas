@@ -59,6 +59,27 @@ SCHEMA_NAMES = {
     "runner-artifact-observer-output",
 }
 
+# §17.7: role admission and the selected closed transport pair are semantic
+# manifest bindings. The generic §17.6 schema intentionally still names all
+# four governance roles so an unsupported-role preflight can leave its audit
+# line; only these two roles may reach provider transit in runner protocol v1.
+_RUNNER_ROLE_SCHEMA_COMPONENTS = {
+    "plan-importer": (
+        "runner-plan-importer-input",
+        "runner-plan-importer-output",
+    ),
+    "artifact-observer": (
+        "runner-artifact-observer-input",
+        "runner-artifact-observer-output",
+    ),
+}
+_RUNNER_SCHEMA_COMPONENT_IDS = frozenset(
+    component
+    for pair in _RUNNER_ROLE_SCHEMA_COMPONENTS.values()
+    for component in pair
+)
+_RUNNER_UNSUPPORTED_ROLES = frozenset({"field-cartographer", "state-auditor"})
+
 SUPPORTED_KEYWORDS = {
     "$schema",
     "$id",
@@ -361,6 +382,88 @@ def _load_registry() -> tuple[dict[str, dict], list[str]]:
 
 def _schema_errors(instance, schema, source: Path | str):
     return [f"{source}: {message}" for message in SchemaValidator(schema).validate(instance)]
+
+
+def _runner_manifest_errors(instance, source: Path | str) -> list[str]:
+    """Validate the §17.7 role/prompt/outcome bindings without echoing data."""
+    if not isinstance(instance, dict):
+        return []
+
+    errors: list[str] = []
+    role = instance.get("role")
+    prompt_bundle = instance.get("prompt_bundle")
+    components = (
+        prompt_bundle.get("components", [])
+        if isinstance(prompt_bundle, dict)
+        else []
+    )
+    component_entries = [
+        component for component in components if isinstance(component, dict)
+    ] if isinstance(components, list) else []
+
+    expected = (
+        _RUNNER_ROLE_SCHEMA_COMPONENTS.get(role)
+        if isinstance(role, str)
+        else None
+    )
+    if expected is not None:
+        for component_id in expected:
+            matches = [
+                component for component in component_entries
+                if component.get("id") == component_id
+            ]
+            if len(matches) != 1:
+                errors.append(
+                    f"{source}: prompt bundle must contain {component_id!r} "
+                    "exactly once (§17.7)"
+                )
+            elif matches[0].get("version") != "1":
+                errors.append(
+                    f"{source}: prompt bundle component {component_id!r} "
+                    "must declare version '1' (§17.7)"
+                )
+        unexpected = sorted(
+            component.get("id")
+            for component in component_entries
+            if isinstance(component.get("id"), str)
+            and component.get("id") in _RUNNER_SCHEMA_COMPONENT_IDS
+            and component.get("id") not in expected
+        )
+        if unexpected:
+            errors.append(
+                f"{source}: prompt bundle contains a runner schema outside "
+                "the selected role's closed pair (§17.7)"
+            )
+    elif isinstance(role, str) and role in _RUNNER_UNSUPPORTED_ROLES:
+        if instance.get("outcome") != "aborted":
+            errors.append(
+                f"{source}: unsupported runner v1 role must close as "
+                "aborted at preflight (§17.7)"
+            )
+        if any(
+            isinstance(component.get("id"), str)
+            and component.get("id") in _RUNNER_SCHEMA_COMPONENT_IDS
+            for component in component_entries
+        ):
+            errors.append(
+                f"{source}: unsupported runner v1 role has no registered "
+                "transport schema pair (§17.7)"
+            )
+
+    if instance.get("outcome") == "aborted":
+        outputs = instance.get("outputs")
+        warnings = instance.get("warnings")
+        if isinstance(outputs, list) and outputs:
+            errors.append(
+                f"{source}: aborted runner execution must record no "
+                "outputs (§17.7)"
+            )
+        if isinstance(warnings, list) and not warnings:
+            errors.append(
+                f"{source}: aborted runner execution must record a stable "
+                "warning code (§17.7)"
+            )
+    return errors
 
 
 CURATED_DIRS = {
@@ -852,6 +955,7 @@ def validate_instance(root: Path):
                 instance = _read_json(path)
                 errors.extend(
                     _schema_errors(instance, schemas["run-manifest"], path))
+                errors.extend(_runner_manifest_errors(instance, path))
                 # §17.6: the file name is the manifest's date-serial —
                 # run_id and path never disagree. The mismatched value is
                 # not echoed (§24.4).

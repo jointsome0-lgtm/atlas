@@ -56,12 +56,12 @@
         "ref": {"$ref": "#/$defs/nodeRef"},
         "id": {
           "type": "string",
-          "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"
+          "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|probe):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"
         },
         "kind": {
           "type": "string",
-          "enum": ["plan", "concept", "material", "material_part", "direction", "suggested_route", "probe", "zone", "pattern"],
-          "description": "Importer-relevant subset of the closed §10.1 node kinds."
+          "enum": ["plan", "concept", "material", "material_part", "direction", "suggested_route", "probe"],
+          "description": "Runner v1 importer subset of the closed §10.1 node kinds; Body Atlas-specific zone and pattern species stay gated by #45."
         },
         "label": {"type": "string"},
         "aliases": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}

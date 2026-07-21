@@ -19,7 +19,8 @@
     "sourceRef": {"type": "string", "pattern": "^source:[0-9]+$"},
     "nodeRef": {"type": "string", "pattern": "^node:[0-9]+$"},
     "edgeRef": {"type": "string", "pattern": "^edge:[0-9]+$"},
-    "journalRef": {"type": "string", "pattern": "^journal:[0-9]+$"},
+    "evidenceRef": {"type": "string", "pattern": "^evidence:[0-9]+$"},
+    "recognitionRef": {"type": "string", "pattern": "^recognition:[0-9]+$"},
     "unit": {
       "type": "object",
       "properties": {
@@ -42,12 +43,12 @@
         "ref": {"$ref": "#/$defs/nodeRef"},
         "id": {
           "type": "string",
-          "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe|zone|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"
+          "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|personal-trail|trail-segment|artifact|encounter|question|probe):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"
         },
         "kind": {
           "type": "string",
-          "enum": ["plan", "concept", "material", "material_part", "direction", "suggested_route", "personal_trail", "trail_segment", "artifact", "encounter", "question", "probe", "zone", "pattern"],
-          "description": "Closed node kinds transcribed verbatim from §10.1."
+          "enum": ["plan", "concept", "material", "material_part", "direction", "suggested_route", "personal_trail", "trail_segment", "artifact", "encounter", "question", "probe"],
+          "description": "Runner v1 observer subset of the closed §10.1 node kinds; Body Atlas-specific zone and pattern species stay gated by #45."
         },
         "label": {"type": "string"}
       },
@@ -60,8 +61,8 @@
         "ref": {"$ref": "#/$defs/edgeRef"},
         "kind": {
           "type": "string",
-          "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"],
-          "description": "Closed edge kinds transcribed verbatim from §10.2."
+          "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"],
+          "description": "Runner v1 observer subset of the closed §10.2 edge kinds; Body Atlas's loads relation stays gated by #45."
         },
         "source_ref": {"$ref": "#/$defs/nodeRef"},
         "target_ref": {"$ref": "#/$defs/nodeRef"},
@@ -75,13 +76,33 @@
       "additionalProperties": false
     },
     "journalContext": {
+      "oneOf": [
+        {"$ref": "#/$defs/evidenceContext"},
+        {"$ref": "#/$defs/recognitionContext"}
+      ]
+    },
+    "evidenceContext": {
       "type": "object",
       "properties": {
-        "ref": {"$ref": "#/$defs/journalRef"},
+        "ref": {"$ref": "#/$defs/evidenceRef"},
         "kind": {
           "type": "string",
-          "enum": ["artifact", "encounter", "question", "decision", "trail-segment"],
-          "description": "Observer recognition context admitted by §13.2 and §17.3."
+          "enum": ["artifact", "encounter", "question"],
+          "description": "The canonical §9.12 evidence kinds; only this namespace may support output evidence_refs."
+        },
+        "summary": {"type": "string"}
+      },
+      "required": ["ref", "kind", "summary"],
+      "additionalProperties": false
+    },
+    "recognitionContext": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/recognitionRef"},
+        "kind": {
+          "type": "string",
+          "enum": ["decision", "trail-segment"],
+          "description": "Non-evidence journal context admitted only for §13.2 recognition; it cannot enter output evidence_refs (§9.12)."
         },
         "summary": {"type": "string"}
       },
