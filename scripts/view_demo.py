@@ -27,8 +27,17 @@ def port_number(value: str) -> int:
     return port
 
 
+class ContractArgumentParser(argparse.ArgumentParser):
+    # §25.8 CLI contract: every diagnostic line is prefixed ERROR:, usage
+    # errors included — argparse's default error path prints bare lines.
+    def error(self, message):
+        print(f"ERROR: {message}", file=sys.stderr)
+        print(f"ERROR: {self.format_usage().strip()}", file=sys.stderr)
+        raise SystemExit(2)
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = ContractArgumentParser(
         description="Build and serve the Atlas demo viewer.")
     parser.add_argument("--port", type=port_number, default=8137)
     return parser.parse_args(argv)

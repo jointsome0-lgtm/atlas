@@ -381,8 +381,16 @@ async function renderField(field, nodes, edges, selected, banner) {
   currentTransform = {svg, viewport, ...transform};
   applyTransform(currentTransform);
   installPanZoom(currentTransform);
-  if (selected) openPanel(selected, accepted.graph.edges);
+  if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
   if (banner) appendBanner(banner.kind, banner.value);
+}
+
+// §16.2: the Routes lens is coherent across surfaces — hidden routes leave
+// the detail panel too, not only the SVG overlay.
+function visibleEdges(edges) {
+  if (routesToggle.checked) return edges;
+  const nodeById = new Map(accepted.graph.nodes.map((node) => [node.id, node]));
+  return edges.filter((edge) => !isRouteEdge(edge, nodeById));
 }
 
 function setStatus(nodeCount, edgeCount) {
