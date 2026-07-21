@@ -508,7 +508,5 @@
   "state": {},
   "influence": {},
   "frontier": [],
-  "projections": {
-    "zone:shoulders": "torso-front-upper"
-  }
+  "projections": {}
 }
