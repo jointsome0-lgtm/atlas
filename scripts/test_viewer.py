@@ -174,6 +174,47 @@ class ViewerBrowserTests(unittest.TestCase):
             "This graph file can't be displayed",
             self.page.locator("#main").inner_text())
 
+    def test_malformed_builder_impossible_graphs_reject_whole(self):
+        alone = {
+            "id": "concept:alone", "type": "concept", "title": "Alone",
+            "fields": ["knowledge"], "aliases": [],
+        }
+        other = {
+            "id": "concept:other", "type": "concept", "title": "Other",
+            "fields": ["knowledge"], "aliases": [],
+        }
+        related = {
+            "source": "concept:alone", "target": "concept:other",
+            "type": "related_to", "provenance": ["concept:alone"],
+            "weight": "unassessed",
+        }
+        variants = {
+            "duplicate node id": self.graph_envelope(nodes=[alone, dict(alone)]),
+            "dangling provenance": self.graph_envelope(
+                nodes=[alone, other],
+                edges=[{**related, "provenance": ["concept:absent"]}]),
+            "duplicate edge identity": self.graph_envelope(
+                nodes=[alone, other], edges=[related, dict(related)]),
+            "living formerly redirect": self.graph_envelope(
+                nodes=[alone, {**other, "formerly": ["concept:alone"]}]),
+            "1-to-n formerly redirect": self.graph_envelope(
+                nodes=[{**alone, "formerly": ["concept:old"]},
+                       {**other, "formerly": ["concept:old"]}]),
+        }
+        for name, graph in variants.items():
+            with self.subTest(variant=name):
+                self.write_graph(graph)
+                self.open_state("#mode=field", "REJECTED")
+
+    def test_duplicate_json_keys_reject_whole(self):
+        text = (
+            '{"format": "atlas-graph", "version": 1, "nodes": [], "nodes": [],'
+            ' "edges": [], "trails": [], "state": {}, "influence": {},'
+            ' "frontier": [], "projections": {}}'
+        )
+        self.graph_path.write_text(text, encoding="utf-8")
+        self.open_state("#mode=field", "REJECTED")
+
     def test_node_link_ceiling_uses_fixed_pr2_state(self):
         nodes = [
             {

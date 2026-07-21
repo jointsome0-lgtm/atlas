@@ -216,6 +216,62 @@ function validateWithheld(value) {
     && keys.every((key) => Number.isInteger(value[key]) && value[key] >= 0);
 }
 
+// §16.5 fail-closed parity with the other Atlas readers (§25.7): native
+// JSON.parse keeps the last of duplicate keys, so an ambiguous file could
+// pass validation after silently overwriting a field. Scan the raw text for
+// duplicate keys within one object before parsing; the builder never emits
+// them, so any hit is a malformed file.
+export function hasDuplicateJsonKeys(text) {
+  const escapes = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f",
+    "n": "\n", "r": "\r", "t": "\t"};
+  const stack = [];
+  let index = 0;
+  while (index < text.length) {
+    const ch = text[index];
+    if (ch === '"') {
+      let raw = "";
+      index += 1;
+      while (index < text.length && text[index] !== '"') {
+        if (text[index] === "\\") {
+          const code = text[index + 1];
+          if (code === "u") {
+            raw += String.fromCharCode(parseInt(text.slice(index + 2, index + 6), 16));
+            index += 6;
+          } else {
+            raw += escapes[code] ?? code;
+            index += 2;
+          }
+        } else {
+          raw += text[index];
+          index += 1;
+        }
+      }
+      index += 1; // past the closing quote
+      const top = stack[stack.length - 1];
+      if (top && top.keys && top.expectKey) {
+        if (top.keys.has(raw)) return true;
+        top.keys.add(raw);
+        top.expectKey = false;
+      }
+      continue;
+    }
+    if (ch === "{") stack.push({keys: new Set(), expectKey: true});
+    else if (ch === "[") stack.push({});
+    else if (ch === "}" || ch === "]") stack.pop();
+    else if (ch === ",") {
+      const top = stack[stack.length - 1];
+      if (top && top.keys) top.expectKey = true;
+    }
+    index += 1;
+  }
+  return false;
+}
+
+function edgeIdentity(edge) {
+  return JSON.stringify([edge.type, edge.source, edge.target,
+    edge.context ?? "", edge.order ?? 0, edge.step ?? ""]);
+}
+
 export function validateGraph(value) {
   if (!isPlainObject(value)) return diagnostic("", "type");
   if (value.format !== "atlas-graph" || value.version !== 1) return diagnostic("", "envelope");
@@ -229,23 +285,48 @@ export function validateGraph(value) {
   if (!Array.isArray(value.frontier) || value.frontier.length !== 0) return diagnostic("/frontier", "producerClosed");
   if (!isPlainObject(value.projections) || !Object.values(value.projections).every((item) => typeof item === "string" && SLUG_RE.test(item))) return diagnostic("/projections", "slugMap");
   if (Object.prototype.hasOwnProperty.call(value, "withheld") && !validateWithheld(value.withheld)) return diagnostic("/withheld", "shape");
+  const nodeIds = new Set();
   for (let index = 0; index < value.nodes.length; index += 1) {
     const failure = validateNode(value.nodes[index], index);
     if (failure) return failure;
+    // One id, one node (§10.1): the builder errors on duplicates, so a
+    // repeated id is a malformed file — focus and details must never
+    // resolve ambiguously (§16.5).
+    if (nodeIds.has(value.nodes[index].id)) return diagnostic("/nodes/" + index + "/id", "duplicateId");
+    nodeIds.add(value.nodes[index].id);
   }
-  const nodeIds = new Set();
-  for (const node of value.nodes) {
-    if (isPlainObject(node) && typeof node.id === "string") nodeIds.add(node.id);
+  // §34.4 over the whole file: a formerly entry that is itself a living id,
+  // or one retired id redirecting to two survivors, is unrepresentable in a
+  // builder emission — reject rather than resolve focus= wrong.
+  const retiredSeen = new Set();
+  for (let index = 0; index < value.nodes.length; index += 1) {
+    for (const oldId of value.nodes[index].formerly || []) {
+      if (nodeIds.has(oldId)) return diagnostic("/nodes/" + index + "/formerly", "livingRedirect");
+      if (retiredSeen.has(oldId)) return diagnostic("/nodes/" + index + "/formerly", "duplicateRedirect");
+      retiredSeen.add(oldId);
+    }
   }
+  const identities = new Set();
   for (let index = 0; index < value.edges.length; index += 1) {
     const failure = validateEdge(value.edges[index], index);
     if (failure) return failure;
-    // The builder never emits an edge whose endpoint is not a node (§20 step
-    // 11), so a dangling endpoint is a malformed file — a generic rejection,
-    // never a silently thinner render (§16.5 no-partial-render).
     const edge = value.edges[index];
+    // The builder never emits an edge resting on an absent node: endpoints
+    // are filtered (§20 step 11), provenance is the direct derivation basis
+    // (§10.3), context/step are identity discriminants naming live nodes —
+    // any dangling ref is a malformed file, a generic rejection, never a
+    // silently thinner render (§16.5 no-partial-render).
     if (!nodeIds.has(edge.source)) return diagnostic("/edges/" + index + "/source", "danglingEndpoint");
     if (!nodeIds.has(edge.target)) return diagnostic("/edges/" + index + "/target", "danglingEndpoint");
+    if (Object.prototype.hasOwnProperty.call(edge, "context") && !nodeIds.has(edge.context)) return diagnostic("/edges/" + index + "/context", "danglingRef");
+    if (Object.prototype.hasOwnProperty.call(edge, "step") && !nodeIds.has(edge.step)) return diagnostic("/edges/" + index + "/step", "danglingRef");
+    for (const ref of edge.provenance) {
+      if (!nodeIds.has(ref)) return diagnostic("/edges/" + index + "/provenance", "danglingRef");
+    }
+    // §20.3: one identity emits one edge — duplicates are malformed.
+    const identity = edgeIdentity(edge);
+    if (identities.has(identity)) return diagnostic("/edges/" + index, "duplicateIdentity");
+    identities.add(identity);
   }
   return null;
 }
@@ -289,6 +370,9 @@ export function acceptGraphBuffer(buffer) {
     value = JSON.parse(text);
   } catch (_error) {
     return {kind: "REJECTED", diagnostic: diagnostic("", "json")};
+  }
+  if (hasDuplicateJsonKeys(text)) {
+    return {kind: "REJECTED", diagnostic: diagnostic("", "duplicateJsonKey")};
   }
   if (!isPlainObject(value) || value.format !== "atlas-graph" || !Number.isInteger(value.version)) {
     return {kind: "REJECTED", diagnostic: diagnostic("", "envelope")};

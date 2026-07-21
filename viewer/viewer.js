@@ -1,4 +1,5 @@
 import {
+  CEILINGS,
   DEFAULT_FIELD,
   EDGE_TYPES,
   FIELDS,
@@ -721,6 +722,41 @@ function appendEdgeGroups(node, edges) {
   detailContent.append(container);
 }
 
+// §25.8/§16.5: enforce the byte cap while streaming — an oversized graph is
+// rejected as soon as byte cap+1 arrives, never fully downloaded and
+// allocated first. Returns null on a breach.
+async function readBounded(response, cap) {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > cap) {
+    void response.body?.cancel?.();
+    return null;
+  }
+  if (!response.body || !response.body.getReader) {
+    const buffer = await response.arrayBuffer();
+    return buffer.byteLength > cap ? null : buffer;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > cap) {
+      void reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return joined.buffer;
+}
+
 async function loadGraph() {
   renderLoadState();
   let response;
@@ -738,13 +774,15 @@ async function loadGraph() {
   }
   let buffer;
   try {
-    buffer = await response.arrayBuffer();
+    buffer = await readBounded(response, CEILINGS.graph_file_bytes);
   } catch (_error) {
     loadState = "REJECTED";
     renderLoadState();
     return;
   }
-  const result = acceptGraphBuffer(buffer);
+  const result = buffer === null
+    ? {kind: "REJECTED", diagnostic: {path: "", rule: "graphFileBytes"}}
+    : acceptGraphBuffer(buffer);
   if (result.kind === "REJECTED") {
     console.warn("Atlas graph rejected at " + result.diagnostic.path + ": " + result.diagnostic.rule);
     loadState = "REJECTED";
