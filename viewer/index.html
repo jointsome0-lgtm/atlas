@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Atlas</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./viewer.css">
 </head>
 <body>
@@ -19,10 +20,16 @@
         <input id="routes-toggle" type="checkbox" checked>
         <span>Routes</span>
       </label>
+      <div class="segmented-control" aria-label="Viewer lens">
+        <button id="graph-view" type="button" aria-pressed="true">Graph</button>
+        <button id="list-view" type="button" aria-pressed="false">List</button>
+      </div>
+      <button id="legend-toggle" class="legend-toggle" type="button" aria-expanded="false" aria-controls="legend">Legend</button>
     </div>
   </header>
 
   <div id="app-shell" class="app-shell">
+    <div id="legend" class="legend" role="note" aria-label="Legend" tabindex="0" hidden></div>
     <main id="main" aria-live="polite"></main>
     <aside id="details" aria-label="Node details" hidden>
       <button id="close-details" class="close-details" type="button" aria-label="Close details">×</button>

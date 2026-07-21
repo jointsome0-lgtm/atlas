@@ -29,6 +29,7 @@ class MetaParser(HTMLParser):
         self.metas = []
         self.scripts = []
         self.styles = []
+        self.links = []
         self.event_attributes = []
 
     def handle_starttag(self, tag, attrs):
@@ -39,6 +40,8 @@ class MetaParser(HTMLParser):
             self.scripts.append(attributes)
         if tag == "style":
             self.styles.append(attributes)
+        if tag == "link":
+            self.links.append(attributes)
         self.event_attributes.extend(
             name for name, _ in attrs if name.lower().startswith("on"))
 
@@ -134,6 +137,10 @@ class ViewerContractTests(unittest.TestCase):
         self.assertEqual(["no-referrer"], referrer)
         self.assertEqual(
             [{"type": "module", "src": "./viewer.js"}], parser.scripts)
+        self.assertEqual([
+            {"rel": "icon", "href": "./favicon.svg", "type": "image/svg+xml"},
+            {"rel": "stylesheet", "href": "./viewer.css"},
+        ], parser.links)
         self.assertEqual([], parser.styles)
         self.assertEqual([], parser.event_attributes)
 
@@ -143,10 +150,12 @@ class ViewerContractTests(unittest.TestCase):
             if not path.is_file():
                 continue
             source = path.read_text(encoding="utf-8")
+            network_source = source.replace(
+                'xmlns="http://www.w3.org/2000/svg"', "")
             with self.subTest(path=path.name):
                 self.assertNotIn("inner" + "HTML", source)
-                self.assertNotIn("http" + "://", source)
-                self.assertIsNone(external_literal.search(source))
+                self.assertNotIn("http" + "://", network_source)
+                self.assertIsNone(external_literal.search(network_source))
 
 
 if __name__ == "__main__":

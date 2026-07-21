@@ -7,7 +7,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 try:
     from playwright.sync_api import sync_playwright
@@ -17,6 +17,11 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_GRAPH = ROOT / "fixtures" / "demo-graph" / "atlas-graph.json"
+NODE_TYPE_ORDER = [
+    "plan", "concept", "material", "material_part", "direction",
+    "suggested_route", "personal_trail", "trail_segment", "artifact",
+    "encounter", "question", "probe", "zone", "pattern",
+]
 
 
 class QuietViewerHandler(http.server.SimpleHTTPRequestHandler):
@@ -340,7 +345,7 @@ class ViewerBrowserTests(unittest.TestCase):
         self.graph_path.write_text(text, encoding="utf-8")
         self.open_state("#mode=field", "REJECTED")
 
-    def test_node_link_ceiling_uses_fixed_pr2_state(self):
+    def test_list_auto_engages_past_node_link_ceiling(self):
         nodes = [
             {
                 "id": f"concept:n-{index}",
@@ -352,11 +357,269 @@ class ViewerBrowserTests(unittest.TestCase):
             for index in range(2401)
         ]
         self.write_graph(self.graph_envelope(nodes=nodes))
-        self.open_state("#mode=field", "NODE_LINK_CEILING")
+        self.open_state("#mode=field", "LIST")
         self.assertEqual(
-            "2401 nodes is past the node-link ceiling (2,400). The list view shows them.",
-            self.page.locator("#main").inner_text(),
+            "2401 nodes is past the node-link ceiling (2,400) — showing the list.",
+            self.page.locator('.list-ceiling-note[role="status"]').inner_text(),
         )
+        # Sections preview; the tail renders only on explicit request.
+        self.assertEqual(500, self.page.locator(".node-list-row").count())
+        show_all = self.page.locator(".list-show-all")
+        self.assertEqual("Show all 2401 concept rows", show_all.inner_text())
+        show_all.click()
+        self.page.wait_for_function(
+            "document.querySelectorAll('.node-list-row').length === 2401")
+        self.assertEqual(0, self.page.locator(".list-show-all").count())
+        graph_button = self.page.locator("#graph-view")
+        self.assertTrue(graph_button.is_disabled())
+        self.assertEqual(
+            "Node-link layout caps at 2,400 nodes",
+            graph_button.get_attribute("title"),
+        )
+        self.assertEqual("false", graph_button.get_attribute("aria-pressed"))
+        self.assertEqual(
+            "true", self.page.locator("#list-view").get_attribute("aria-pressed"))
+        self.page.locator(".node-list-row").first.click()
+        self.page.wait_for_selector("#details:not([hidden])")
+        self.assertEqual(1, self.page.locator(".node-list-row.selected").count())
+
+    def test_keyboard_navigation_focuses_selection_and_pans_graph(self):
+        # Without a selection no node sits in the tab order — the list lens is
+        # the dense keyboard path; the graph exposes only the selection.
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual(0, self.page.locator('g.node[tabindex="0"]').count())
+
+        self.open_state("#mode=field&focus=concept:rest-api", "FIELD")
+        self.assertEqual(1, self.page.locator('g.node[tabindex="0"]').count())
+        # The deep link lands keyboard focus on the selection itself.
+        self.page.wait_for_function(
+            "document.activeElement?.getAttribute('data-node-id')"
+            " === 'concept:rest-api'")
+        # And the selection stays tab-reachable from the graph surface.
+        self.page.locator("svg.graph-svg").focus()
+        self.page.keyboard.press("Tab")
+        focused = self.page.locator("g.node:focus")
+        self.assertEqual(1, focused.count())
+        self.assertEqual(
+            "concept:rest-api", focused.get_attribute("data-node-id"))
+        ring_opacity = focused.locator(".focus-ring").evaluate(
+            "ring => getComputedStyle(ring).opacity")
+        self.assertNotEqual("0", ring_opacity)
+
+        before = self.page.locator("svg .viewport").get_attribute("transform")
+        self.page.keyboard.press("ArrowRight")
+        after = self.page.locator("svg .viewport").get_attribute("transform")
+        self.assertNotEqual(before, after)
+
+    def test_list_lens_orders_sections_and_activates_rows(self):
+        graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        visible = [
+            node for node in graph["nodes"]
+            if "knowledge" in node["fields"] or node["fields"] == []
+        ]
+        expected_types = [
+            node_type for node_type in NODE_TYPE_ORDER
+            if any(node["type"] == node_type for node in visible)
+        ]
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        actual_types = self.page.locator(".node-list-section").evaluate_all(
+            "sections => sections.map(section => section.dataset.nodeType)")
+        self.assertEqual(expected_types, actual_types)
+        self.assertEqual(len(visible), self.page.locator(".node-list-row").count())
+        self.assertEqual(
+            "true", self.page.locator("#list-view").get_attribute("aria-pressed"))
+        self.assertFalse(self.page.locator("#graph-view").is_disabled())
+
+        row = self.page.locator(".node-list-row").first
+        node_id = row.get_attribute("data-node-id")
+        row.click()
+        self.page.wait_for_selector("#details:not([hidden])")
+        self.assertIn(
+            "focus=" + node_id,
+            self.page.evaluate("decodeURIComponent(location.hash)"),
+        )
+        self.assertEqual(
+            node_id,
+            self.page.locator(".node-list-row.selected").get_attribute("data-node-id"),
+        )
+
+    def test_list_panel_respects_routes_lens(self):
+        self.open_state("#mode=field&focus=concept:rest-api", "FIELD")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.wait_for_selector("#details:not([hidden])")
+
+        def status_edge_count():
+            return self.page.locator("#status-bar").evaluate(
+                "bar => Number(bar.textContent.match(/· (\\d+) edges/)[1])")
+
+        def headings():
+            return [text.lower() for text in
+                    self.page.locator("#details .edge-groups h3").all_inner_texts()]
+
+        self.assertIn("step_of_route", headings())
+        all_edge_count = status_edge_count()
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.wait_for_function(
+            "before => Number(document.querySelector('#status-bar')"
+            ".textContent.match(/· (\\d+) edges/)[1]) < before",
+            arg=all_edge_count,
+        )
+        without_routes = headings()
+        self.assertLess(status_edge_count(), all_edge_count)
+        self.assertNotIn("step_of_route", without_routes)
+        self.assertNotIn("suggested_next", without_routes)
+
+    def test_redraw_restores_focus_only_when_orphaned(self):
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        row = self.page.locator(".node-list-row").first
+        node_id = row.get_attribute("data-node-id")
+        row.click()
+        self.page.wait_for_selector("#details:not([hidden])")
+        # The activated row was destroyed by the rebuild; focus lands on its
+        # replacement so Tab continues from the selection.
+        self.page.wait_for_function(
+            "id => document.activeElement?.getAttribute('data-node-id') === id",
+            arg=node_id,
+        )
+        # A live control keeps focus across the redraw it triggers.
+        toggle = self.page.locator("#routes-toggle")
+        toggle.focus()
+        toggle.press(" ")
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.evaluate(
+            "new Promise(done => requestAnimationFrame("
+            "() => requestAnimationFrame(done)))")
+        self.assertTrue(self.page.evaluate(
+            "document.activeElement?.id === 'routes-toggle'"))
+
+    def test_focus_ring_sits_outside_selection_ring(self):
+        self.open_state("#mode=field&focus=concept:rest-api", "FIELD")
+        selected = self.page.locator(".node.selected")
+        focus_radius = float(
+            selected.locator(".focus-ring").get_attribute("r"))
+        selection_radius = float(
+            selected.locator(".selection-ring").get_attribute("r"))
+        self.assertGreater(focus_radius, selection_radius)
+
+    def test_header_controls_reachable_in_narrow_embed(self):
+        self.page.set_viewport_size({"width": 360, "height": 640})
+        self.open_state("#mode=field", "FIELD")
+        box = self.page.locator("#legend-toggle").bounding_box()
+        self.assertIsNotNone(box)
+        self.assertLessEqual(box["x"] + box["width"], 360)
+        self.page.locator("#legend-toggle").click()
+        self.assertTrue(self.page.locator("#legend").is_visible())
+
+    def test_legend_receives_focus_for_keyboard_scrolling(self):
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#legend-toggle").click()
+        self.assertTrue(self.page.evaluate(
+            "document.activeElement?.id === 'legend'"))
+        self.page.keyboard.press("Escape")
+        self.assertTrue(self.page.evaluate(
+            "document.activeElement?.id === 'legend-toggle'"))
+
+    def test_glyphs_carry_kind_marks_beyond_color(self):
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        question_glyph = self.page.locator(
+            '.node-list-section[data-node-type="question"] .node-glyph')
+        self.assertEqual(1, question_glyph.locator(".question-ring").count())
+        trail_glyph = self.page.locator(
+            '.node-list-section[data-node-type="personal_trail"] .node-glyph')
+        self.assertEqual(2, trail_glyph.locator("circle.node-shape").count())
+        self.page.locator("#legend-toggle").click()
+        self.assertEqual(
+            1,
+            self.page.locator(".legend .node-question .question-ring").count())
+
+    def test_escape_dismisses_layers_topmost_first(self):
+        self.open_state("#mode=field&focus=concept:rest-api", "FIELD")
+        self.page.wait_for_selector("#details:not([hidden])")
+        self.page.locator("#legend-toggle").click()
+        self.page.keyboard.press("Escape")
+        self.assertTrue(self.page.locator("#legend").is_hidden())
+        self.assertTrue(self.page.locator("#details").is_visible())
+        self.page.keyboard.press("Escape")
+        self.page.wait_for_selector("#details[hidden]", state="attached")
+
+    def test_legend_omits_frozen_body_kinds(self):
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#legend-toggle").click()
+        labels = self.page.locator(".legend-nodes .legend-row span").all_inner_texts()
+        self.assertNotIn("zone", labels)
+        self.assertNotIn("pattern", labels)
+        self.assertIn("concept", labels)
+
+    def test_legend_disclosure_lists_five_edge_families(self):
+        self.open_state("#mode=field", "FIELD")
+        button = self.page.locator("#legend-toggle")
+        self.assertEqual("false", button.get_attribute("aria-expanded"))
+        button.click()
+        self.assertEqual("true", button.get_attribute("aria-expanded"))
+        self.assertTrue(self.page.locator('.legend[role="note"]').is_visible())
+        self.assertEqual(
+            ["routes (hideable)", "trail", "authored (opacity shows weight)", "structure",
+             "journal-derived"],
+            self.page.locator(".legend-edges .legend-row span").all_inner_texts(),
+        )
+        self.page.keyboard.press("Escape")
+        self.assertEqual("false", button.get_attribute("aria-expanded"))
+        self.assertTrue(self.page.locator("#legend").is_hidden())
+
+    def test_reduced_motion_disables_question_animation(self):
+        self.context.close()
+        self.context = self.browser.new_context(reduced_motion="reduce")
+        self.page = self.context.new_page()
+        self.open_state("#mode=field", "FIELD")
+        animation_name = self.page.locator(".question-ring").first.evaluate(
+            "ring => getComputedStyle(ring).animationName")
+        self.assertEqual("none", animation_name)
+
+    def test_demo_render_and_panel_interactions_stay_offline_and_csp_clean(self):
+        origin = self.base_url[:self.base_url.index("/viewer/")]
+        requests = []
+        self.page.on("request", lambda request: requests.append(request.url))
+        self.page.add_init_script("""
+            window.__cspViolations = [];
+            document.addEventListener("securitypolicyviolation", event => {
+              window.__cspViolations.push({
+                blockedURI: event.blockedURI,
+                violatedDirective: event.violatedDirective
+              });
+            });
+        """)
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("g.node").first.focus()
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_selector("#details:not([hidden])")
+        self.page.locator("#close-details").click()
+        self.page.wait_for_selector("#details", state="hidden")
+
+        self.assertTrue(requests)
+        self.assertTrue(all(url.startswith(origin) for url in requests), requests)
+        paths = {urlsplit(url).path for url in requests}
+        expected = {
+            "/viewer/index.html",
+            "/viewer/viewer.css",
+            "/viewer/viewer.js",
+            "/viewer/contract.js",
+            "/viewer/favicon.svg",
+            "/graph/atlas-graph.json",
+        }
+        self.assertTrue(paths.issubset(expected), paths)
+        self.assertEqual(
+            expected - {"/viewer/favicon.svg"},
+            paths - {"/viewer/favicon.svg"},
+        )
+        self.assertEqual([], self.page.evaluate("window.__cspViolations"))
 
     def test_demo_graph_renders_expected_svg_counts_and_route_lens(self):
         graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
