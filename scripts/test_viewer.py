@@ -202,6 +202,13 @@ class ViewerBrowserTests(unittest.TestCase):
                 edges=[{**related, "provenance": ["concept:absent"]}]),
             "duplicate edge identity": self.graph_envelope(
                 nodes=[alone, other], edges=[related, dict(related)]),
+            "non-canonical edge array order": self.graph_envelope(
+                nodes=[alone, other], edges=[related, {
+                    "source": "concept:alone", "target": "concept:other",
+                    "type": "prerequisite_of",
+                    "provenance": ["concept:alone"],
+                    "weight": "unassessed",
+                }]),
             "living formerly redirect": self.graph_envelope(
                 nodes=[alone, {**other, "formerly": ["concept:alone"]}]),
             "1-to-n formerly redirect": self.graph_envelope(

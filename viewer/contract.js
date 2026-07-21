@@ -297,9 +297,21 @@ export function hasDuplicateJsonKeys(text) {
   return false;
 }
 
+function edgeKey(edge) {
+  return [edge.type, edge.source, edge.target,
+    edge.context ?? "", edge.order ?? 0, edge.step ?? ""];
+}
+
+function compareEdgeKeys(left, right) {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] < right[index]) return -1;
+    if (left[index] > right[index]) return 1;
+  }
+  return 0;
+}
+
 function edgeIdentity(edge) {
-  return JSON.stringify([edge.type, edge.source, edge.target,
-    edge.context ?? "", edge.order ?? 0, edge.step ?? ""]);
+  return JSON.stringify(edgeKey(edge));
 }
 
 export function validateGraph(value) {
@@ -361,10 +373,18 @@ export function validateGraph(value) {
   }
   const identities = new Set();
   const roleConflicts = new Map();
+  let previousEdgeKey = null;
   for (let index = 0; index < value.edges.length; index += 1) {
     const failure = validateEdge(value.edges[index], index);
     if (failure) return failure;
     const edge = value.edges[index];
+    // §20.3: the builder emits the edge array in canonical identity order;
+    // accepting a shuffle would make layout and detail ordering input-driven.
+    const currentEdgeKey = edgeKey(edge);
+    if (previousEdgeKey !== null && compareEdgeKeys(previousEdgeKey, currentEdgeKey) > 0) {
+      return diagnostic("/edges/" + index, "canonicalOrder");
+    }
+    previousEdgeKey = currentEdgeKey;
     // The builder never emits an edge resting on an absent node: endpoints
     // are filtered (§20 step 11), provenance is the direct derivation basis
     // (§10.3), context/step are identity discriminants naming live nodes —
