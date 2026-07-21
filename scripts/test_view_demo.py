@@ -34,5 +34,16 @@ class UsageContractTest(unittest.TestCase):
                       stderr)
 
 
+class QuietHandlerTest(unittest.TestCase):
+    def test_request_logging_is_silenced(self):
+        # §25.8: the default SimpleHTTPRequestHandler.log_message writes
+        # unprefixed request lines to stderr — the demo handler stays silent.
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            view_demo.QuietDemoHandler.log_message(
+                object(), "%s", "GET /viewer/index.html HTTP/1.1")
+        self.assertEqual("", stderr.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -216,6 +216,14 @@ class ViewerBrowserTests(unittest.TestCase):
                     "text": "t", "created_at": "2026-07-10",
                     "source": {"artifact": "artifact:a"},
                 }]),
+            "projection key that is not a zone id": {
+                **self.graph_envelope(nodes=[alone]),
+                "projections": {"concept:alone": "torso"}},
+            "zone without a projections entry": self.graph_envelope(
+                nodes=[alone, {
+                    "id": "zone:core", "type": "zone", "title": "Core",
+                    "fields": ["body"], "notes": "",
+                }]),
             "discriminant on the wrong edge type": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "order": 1}]),

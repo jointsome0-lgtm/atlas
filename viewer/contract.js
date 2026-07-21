@@ -297,6 +297,11 @@ export function validateGraph(value) {
   if (!isPlainObject(value.influence) || Object.keys(value.influence).length !== 0) return diagnostic("/influence", "producerClosed");
   if (!Array.isArray(value.frontier) || value.frontier.length !== 0) return diagnostic("/frontier", "producerClosed");
   if (!isPlainObject(value.projections) || !Object.values(value.projections).every((item) => typeof item === "string" && SLUG_RE.test(item))) return diagnostic("/projections", "slugMap");
+  // §20 step 12/§32.1: projections is the curated zone → figure_region map —
+  // a key that is not a zone id cannot be audited against any node.
+  for (const key of Object.keys(value.projections)) {
+    if (!key.startsWith("zone:") || !NODE_ID_RE.test(key)) return diagnostic("/projections", "zoneKey");
+  }
   // §20: the full graph never carries withheld — that key marks the redacted
   // variant, which lives beside the full graph, never at the viewer's single
   // input path. A withheld-bearing file here is a partial graph presented as
@@ -311,6 +316,14 @@ export function validateGraph(value) {
     // resolve ambiguously (§16.5).
     if (nodeIds.has(value.nodes[index].id)) return diagnostic("/nodes/" + index + "/id", "duplicateId");
     nodeIds.add(value.nodes[index].id);
+  }
+  // §20 step 12/§32.1: every emitted zone carries its curated figure_region —
+  // a zone the silhouette cannot place never leaves the build, so a missing
+  // entry is a malformed file, rejected whole (§16.5).
+  for (let index = 0; index < value.nodes.length; index += 1) {
+    if (value.nodes[index].type === "zone" && !Object.prototype.hasOwnProperty.call(value.projections, value.nodes[index].id)) {
+      return diagnostic("/projections", "zoneWithoutProjection");
+    }
   }
   // §34.4 over the whole file: a formerly entry that is itself a living id,
   // or one retired id redirecting to two survivors, is unrepresentable in a
