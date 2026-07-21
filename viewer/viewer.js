@@ -175,10 +175,8 @@ async function dispatch() {
     renderLoadState();
     return;
   }
-  if (accepted.graph.nodes.length === 0) {
-    renderEmpty();
-    return;
-  }
+  // §16.5: address hardening never depends on graph content — a bad
+  // address is the generic error and no render, empty graph included.
   const raw = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
   const address = parseFragment(raw);
   if (address.kind === "BAD_ADDRESS") {
@@ -191,6 +189,10 @@ async function dispatch() {
   }
   if (address.mode !== "field") {
     renderAddressState("NOT_IN_SLICE", address.mode);
+    return;
+  }
+  if (accepted.graph.nodes.length === 0) {
+    renderEmpty();
     return;
   }
 

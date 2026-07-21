@@ -122,6 +122,9 @@ class ViewerBrowserTests(unittest.TestCase):
         self.open_state("#mode=field", "EMPTY")
         self.assertIn("This graph has no nodes yet", self.page.locator("#main").inner_text())
 
+        # §16.5: address hardening precedes the empty-graph shortcut.
+        self.open_state("#mode=%ZZ", "BAD_ADDRESS")
+
         shutil.copyfile(DEMO_GRAPH, self.graph_path)
         self.open_state("#mode=%ZZ", "BAD_ADDRESS")
         self.assertIn("This view address isn't valid", self.page.locator("#main").inner_text())
@@ -200,6 +203,18 @@ class ViewerBrowserTests(unittest.TestCase):
             "1-to-n formerly redirect": self.graph_envelope(
                 nodes=[{**alone, "formerly": ["concept:old"]},
                        {**other, "formerly": ["concept:old"]}]),
+            "kind-changing formerly redirect": self.graph_envelope(
+                nodes=[{**alone, "formerly": ["material:old"]}]),
+            "formerly on a journal-backed kind": self.graph_envelope(
+                nodes=[alone, {
+                    "id": "question:q", "type": "question", "title": "",
+                    "fields": ["knowledge"], "formerly": ["question:old"],
+                    "text": "t", "created_at": "2026-07-10",
+                    "source": {"artifact": "artifact:a"},
+                }]),
+            "discriminant on the wrong edge type": self.graph_envelope(
+                nodes=[alone, other],
+                edges=[{**related, "order": 1}]),
         }
         for name, graph in variants.items():
             with self.subTest(variant=name):

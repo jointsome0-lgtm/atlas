@@ -45,6 +45,15 @@ const KNOWN_FRAGMENT_KEYS = new Set(["mode", "focus", "field"]);
 const AUTHORED_WEIGHT_TYPES = new Set([...AUTHORED_ROLES, "supports"]);
 const DERIVED_WEIGHT_TYPES = new Set(EDGE_TYPES.filter((type) => !AUTHORED_WEIGHT_TYPES.has(type)));
 const STATUS_FORBIDDEN = new Set(["concept", "pattern", "zone", "material_part", "personal_trail", "trail_segment", "artifact", "encounter", "question", "plan"]);
+const EDGE_DISCRIMINANTS = {
+  "step_of_route": ["order"],
+  "suggested_next": ["context"],
+  "primary_for": ["step"],
+  "supporting_for": ["step"]
+};
+// §34.4: journal record ids get no redirect machinery — hand-editing the
+// row is the owner's mechanism, so formerly never appears on these kinds.
+const NO_REDIRECT_KINDS = new Set(["trail_segment", "artifact", "encounter", "question"]);
 
 const NODE_PAYLOAD_FIELDS = {
   "concept": ["aliases"],
@@ -198,6 +207,16 @@ function validateEdge(edge, index) {
   if (Object.prototype.hasOwnProperty.call(edge, "created_by") && typeof edge.created_by !== "string") return diagnostic(path + "/created_by", "type");
   if (Object.prototype.hasOwnProperty.call(edge, "created_at") && (typeof edge.created_at !== "string" || !DATE_RE.test(edge.created_at))) return diagnostic(path + "/created_at", "date");
   if (Object.prototype.hasOwnProperty.call(edge, "note") && typeof edge.note !== "string") return diagnostic(path + "/note", "type");
+  // §10.2/§10.3: the meta discriminants belong to their matrix rows only —
+  // order on step_of_route, context on suggested_next, step on the
+  // route-context role edges. Anywhere else they could mint duplicate
+  // identities past the §20.3 dedup, so a stray one rejects the file.
+  for (const meta of ["order", "context", "step"]) {
+    if (Object.prototype.hasOwnProperty.call(edge, meta)
+        && !(EDGE_DISCRIMINANTS[edge.type] || []).includes(meta)) {
+      return diagnostic(path + "/" + meta, "forbiddenDiscriminant");
+    }
+  }
   if (AUTHORED_WEIGHT_TYPES.has(edge.type) && !Object.prototype.hasOwnProperty.call(edge, "weight")) return diagnostic(path + "/weight", "required");
   if (DERIVED_WEIGHT_TYPES.has(edge.type) && Object.prototype.hasOwnProperty.call(edge, "weight")) return diagnostic(path + "/weight", "forbidden");
   if (edge.type === "step_of_route" && !Object.prototype.hasOwnProperty.call(edge, "order")) return diagnostic(path + "/order", "required");
@@ -298,7 +317,13 @@ export function validateGraph(value) {
   // builder emission — reject rather than resolve focus= wrong.
   const retiredSeen = new Set();
   for (let index = 0; index < value.nodes.length; index += 1) {
-    for (const oldId of value.nodes[index].formerly || []) {
+    const node = value.nodes[index];
+    if (!Object.prototype.hasOwnProperty.call(node, "formerly")) continue;
+    if (NO_REDIRECT_KINDS.has(node.type)) return diagnostic("/nodes/" + index + "/formerly", "noRedirectMachinery");
+    for (const oldId of node.formerly) {
+      // §34.4: identity continuation is per-kind — a redirect never
+      // changes kind, is never a living id, and never forks 1→n.
+      if (prefixType(oldId) !== node.type) return diagnostic("/nodes/" + index + "/formerly", "kindChange");
       if (nodeIds.has(oldId)) return diagnostic("/nodes/" + index + "/formerly", "livingRedirect");
       if (retiredSeen.has(oldId)) return diagnostic("/nodes/" + index + "/formerly", "duplicateRedirect");
       retiredSeen.add(oldId);
