@@ -1,6 +1,7 @@
 import functools
 import http.server
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -13,6 +14,15 @@ try:
     from playwright.sync_api import sync_playwright
 except ImportError:
     sync_playwright = None
+
+# The general suite may skip the browser tests, but the §27.8 acceptance
+# invocation must never pass vacuously: under ATLAS_VIEWER_ACCEPTANCE=1 a
+# missing browser driver is a failure, not a skip.
+if os.environ.get("ATLAS_VIEWER_ACCEPTANCE") == "1" and sync_playwright is None:
+    raise ImportError(
+        "ATLAS_VIEWER_ACCEPTANCE=1 requires playwright (pip install"
+        " playwright==1.54.0 && playwright install chromium); the §27.8"
+        " acceptance proof cannot be skipped")
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -25,4 +25,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install playwright==1.54.0 && playwright install --with-deps chromium
-      - run: python -m unittest scripts.test_viewer -v
+      - run: ATLAS_VIEWER_ACCEPTANCE=1 python -m unittest discover -s scripts -p "test_viewer*.py" -v
