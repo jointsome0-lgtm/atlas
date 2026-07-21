@@ -4,6 +4,7 @@ import {
   EDGE_TYPES,
   FIELDS,
   MODES,
+  NODE_TYPES,
   RENDER_NODE_LINK_CEILING,
   acceptGraphBuffer,
   parseFragment
@@ -18,6 +19,14 @@ const ROUTE_TYPES = new Set(["step_of_route", "suggested_next"]);
 const TRAIL_TYPES = new Set(["moved_to", "via", "produced_artifact"]);
 const AUTHORED_TYPES = new Set(["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"]);
 const STRUCTURAL_TYPES = new Set(["has_part", "overall_concept", "part_of_direction"]);
+const EDGE_FAMILIES = [
+  {key: "route", className: "edge-route", label: "routes (hideable)"},
+  {key: "trail", className: "edge-trail", label: "trail"},
+  {key: "authored", className: "edge-authored", label: "authored (opacity shows weight)"},
+  {key: "structural", className: "edge-structural", label: "structure"},
+  {key: "journal", className: "edge-journal", label: "journal-derived"}
+];
+const EDGE_FAMILY_CLASSES = Object.fromEntries(EDGE_FAMILIES.map((family) => [family.key, family.className]));
 const LONG_FIELDS = new Set(["notes", "body", "summary", "reason", "text"]);
 const DETAIL_FIELDS = {
   "concept": ["aliases"],
@@ -53,12 +62,17 @@ const closeDetails = document.querySelector("#close-details");
 const fieldChip = document.querySelector("#field-chip");
 const statusBar = document.querySelector("#status-bar");
 const routesToggle = document.querySelector("#routes-toggle");
+const graphView = document.querySelector("#graph-view");
+const listView = document.querySelector("#list-view");
+const legendToggle = document.querySelector("#legend-toggle");
+const legend = document.querySelector("#legend");
 
 let accepted = null;
 let loadState = "LOADING";
 let unsupportedVersion = null;
 let renderGeneration = 0;
 let currentTransform = null;
+let viewMode = "graph";
 
 function htmlElement(tag, className, text) {
   const element = document.createElement(tag);
@@ -175,6 +189,7 @@ async function dispatch() {
     renderLoadState();
     return;
   }
+  setLensControls(false);
   // §16.5: address hardening never depends on graph content — a bad
   // address is the generic error and no render, empty graph included.
   const raw = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
@@ -228,11 +243,70 @@ async function dispatch() {
   const nodes = accepted.graph.nodes.filter((node) => node.fields.includes(field) || (field === DEFAULT_FIELD && node.fields.length === 0));
   const ids = new Set(nodes.map((node) => node.id));
   const edges = accepted.graph.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
-  if (nodes.length > RENDER_NODE_LINK_CEILING) {
-    stateBlock("NODE_LINK_CEILING", nodes.length + " nodes is past the node-link ceiling (2,400). The list view shows them.");
+  const pastCeiling = nodes.length > RENDER_NODE_LINK_CEILING;
+  setLensControls(pastCeiling);
+  if (pastCeiling || viewMode === "list") {
+    renderList(field, nodes, edges, selected, banner, pastCeiling);
     return;
   }
   await renderField(field, nodes, edges, selected, banner);
+}
+
+function setLensControls(pastCeiling) {
+  const effectiveMode = pastCeiling ? "list" : viewMode;
+  graphView.disabled = pastCeiling;
+  if (pastCeiling) {
+    graphView.title = "Node-link layout caps at 2,400 nodes";
+  } else {
+    graphView.removeAttribute("title");
+  }
+  graphView.setAttribute("aria-pressed", String(effectiveMode === "graph"));
+  listView.setAttribute("aria-pressed", String(effectiveMode === "list"));
+}
+
+function renderList(field, nodes, edges, selected, banner, pastCeiling) {
+  resetScreen(field);
+  setMainState("LIST");
+  setStatus(nodes.length, edges.length);
+  const list = htmlElement("div", "node-list");
+  if (banner) list.classList.add("has-banner");
+  if (pastCeiling) {
+    const note = htmlElement("div", "list-ceiling-note", nodes.length + " nodes is past the node-link ceiling (2,400) — showing the list.");
+    note.setAttribute("role", "status");
+    list.append(note);
+  }
+  let selectedRow = null;
+  for (const type of NODE_TYPES) {
+    const typeNodes = nodes
+      .filter((node) => node.type === type)
+      .sort((left, right) => left.id < right.id ? -1 : (left.id > right.id ? 1 : 0));
+    if (!typeNodes.length) continue;
+    const section = htmlElement("section", "node-list-section");
+    section.dataset.nodeType = type;
+    section.append(htmlElement("h2", "", type.replaceAll("_", " ") + " (" + typeNodes.length + ")"));
+    const rows = htmlElement("div", "node-list-rows");
+    for (const node of typeNodes) {
+      const row = htmlElement("button", "node-list-row");
+      row.type = "button";
+      row.dataset.nodeId = node.id;
+      appendNodeGlyph(row, node);
+      row.append(htmlElement("span", "node-list-title", displayTitle(node)));
+      row.append(htmlElement("span", "node-list-id", node.id));
+      if (node.fields.length === 0) row.append(htmlElement("span", "badge", "field undefined"));
+      if (selected && selected.id === node.id) {
+        row.classList.add("selected");
+        selectedRow = row;
+      }
+      row.addEventListener("click", () => updateFocus(node.id));
+      rows.append(row);
+    }
+    section.append(rows);
+    list.append(section);
+  }
+  main.append(list);
+  if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
+  if (banner) appendBanner(banner.kind, banner.value);
+  if (selectedRow) selectedRow.scrollIntoView({block: "nearest"});
 }
 
 function fnv1a32(text) {
@@ -360,6 +434,7 @@ async function renderField(field, nodes, edges, selected, banner) {
   const svg = svgElement("svg", "graph-svg");
   svg.setAttribute("viewBox", "0 0 " + VIEW_WIDTH + " " + VIEW_HEIGHT);
   svg.setAttribute("aria-label", "Knowledge field graph");
+  svg.setAttribute("tabindex", "0");
   const viewport = svgElement("g", "viewport");
   svg.append(makeDefinitions(), viewport);
   stage.append(svg, makeZoomControls());
@@ -370,7 +445,12 @@ async function renderField(field, nodes, edges, selected, banner) {
     if (!routesToggle.checked && isRouteEdge(edge, nodeById)) continue;
     viewport.append(makeEdge(edge, positions, nodeById));
   }
-  for (const node of nodes) viewport.append(makeNode(node, positions.get(node.id), selected && selected.id === node.id));
+  let selectedGroup = null;
+  for (const node of nodes) {
+    const group = makeNode(node, positions.get(node.id), selected && selected.id === node.id);
+    viewport.append(group);
+    if (selected && selected.id === node.id) selectedGroup = group;
+  }
 
   const focusedPosition = selected ? positions.get(selected.id) : null;
   const transform = {
@@ -381,8 +461,10 @@ async function renderField(field, nodes, edges, selected, banner) {
   currentTransform = {svg, viewport, ...transform};
   applyTransform(currentTransform);
   installPanZoom(currentTransform);
+  installKeyboardPanZoom(stage, currentTransform);
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
   if (banner) appendBanner(banner.kind, banner.value);
+  if (selectedGroup) selectedGroup.focus({preventScroll: true});
 }
 
 // §16.2: the Routes lens is coherent across surfaces — hidden routes leave
@@ -425,11 +507,11 @@ function isRouteEdge(edge, nodeById) {
 }
 
 function edgeClass(edge, nodeById) {
-  if (isRouteEdge(edge, nodeById)) return "edge-route";
-  if (TRAIL_TYPES.has(edge.type)) return "edge-trail";
-  if (AUTHORED_TYPES.has(edge.type)) return "edge-authored";
-  if (STRUCTURAL_TYPES.has(edge.type)) return "edge-structural";
-  return "edge-journal";
+  if (isRouteEdge(edge, nodeById)) return EDGE_FAMILY_CLASSES.route;
+  if (TRAIL_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.trail;
+  if (AUTHORED_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.authored;
+  if (STRUCTURAL_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.structural;
+  return EDGE_FAMILY_CLASSES.journal;
 }
 
 function makeEdge(edge, positions, nodeById) {
@@ -500,6 +582,25 @@ function primaryShape(node) {
   return shape;
 }
 
+function appendNodeGlyph(parent, node) {
+  const glyph = svgElement("svg", "node-glyph " + NODE_CLASSES[node.type]);
+  glyph.setAttribute("viewBox", "0 0 16 16");
+  glyph.setAttribute("aria-hidden", "true");
+  glyph.setAttribute("focusable", "false");
+  const contents = svgElement("g");
+  contents.setAttribute("transform", "translate(8 8) scale(0.8)");
+  contents.append(primaryShape(node));
+  if (node.sensitivity) {
+    const dot = svgElement("circle", "sensitivity-dot");
+    dot.setAttribute("cx", "7");
+    dot.setAttribute("cy", "-7");
+    dot.setAttribute("r", "2.2");
+    contents.append(dot);
+  }
+  glyph.append(contents);
+  parent.append(glyph);
+}
+
 function displayTitle(node) {
   return node.title || node.id.slice(node.id.indexOf(":") + 1);
 }
@@ -511,9 +612,14 @@ function makeNode(node, position, selected) {
   const group = svgElement("g", classes.join(" "));
   group.setAttribute("transform", "translate(" + position.x.toFixed(3) + " " + position.y.toFixed(3) + ")");
   group.setAttribute("role", "button");
+  group.setAttribute("tabindex", "0");
+  group.dataset.nodeId = node.id;
   const accessible = svgElement("title");
   accessible.textContent = (node.title || node.id) + ", " + node.type.replaceAll("_", " ");
   group.append(accessible);
+  const focusRing = svgElement("circle", "focus-ring");
+  focusRing.setAttribute("r", "15");
+  group.append(focusRing);
   if (selected) {
     const ring = svgElement("circle", "selection-ring");
     ring.setAttribute("r", "15");
@@ -541,6 +647,12 @@ function makeNode(node, position, selected) {
   label.textContent = displayTitle(node);
   group.append(label);
   group.addEventListener("click", (event) => {
+    event.stopPropagation();
+    updateFocus(node.id);
+  });
+  group.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
     event.stopPropagation();
     updateFocus(node.id);
   });
@@ -622,6 +734,66 @@ function installPanZoom(transform) {
     if (event.target === svg && !moved) updateFocus(null);
     moved = false;
   });
+}
+
+function installKeyboardPanZoom(stage, transform) {
+  stage.addEventListener("keydown", (event) => {
+    const focusedNode = event.target.closest && event.target.closest(".node");
+    if (event.target !== transform.svg && !focusedNode) return;
+    // Map semantics: an arrow looks toward that side, so content slides the
+    // opposite way (ArrowLeft reveals what lies to the left).
+    const delta = 40;
+    if (event.key === "ArrowLeft") transform.x += delta;
+    else if (event.key === "ArrowRight") transform.x -= delta;
+    else if (event.key === "ArrowUp") transform.y += delta;
+    else if (event.key === "ArrowDown") transform.y -= delta;
+    else if (event.key === "+" || event.key === "=") zoomAt(1.25, VIEW_WIDTH / 2, VIEW_HEIGHT / 2);
+    else if (event.key === "-") zoomAt(0.8, VIEW_WIDTH / 2, VIEW_HEIGHT / 2);
+    else return;
+    event.preventDefault();
+    if (event.key.startsWith("Arrow")) applyTransform(transform);
+  });
+}
+
+function renderLegend() {
+  legend.replaceChildren();
+  const nodesSection = htmlElement("section", "legend-nodes");
+  nodesSection.append(htmlElement("h2", "", "Nodes"));
+  for (const type of NODE_TYPES) {
+    // zone/pattern are body-field kinds; §29 freeze — the node-link view
+    // never draws them, so the legend does not promise them.
+    if (type === "zone" || type === "pattern") continue;
+    const row = htmlElement("div", "legend-row");
+    appendNodeGlyph(row, {type});
+    row.append(htmlElement("span", "", type.replaceAll("_", " ")));
+    nodesSection.append(row);
+  }
+
+  const edgesSection = htmlElement("section", "legend-edges");
+  edgesSection.append(htmlElement("h2", "", "Edges"));
+  for (const family of EDGE_FAMILIES) {
+    const row = htmlElement("div", "legend-row");
+    const sample = svgElement("svg", "legend-edge-sample");
+    sample.setAttribute("viewBox", "0 0 34 12");
+    sample.setAttribute("aria-hidden", "true");
+    sample.setAttribute("focusable", "false");
+    const line = svgElement("line", "edge-line " + family.className);
+    line.setAttribute("x1", "2");
+    line.setAttribute("y1", "6");
+    line.setAttribute("x2", "32");
+    line.setAttribute("y2", "6");
+    sample.append(line);
+    row.append(sample, htmlElement("span", "", family.label));
+    edgesSection.append(row);
+  }
+  edgesSection.append(htmlElement("p", "legend-direction", "arrowhead = direction; related_to has none"));
+  legend.append(nodesSection, edgesSection);
+}
+
+function setLegendOpen(open) {
+  if (open && !legend.childNodes.length) renderLegend();
+  legend.hidden = !open;
+  legendToggle.setAttribute("aria-expanded", String(open));
 }
 
 function updateFocus(nodeId) {
@@ -811,9 +983,21 @@ async function loadGraph() {
 
 window.addEventListener("hashchange", () => { void dispatch(); });
 routesToggle.addEventListener("change", () => { void dispatch(); });
+graphView.addEventListener("click", () => {
+  viewMode = "graph";
+  void dispatch();
+});
+listView.addEventListener("click", () => {
+  viewMode = "list";
+  void dispatch();
+});
+legendToggle.addEventListener("click", () => setLegendOpen(legend.hidden));
 closeDetails.addEventListener("click", () => updateFocus(null));
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !details.hidden) updateFocus(null);
+  if (event.key !== "Escape") return;
+  // Layered dismissal: one Escape closes one surface, topmost first.
+  if (!legend.hidden) setLegendOpen(false);
+  else if (!details.hidden) updateFocus(null);
 });
 
 void loadGraph();
