@@ -776,15 +776,19 @@ class AtlasInstance:
         validator = validate_atlas.SchemaValidator(
             _schema_registry()["journal-receipt"]
         )
-        state = self.path("state")
-        files = list(validate_atlas._journal_paths(state, "receipts"))
-        direct = state / "receipts.jsonl"
+        try:
+            files = list(validate_atlas._journal_paths(
+                validate_atlas.AtlasReader(self.root), "receipts"
+            ))
+        except validate_atlas.ReaderError as exc:
+            _fail(ReasonCode.UNSAFE_PATH, exc.relative_path)
+        direct = Path("state/receipts.jsonl")
         for found in files:
-            rank = len(files) if found == direct else files.index(found)
-            relative = found.relative_to(self.root).as_posix()
-            path = _NoFollowPath(self.root, self.path(relative))
+            rank = (len(files) if found.relative_path == direct
+                    else files.index(found))
+            relative = found.relative_path.as_posix()
             try:
-                for number, row in validate_atlas._read_jsonl(path):
+                for number, row in validate_atlas._read_jsonl(found):
                     if validator.validate(row):
                         _fail(
                             ReasonCode.INVALID_RECEIPT_JOURNAL,
@@ -805,7 +809,13 @@ class AtlasInstance:
                         processed[key] = (rank, number, relative)
             except AtlasIOError:
                 raise
-            except (OSError, validate_atlas.JsonInputError, KeyError, TypeError):
+            except (
+                OSError,
+                validate_atlas.JsonInputError,
+                validate_atlas.ReaderError,
+                KeyError,
+                TypeError,
+            ):
                 _fail(ReasonCode.INVALID_RECEIPT_JOURNAL, relative)
         for key, (rank, number, relative) in processed.items():
             begun = opened.get(key)

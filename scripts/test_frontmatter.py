@@ -28,7 +28,10 @@ class FrontmatterConformanceTests(unittest.TestCase):
         )
 
     def test_rejection_is_deterministic_and_names_line(self):
-        data = b"---\nvalue: first\nvalue: second\n---\n"
+        secret_key = "SECRET_DUPLICATE_KEY_VERA"
+        data = (
+            f"---\n{secret_key}: first\n{secret_key}: second\n---\n"
+        ).encode()
         messages = []
         for _ in range(2):
             with self.assertRaises(FrontmatterError) as raised:
@@ -36,7 +39,8 @@ class FrontmatterConformanceTests(unittest.TestCase):
             messages.append(str(raised.exception))
         self.assertEqual(messages[0], messages[1])
         self.assertIn("duplicate.md: frontmatter line 3", messages[0])
-        self.assertIn("duplicate key", messages[0])
+        self.assertIn("duplicate-key", messages[0])
+        self.assertNotIn(secret_key, messages[0])
 
 
 if __name__ == "__main__":

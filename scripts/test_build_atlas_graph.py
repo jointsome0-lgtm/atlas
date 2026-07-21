@@ -2103,8 +2103,52 @@ class JournalProjectionTests(unittest.TestCase):
         }) as directory:
             _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
-            any("duplicate JSON key 'touches'" in e for e in errors),
+            any("duplicate-json-key" in e for e in errors),
             errors)
+        self.assertTrue(all("touches" not in error for error in errors), errors)
+
+    def test_builder_reader_surfaces_refuse_symlinked_files_and_directories(self):
+        # §24.2: the sibling builder shares the validator's no-follow scan
+        # for curated documents and both direct and rotated journals.
+        cases = (
+            ("curated-file", "concepts/linked.md", False),
+            ("curated-directory", "concepts", True),
+            ("journal-file", "state/artifacts.jsonl", False),
+            ("journal-directory", "state/artifacts", True),
+            ("rotated-journal-file", "state/artifacts/2026.jsonl", False),
+        )
+        for name, relative, is_directory in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                root = base / "instance"
+                root.mkdir()
+                target = base / "outside" / name
+                if is_directory:
+                    target.mkdir(parents=True)
+                    (target / "SECRET_TARGET_VERA.jsonl").write_text(
+                        _ARTIFACT_ROW + "\n", encoding="utf-8"
+                    )
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("SECRET_TARGET_VERA", encoding="utf-8")
+                link = root / relative
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(target, target_is_directory=is_directory)
+                _, errors, _ = build_atlas_graph.build(root)
+            self.assertTrue(any("unsafe-path" in error for error in errors),
+                            (name, errors))
+            self.assertTrue(all("SECRET_TARGET_VERA" not in error
+                                for error in errors), (name, errors))
+
+    def test_builder_refuses_a_symlinked_declared_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            target = base / "curated"
+            target.mkdir()
+            link = base / "linked-curated"
+            link.symlink_to(target, target_is_directory=True)
+            _, errors, _ = build_atlas_graph.build(link)
+        self.assertTrue(any("invalid-root" in error for error in errors), errors)
 
     def test_dangling_destination_without_from_warns(self):
         # §20 step 11: a segment with no from derives no moved_to, so a

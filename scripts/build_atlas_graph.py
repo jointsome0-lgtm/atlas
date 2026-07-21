@@ -17,6 +17,13 @@ import sys
 import time
 from pathlib import Path
 
+from atlas_reader import (
+    AtlasReader,
+    JsonDisciplineError,
+    ReaderError,
+    ReasonCode,
+    strict_json_loads,
+)
 from frontmatter import FrontmatterError, frontmatter_body, parse_frontmatter
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -253,15 +260,15 @@ FORBIDDEN_ROUTE_STATUSES = {"done", "failed", "late", "blocked"}
 
 # ------------------------------------------------------------------- loading
 
-def load_dir(curated: Path, subdir: str) -> list[tuple[dict, str, Path]]:
-    directory = curated / subdir
+def load_dir(
+    reader: AtlasReader, curated_prefix: Path, subdir: str
+) -> list[tuple[dict, str, Path]]:
     docs = []
-    if not directory.is_dir():
-        return docs
-    for path in sorted(directory.glob("*.md")):
+    for source in reader.scan(curated_prefix / subdir, suffix=".md"):
+        path = source.path
         if path.name.startswith("_"):
             continue
-        data = path.read_bytes()
+        data = source.read_bytes()
         docs.append((parse_frontmatter(data, path), frontmatter_body(data), path))
     return docs
 
@@ -275,6 +282,15 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         dict, list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    try:
+        reader = AtlasReader(curated.parent if curated.name == "atlas" else curated)
+        curated_prefix = Path("atlas") if curated.name == "atlas" else Path()
+        if curated.name == "atlas" and not reader.is_directory(curated_prefix):
+            raise ReaderError(ReasonCode.INVALID_ROOT)
+    except ReaderError as exc:
+        reader = None
+        curated_prefix = Path()
+        errors.append(str(exc))
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
     projections: dict[str, str] = {}  # zone -> figure region (§20 step 12, §32)
@@ -493,7 +509,15 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         ("suggested-routes", "suggested_route"), ("trails", "trail_segment"),
         ("probes", "probe"),
     ):
-        for meta, body, path in load_dir(curated, subdir):
+        try:
+            documents = (
+                load_dir(reader, curated_prefix, subdir)
+                if reader is not None else []
+            )
+        except ReaderError as exc:
+            errors.append(str(exc))
+            documents = []
+        for meta, body, path in documents:
             segment_date = None
             if expected == "trail_segment":
                 # §20.1: read and validate the segment date first; a segment
@@ -854,111 +878,102 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     # encounter, and question rows become nodes plus their §10.2 derived
     # edges. State folds and influence/frontier (§20 steps 9-10) stay
     # §29 Phase 3/4; every projected row obeys §20.1's as-of bound.
-    state_dir = (curated.parent / "state"
-                 if curated.name == "atlas" else curated / "state")
-
     def strict_row(raw):
         # §25.7/§25.8: the journal is a persisted format — the builder
         # reads it exactly as strictly as the boundary (validate_atlas),
         # or its output can embed rows the boundary reader rejects
         # (duplicate keys keep-last, non-finite constants).
-        def pairs(items):
-            obj = {}
-            for key, value in items:
-                if key in obj:
-                    raise ValueError(f"duplicate JSON key {key!r}")
-                obj[key] = value
-            return obj
-
-        def constant(name):
-            raise ValueError(
-                f"non-finite JSON number {name!r} is unsupported")
-
-        return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs,
-                          parse_constant=constant)
+        return strict_json_loads(raw.decode("utf-8"))
 
     def journal_rows(stem, date_key):
+        if reader is None:
+            return
         paths = []
-        direct = state_dir / f"{stem}.jsonl"
-        if direct.is_file():
-            paths.append(direct)
-        rotated = state_dir / stem
-        if rotated.is_dir():
+        try:
+            direct = reader.optional_file(Path("state") / f"{stem}.jsonl")
+            if direct is not None:
+                paths.append(direct)
             # §8: per-year rotation concatenates lexicographically (§20.1).
-            paths.extend(sorted(rotated.glob("*.jsonl")))
+            paths.extend(reader.scan(Path("state") / stem, suffix=".jsonl"))
+        except ReaderError as exc:
+            errors.append(str(exc))
+            return
         # §20.1: the rotated files' lexicographic concatenation IS the
         # journal — duplicate detection spans it, not each file.
         seen_rows: set = set()
         for path in paths:
-            for number, raw, oversized in _journal_lines(path):
-                if oversized:
-                    # §25.8: the boundary reader enforces the same ceiling
-                    # — an oversize row must never project.
-                    errors.append(f"{path}:{number}: journal row exceeds "
-                                  f"{JOURNAL_ROW_BYTES} bytes")
-                    continue
-                if not raw:
-                    errors.append(f"{path}:{number}: blank journal row")
-                    continue
-                if raw in seen_rows:
-                    # §20.1: a byte-identical row repeated within a journal
-                    # folds once, with a WARNING.
-                    warnings.append(f"{path}:{number}: byte-identical "
-                                    "duplicate row folded once (§20.1)")
-                    continue
-                seen_rows.add(raw)
-                if b"\r" in raw:
-                    # §25.7: LF-only, same as the boundary reader.
-                    errors.append(f"{path}:{number}: CR/CRLF is "
-                                  "unsupported; use LF")
-                    continue
-                try:
-                    row = strict_row(raw)
-                except (UnicodeDecodeError, json.JSONDecodeError):
-                    errors.append(f"{path}:{number}: invalid JSONL row")
-                    continue
-                except ValueError as exc:
-                    errors.append(f"{path}:{number}: {exc}")
-                    continue
-                if not isinstance(row, dict):
-                    errors.append(f"{path}:{number}: journal row is not an "
-                                  "object")
-                    continue
-                origin = f"{path}:{number}"
-                # §20.1: the dated field is the first row field read. A row
-                # beyond an explicit cut is skipped whole, without unrelated
-                # schema diagnostics or any projection.
-                row_date = date_field(row.get(date_key), origin, date_key)
-                if skip_after_as_of(row_date):
-                    continue
-                nulls = sorted(k for k, v in row.items() if v is None)
-                if nulls:
-                    # §25.7: no journal schema admits null anywhere — an
-                    # explicit null must fail closed, never collapse to
-                    # an absent optional field.
-                    errors.append(f"{path}:{number}: null journal "
-                                  f"value(s) for {', '.join(nulls)} "
-                                  "(§25.7)")
-                    continue
-                intake = row.get("intake")
-                if intake is not None and (
-                        not isinstance(intake, str)
-                        or not INTAKE_KEY_RE.fullmatch(intake)):
-                    # §25.7: a present-but-malformed intake provenance
-                    # fails closed like every other schema-shaped field.
-                    errors.append(f"{path}:{number}: intake {intake!r} is "
-                                  "not an intake key (§33.2)")
-                    continue
-                unknown = set(row) - JOURNAL_ROW_KEYS[stem]
-                if unknown:
-                    # The schema closes the key set — an unknown key is a
-                    # malformed row, never silently ignored content.
-                    errors.append(
-                        f"{path}:{number}: unknown journal key(s) "
-                        f"{', '.join(sorted(unknown))} (§25.7)")
-                    continue
-                note_activity(row_date)
-                yield origin, row, row_date
+            try:
+                for number, raw, oversized in _journal_lines(path):
+                    if oversized:
+                        # §25.8: the boundary reader enforces the same ceiling
+                        # — an oversize row must never project.
+                        errors.append(f"{path}:{number}: journal row exceeds "
+                                      f"{JOURNAL_ROW_BYTES} bytes")
+                        continue
+                    if not raw:
+                        errors.append(f"{path}:{number}: blank journal row")
+                        continue
+                    if raw in seen_rows:
+                        # §20.1: a byte-identical row repeated within a journal
+                        # folds once, with a WARNING.
+                        warnings.append(f"{path}:{number}: byte-identical "
+                                        "duplicate row folded once (§20.1)")
+                        continue
+                    seen_rows.add(raw)
+                    if b"\r" in raw:
+                        # §25.7: LF-only, same as the boundary reader.
+                        errors.append(f"{path}:{number}: CR/CRLF is "
+                                      "unsupported; use LF")
+                        continue
+                    try:
+                        row = strict_row(raw)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        errors.append(f"{path}:{number}: invalid JSONL row")
+                        continue
+                    except JsonDisciplineError as exc:
+                        errors.append(f"{path}:{number}: {exc}")
+                        continue
+                    if not isinstance(row, dict):
+                        errors.append(f"{path}:{number}: journal row is not an "
+                                      "object")
+                        continue
+                    origin = f"{path}:{number}"
+                    # §20.1: the dated field is the first row field read. A row
+                    # beyond an explicit cut is skipped whole, without unrelated
+                    # schema diagnostics or any projection.
+                    row_date = date_field(row.get(date_key), origin, date_key)
+                    if skip_after_as_of(row_date):
+                        continue
+                    nulls = sorted(k for k, v in row.items() if v is None)
+                    if nulls:
+                        # §25.7: no journal schema admits null anywhere — an
+                        # explicit null must fail closed, never collapse to
+                        # an absent optional field.
+                        errors.append(f"{path}:{number}: null journal "
+                                      f"value(s) for {', '.join(nulls)} "
+                                      "(§25.7)")
+                        continue
+                    intake = row.get("intake")
+                    if intake is not None and (
+                            not isinstance(intake, str)
+                            or not INTAKE_KEY_RE.fullmatch(intake)):
+                        # §25.7: a present-but-malformed intake provenance
+                        # fails closed like every other schema-shaped field.
+                        errors.append(f"{path}:{number}: intake {intake!r} is "
+                                      "not an intake key (§33.2)")
+                        continue
+                    unknown = set(row) - JOURNAL_ROW_KEYS[stem]
+                    if unknown:
+                        # The schema closes the key set — an unknown key is a
+                        # malformed row, never silently ignored content.
+                        errors.append(
+                            f"{path}:{number}: unknown journal key(s) "
+                            f"{', '.join(sorted(unknown))} (§25.7)")
+                        continue
+                    note_activity(row_date)
+                    yield origin, row, row_date
+            except ReaderError as exc:
+                errors.append(str(exc))
 
     for origin, row, row_date in journal_rows("artifacts", "observed_at"):
         # §9.6/§10.4: the authored type: embeds as kind (type is §10.1's).
@@ -1575,24 +1590,34 @@ def main() -> int:
               file=sys.stderr)
         return _print_usage()
 
-    curated = Path(positional[0]).resolve()
+    curated = Path(positional[0])
 
     # §20.2 (#60): reject a missing or mis-mounted input before the
     # output-derived lock or any output path is touched, including --check.
-    if not curated.exists():
-        print(f"ERROR: {curated}: curated tree is missing", file=sys.stderr)
+    try:
+        input_reader = AtlasReader(
+            curated.parent if curated.name == "atlas" else curated
+        )
+        curated_prefix = Path("atlas") if curated.name == "atlas" else Path()
+        if curated.name == "atlas" and not input_reader.is_directory("atlas"):
+            raise ReaderError(ReasonCode.INVALID_ROOT)
+        has_entries = input_reader.has_entries(curated_prefix)
+        has_curated_directory = any(
+            input_reader.is_directory(curated_prefix / name)
+            for name in CURATED_SUBDIRECTORIES
+        )
+    except ReaderError as exc:
+        print(f"ERROR: {curated}: {exc}", file=sys.stderr)
         return 1
     # §20.1: an EMPTY curated tree is a valid fresh instance and still
     # builds; a mis-mount is a directory with content but none of the §8
     # curated subdirectories.
-    if (not curated.is_dir()
-            or (any(curated.iterdir())
-                and not any((curated / name).is_dir()
-                            for name in CURATED_SUBDIRECTORIES))):
+    if has_entries and not has_curated_directory:
         print(f"ERROR: {curated}: not shaped like a curated tree "
               f"(expected at least one §8 curated subdirectory)",
               file=sys.stderr)
         return 1
+    curated = input_reader.root.joinpath(*curated_prefix.parts)
 
     output = Path(positional[1]).resolve()
     if output.name != "atlas-graph.json" or output.parent.name != "graph":

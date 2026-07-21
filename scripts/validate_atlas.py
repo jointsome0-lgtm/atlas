@@ -13,6 +13,12 @@ import sys
 from pathlib import Path
 
 import build_atlas_graph as _builder
+from atlas_reader import (
+    AtlasReader,
+    JsonDisciplineError,
+    ReaderError,
+    strict_json_loads,
+)
 from frontmatter import (
     FrontmatterError,
     MAX_DOCUMENT_BYTES,
@@ -26,8 +32,6 @@ from frontmatter import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_DIR = ROOT / "spec" / "schemas"
-GRAMMAR_DIR = ROOT / "fixtures" / "grammar"
 JOURNAL_ROW_BYTES = _builder.JOURNAL_ROW_BYTES  # §25.8 — one source
 _JOURNAL_READ_BYTES = 8_192
 
@@ -114,23 +118,11 @@ class JsonInputError(ValueError):
     pass
 
 
-def _strict_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise JsonInputError(f"duplicate JSON key {key!r}")
-        result[key] = value
-    return result
-
-
-def _reject_constant(value):
-    raise JsonInputError(f"non-finite JSON number {value!r} is unsupported")
-
-
 def _json_loads(text: str):
-    return json.loads(
-        text, object_pairs_hook=_strict_object, parse_constant=_reject_constant
-    )
+    try:
+        return strict_json_loads(text)
+    except JsonDisciplineError as exc:
+        raise JsonInputError(str(exc)) from None
 
 
 def _read_json(path: Path, delivered: bool = False):
@@ -140,7 +132,10 @@ def _read_json(path: Path, delivered: bool = False):
     batches stay as delivered (§33.2), so their reader tolerates CRLF and a
     BOM while the structural JSON checks stay fail-closed.
     """
-    data = path.read_bytes()
+    try:
+        data = path.read_bytes()
+    except ReaderError as exc:
+        raise JsonInputError(str(exc)) from None
     if data.startswith(b"\xef\xbb\xbf"):
         if not delivered:
             raise JsonInputError(f"{path}: UTF-8 BOM is unsupported")
@@ -357,7 +352,12 @@ class SchemaValidator:
 def _load_registry() -> tuple[dict[str, dict], list[str]]:
     errors: list[str] = []
     schemas: dict[str, dict] = {}
-    paths = sorted(SCHEMA_DIR.glob("*.schema.json"))
+    try:
+        paths = AtlasReader(ROOT).scan(
+            "spec/schemas", suffix=".schema.json"
+        )
+    except ReaderError as exc:
+        return schemas, [str(exc)]
     found = {path.name.removesuffix(".schema.json") for path in paths}
     if found != SCHEMA_NAMES:
         errors.append(
@@ -509,13 +509,11 @@ JOURNALS = {
 }
 
 
-def _journal_paths(state: Path, stem: str):
-    direct = state / f"{stem}.jsonl"
-    if direct.is_file():
+def _journal_paths(reader: AtlasReader, stem: str):
+    direct = reader.optional_file(Path("state") / f"{stem}.jsonl")
+    if direct is not None:
         yield direct
-    rotated = state / stem
-    if rotated.is_dir():
-        yield from sorted(rotated.glob("*.jsonl"))
+    yield from reader.scan(Path("state") / stem, suffix=".jsonl")
 
 
 def _read_jsonl(path: Path):
@@ -547,7 +545,11 @@ def _journal_lines(path: Path):
     row = bytearray()
     discarding = False
     first = True
-    with path.open("rb") as stream:
+    try:
+        stream = path.open("rb")
+    except ReaderError as exc:
+        raise JsonInputError(str(exc)) from None
+    with stream:
         while chunk := stream.read(_JOURNAL_READ_BYTES):
             if first:
                 first = False
@@ -765,7 +767,28 @@ def validate_instance(root: Path):
     if errors:
         return errors, warnings, counts
 
-    curated = root / "atlas" if (root / "atlas").is_dir() else root
+    try:
+        reader = AtlasReader(root)
+        curated_prefix = Path("atlas") if reader.is_directory("atlas") else Path()
+    except ReaderError as exc:
+        return [str(exc)], warnings, counts
+
+    def scan(relative_path, *, suffix=None, recursive=False):
+        try:
+            return reader.scan(
+                relative_path, suffix=suffix, recursive=recursive
+            )
+        except ReaderError as exc:
+            errors.append(str(exc))
+            return []
+
+    def optional_file(relative_path):
+        try:
+            return reader.optional_file(relative_path)
+        except ReaderError as exc:
+            errors.append(str(exc))
+            return None
+
     # §34.4: the retired -> living map spans the instance, so cross-file
     # id checks run after the whole curated pass — a stale curated ref
     # resolves through the map (a warning, never an error), mirroring
@@ -797,14 +820,12 @@ def validate_instance(root: Path):
         retired[old] = (survivor, origin)
 
     for dirname, schema_name in CURATED_DIRS.items():
-        directory = curated / dirname
-        if not directory.is_dir():
-            continue
-        for path in sorted(directory.glob("*.md")):
+        for source in scan(curated_prefix / dirname, suffix=".md"):
+            path = source.path
             if path.name.startswith("_"):
                 continue
             try:
-                instance = parse_frontmatter(path.read_bytes(), path)
+                instance = parse_frontmatter(source.read_bytes(), path)
                 errors.extend(_schema_errors(instance, schemas[schema_name], path))
                 if isinstance(instance, dict):
                     doc_id = instance.get("id")
@@ -841,7 +862,7 @@ def validate_instance(root: Path):
                                 f"carry its material's slug {slug!r} (§10.1)"
                             )
                 counts["frontmatter"] += 1
-            except FrontmatterError as exc:
+            except (FrontmatterError, ReaderError) as exc:
                 errors.append(str(exc))
 
     # §34.4: a retired id is never a living one — curation keeping both
@@ -891,18 +912,17 @@ def validate_instance(root: Path):
                     "(§9.4)"
                 )
 
-    extracted = root / "plans" / "extracted"
-    if extracted.is_dir():
-        for path in sorted(item for item in extracted.iterdir() if item.is_file()):
-            try:
-                instance = parse_document(path.read_bytes(), path)
-                errors.extend(_schema_errors(instance, schemas["plan-extract"], path))
-                counts["frontmatter"] += 1
-            except FrontmatterError as exc:
-                errors.append(str(exc))
+    for source in scan("plans/extracted"):
+        path = source.path
+        try:
+            instance = parse_document(source.read_bytes(), path)
+            errors.extend(_schema_errors(instance, schemas["plan-extract"], path))
+            counts["frontmatter"] += 1
+        except (FrontmatterError, ReaderError) as exc:
+            errors.append(str(exc))
 
-    intake = root / "intake"
-    if intake.is_dir():
+    intake_sources = scan("intake", suffix=".json", recursive=True)
+    if intake_sources:
         # §33.2/§25.7: delivered batches are a persisted format; the JSON
         # envelope validates structurally — batch content stays as delivered
         # and is never term-scanned here (§19 keeps out of intake/ entirely).
@@ -913,9 +933,10 @@ def validate_instance(root: Path):
         intake_validator = SchemaValidator(schemas["atlas-intake"])
         envelope_schema = intake_validator.resolve("#/$defs/envelope")
         record_schema = intake_validator.resolve("#/$defs/record")
-        for path in sorted(intake.rglob("*.json")):
+        for source_file in intake_sources:
+            path = source_file.path
             try:
-                instance = _read_json(path, delivered=True)
+                instance = _read_json(source_file, delivered=True)
                 envelope_messages: list[str] = []
                 intake_validator._validate(
                     instance, envelope_schema, "$", envelope_messages
@@ -946,22 +967,32 @@ def validate_instance(root: Path):
                     batch = instance.get("batch")
                     if isinstance(source, str) and isinstance(batch, str):
                         expected = Path(source) / f"{batch}.json"
-                        if path.relative_to(intake) != expected:
+                        if source_file.relative_path.relative_to("intake") != expected:
                             errors.append(
                                 f"{path}: envelope names {source}/{batch}, "
-                                f"delivered as intake/{path.relative_to(intake)}"
+                                f"delivered as {source_file.relative_path}"
                                 " (§33.2)"
                             )
                 counts["intake"] += 1
             except JsonInputError as exc:
                 errors.append(str(exc))
 
-    state = root / "state"
-    if state.is_dir():
+    try:
+        has_state = reader.is_directory("state")
+    except ReaderError as exc:
+        errors.append(str(exc))
+        has_state = False
+    if has_state:
         for stem, schema_name in JOURNALS.items():
-            for path in _journal_paths(state, stem):
+            try:
+                paths = list(_journal_paths(reader, stem))
+            except ReaderError as exc:
+                errors.append(str(exc))
+                paths = []
+            for source_file in paths:
+                path = source_file.path
                 try:
-                    for number, row in _read_jsonl(path):
+                    for number, row in _read_jsonl(source_file):
                         errors.extend(
                             _schema_errors(row, schemas[schema_name], f"{path}:{number}")
                         )
@@ -969,38 +1000,38 @@ def validate_instance(root: Path):
                 except JsonInputError as exc:
                     errors.append(str(exc))
 
-    runs_dir = root / "runs"
-    if runs_dir.is_dir():
-        for path in sorted(runs_dir.glob("*.json")):
-            try:
-                instance = _read_json(path)
-                errors.extend(
-                    _schema_errors(instance, schemas["run-manifest"], path))
-                errors.extend(_runner_manifest_errors(instance, path))
-                # §17.6: the file name is the manifest's date-serial —
-                # run_id and path never disagree. The mismatched value is
-                # not echoed (§24.4).
-                if isinstance(instance, dict):
-                    run_id = instance.get("run_id")
-                    expected = f"run:{path.name.removesuffix('.json')}"
-                    if isinstance(run_id, str) and run_id != expected:
-                        errors.append(
-                            f"{path}: run_id does not match the "
-                            "file name (§17.6)")
-                counts["emitted"] += 1
-            except JsonInputError as exc:
-                errors.append(str(exc))
+    for source_file in scan("runs", suffix=".json"):
+        path = source_file.path
+        try:
+            instance = _read_json(source_file)
+            errors.extend(
+                _schema_errors(instance, schemas["run-manifest"], path))
+            errors.extend(_runner_manifest_errors(instance, path))
+            # §17.6: the file name is the manifest's date-serial —
+            # run_id and path never disagree. The mismatched value is
+            # not echoed (§24.4).
+            if isinstance(instance, dict):
+                run_id = instance.get("run_id")
+                expected = f"run:{path.name.removesuffix('.json')}"
+                if isinstance(run_id, str) and run_id != expected:
+                    errors.append(
+                        f"{path}: run_id does not match the "
+                        "file name (§17.6)")
+            counts["emitted"] += 1
+        except JsonInputError as exc:
+            errors.append(str(exc))
 
     for filename, schema_name in (
         ("atlas-graph.json", "atlas-graph"),
         ("atlas-graph.redacted.json", "atlas-graph"),
         ("atlas-snapshot.json", "atlas-snapshot"),
     ):
-        path = root / "graph" / filename
-        if not path.is_file():
+        source_file = optional_file(Path("graph") / filename)
+        if source_file is None:
             continue
+        path = source_file.path
         try:
-            instance = _read_json(path)
+            instance = _read_json(source_file)
             errors.extend(_schema_errors(instance, schemas[schema_name], path))
             # §20/§25.7: one schema id covers both graph variants, so the
             # variant-only withheld rule is checked here by file name —
@@ -1797,29 +1828,44 @@ def _generated_case(name: str):
 def run_conformance():
     errors: list[str] = []
     count = 0
-    accept = GRAMMAR_DIR / "accept"
-    reject = GRAMMAR_DIR / "reject"
-    for path in sorted(accept.glob("*.fm")):
-        expected_path = path.with_suffix(".json")
+    try:
+        reader = AtlasReader(ROOT)
+        accept = reader.scan("fixtures/grammar/accept", suffix=".fm")
+        reject = reader.scan("fixtures/grammar/reject", suffix=".fm")
+    except ReaderError as exc:
+        return [str(exc)], count
+    for source_file in accept:
+        path = source_file.path
+        expected_relative = source_file.relative_path.with_suffix(".json")
         try:
-            expected = _read_json(expected_path)
-            actual = parse_frontmatter(path.read_bytes(), path)
+            expected_file = reader.optional_file(expected_relative)
+            if expected_file is None:
+                errors.append(f"{path}: accept fixture has no expected JSON")
+                count += 1
+                continue
+            expected = _read_json(expected_file)
+            actual = parse_frontmatter(source_file.read_bytes(), path)
             if actual != expected:
                 errors.append(f"{path}: parsed {actual!r}, expected {expected!r}")
-        except (FrontmatterError, JsonInputError) as exc:
+        except (FrontmatterError, JsonInputError, ReaderError) as exc:
             errors.append(str(exc))
         count += 1
-    for path in sorted(reject.glob("*.fm")):
+    for source_file in reject:
+        path = source_file.path
         try:
-            parse_frontmatter(path.read_bytes(), path)
+            parse_frontmatter(source_file.read_bytes(), path)
             errors.append(f"{path}: reject fixture unexpectedly parsed")
         except FrontmatterError:
             pass
+        except ReaderError as exc:
+            errors.append(str(exc))
         count += 1
-    manifest_path = GRAMMAR_DIR / "generated.json"
     try:
-        manifest = _read_json(manifest_path)
-    except JsonInputError as exc:
+        manifest_file = reader.optional_file("fixtures/grammar/generated.json")
+        if manifest_file is None:
+            return ["fixtures/grammar/generated.json: missing manifest"], count
+        manifest = _read_json(manifest_file)
+    except (JsonInputError, ReaderError) as exc:
         return [str(exc)], count
     for entry in manifest:
         data, expected = _generated_case(entry["generator"])
@@ -1851,7 +1897,7 @@ def main(argv=None) -> int:
         return 2
     command, rest = args[0], args[1:]
     if command == "validate" and len(rest) == 1:
-        errors, warnings, counts = validate_instance(Path(rest[0]).resolve())
+        errors, warnings, counts = validate_instance(Path(rest[0]))
         _emit_diagnostics(errors, warnings)
         print(
             f"validated: {counts['frontmatter']} frontmatter documents, "

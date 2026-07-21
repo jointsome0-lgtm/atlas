@@ -4,9 +4,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import atlas_io
 import validate_atlas
+from atlas_reader import AtlasReader, ReaderError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1296,6 +1298,138 @@ class SchemaValidatorTests(unittest.TestCase):
                 self.assertEqual(1, len(errors))
                 self.assertIn(expectation, errors[0])
                 self.assertNotIn(str(rejected), errors[0])
+
+    def test_duplicate_json_key_diagnostic_never_echoes_key_content(self):
+        # §24.4: the duplicate key is rejected content, including when the
+        # strict decoder is reached through an emitted-file reader.
+        secret_key = "SECRET_DUPLICATE_KEY_VERA"
+        payload = "{" + json.dumps(secret_key) + ":1," + json.dumps(secret_key) + ":2}"
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({"graph/atlas-graph.json": payload}, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("duplicate-json-key", stderr)
+        self.assertNotIn(secret_key, stderr)
+        self.assertTrue(all(
+            line.startswith(("ERROR: ", "WARNING: "))
+            for line in stderr.splitlines()
+        ))
+
+    def test_all_instance_reader_surfaces_refuse_symlinked_files_and_directories(self):
+        # §24.2: each validator surface uses the same whole-scan lstat and
+        # no-follow discipline. Both a file and a directory symlink fail
+        # before any target bytes can enter a parser.
+        cases = (
+            ("curated-file", "atlas/concepts/linked.md", False),
+            ("curated-directory", "atlas/concepts", True),
+            ("extract-file", "plans/extracted/linked.yaml", False),
+            ("extract-directory", "plans/extracted", True),
+            ("intake-file", "intake/example/linked.json", False),
+            ("intake-directory", "intake/example", True),
+            ("journal-file", "state/artifacts.jsonl", False),
+            ("journal-directory", "state/artifacts", True),
+            ("run-file", "runs/linked.json", False),
+            ("run-directory", "runs", True),
+            ("emitted-file", "graph/atlas-graph.json", False),
+            ("emitted-directory", "graph", True),
+        )
+        for name, relative, is_directory in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                root = base / "instance"
+                (root / "atlas").mkdir(parents=True)
+                (root / "state").mkdir()
+                target = base / "outside" / name
+                if is_directory:
+                    target.mkdir(parents=True)
+                    (target / "SECRET_TARGET_VERA.json").write_text(
+                        "{}", encoding="utf-8"
+                    )
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("SECRET_TARGET_VERA", encoding="utf-8")
+                link = root / relative
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(target, target_is_directory=is_directory)
+                code, _, stderr = self.run_cli("validate", str(root))
+            self.assertEqual(1, code, (name, stderr))
+            self.assertIn("unsafe-path", stderr, (name, stderr))
+            self.assertNotIn("SECRET_TARGET_VERA", stderr)
+            self.assertNotIn("Traceback", stderr)
+            self.assertTrue(all(
+                line.startswith(("ERROR: ", "WARNING: "))
+                for line in stderr.splitlines()
+            ), (name, stderr))
+
+    def test_validator_refuses_a_symlinked_declared_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            target = base / "instance"
+            (target / "atlas").mkdir(parents=True)
+            (target / "state").mkdir()
+            link = base / "linked-instance"
+            link.symlink_to(target, target_is_directory=True)
+            code, _, stderr = self.run_cli("validate", str(link))
+        self.assertEqual(1, code)
+        self.assertIn("invalid-root", stderr)
+        self.assertNotIn("Traceback", stderr)
+
+    def test_scanned_file_rebinds_every_component_no_follow_at_read_time(self):
+        # The lstat scan is not the security boundary by itself: a file or
+        # parent swapped after the scan must still be refused by openat.
+        for swap_parent in (False, True):
+            with self.subTest(swap_parent=swap_parent), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                root = base / "root"
+                scanned_dir = root / "scanned"
+                scanned_dir.mkdir(parents=True)
+                path = scanned_dir / "example.json"
+                path.write_text("{}", encoding="utf-8")
+                source = AtlasReader(root).scan("scanned", suffix=".json")[0]
+                outside = base / "outside"
+                outside.mkdir()
+                (outside / "example.json").write_text(
+                    "SECRET_TARGET_VERA", encoding="utf-8"
+                )
+                if swap_parent:
+                    scanned_dir.rename(root / "scanned-original")
+                    scanned_dir.symlink_to(outside, target_is_directory=True)
+                else:
+                    path.unlink()
+                    path.symlink_to(outside / "example.json")
+                with self.assertRaises(ReaderError) as raised:
+                    source.read_bytes()
+            self.assertIn("unsafe-path", str(raised.exception))
+            self.assertNotIn("SECRET_TARGET_VERA", str(raised.exception))
+
+    def test_canon_walkers_share_the_symlink_refusal(self):
+        # Registry and grammar scans are trusted inputs but still readers
+        # under §24.2, so their walkers use the same no-follow primitive.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            outside = Path(directory) / "outside"
+            outside.mkdir()
+            (root / "spec").mkdir(parents=True)
+            (root / "spec" / "schemas").symlink_to(
+                outside, target_is_directory=True
+            )
+            with mock.patch.object(validate_atlas, "ROOT", root):
+                _, registry_errors = validate_atlas._load_registry()
+        self.assertEqual(1, len(registry_errors))
+        self.assertIn("unsafe-path", registry_errors[0])
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            outside = Path(directory) / "outside"
+            outside.mkdir()
+            grammar = root / "fixtures" / "grammar"
+            grammar.mkdir(parents=True)
+            (grammar / "accept").symlink_to(outside, target_is_directory=True)
+            (grammar / "reject").mkdir()
+            with mock.patch.object(validate_atlas, "ROOT", root):
+                conformance_errors, _ = validate_atlas.run_conformance()
+        self.assertEqual(1, len(conformance_errors))
+        self.assertIn("unsafe-path", conformance_errors[0])
 
     def test_oversize_journal_row_reports_ceiling_without_echo(self):
         # §25.8/§24.4: a 64 KiB row is rejected at the ceiling; its content
