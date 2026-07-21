@@ -15,6 +15,23 @@ jobs:
       - run: python scripts/check_public_hygiene.py
       - run: python scripts/check_sdd_conventions.py check AGENTS.md --template conventions/SDD-CONVENTIONS.md
       - run: python scripts/check_decision_log.py --baseline 2026-07-15 DECISION-LOG.md
+      - name: Check schema and implementation constants
+        run: python scripts/validate_atlas.py check-constants
+      - name: Validate public golden fixtures
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python scripts/validate_atlas.py conformance
+          python scripts/validate_atlas.py validate fixtures/demo-instance
+          python -m unittest -v scripts.test_demo_graph_fixture
+      - name: Verify deterministic fixture builds
+        env:
+          PYTHONPATH: scripts
+        run: >-
+          python -m unittest -v
+          scripts.test_build_atlas_graph.BuilderIntegrationTests.test_graph_envelope_is_first_and_build_is_deterministic
+          scripts.test_build_atlas_graph.LaneBTests.test_explicit_as_of_flag_stamps_generated_at
+          scripts.test_build_atlas_graph.LaneBTests.test_two_emitted_graphs_are_byte_identical
       - run: python -m unittest discover -s scripts -p "test_*.py"
 
   viewer:
