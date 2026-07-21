@@ -125,14 +125,17 @@ naive-layout iteration, 0.65 ms per canvas frame); past 2,400
 nodes in view — the measured frame-budget crossing of the naive
 n² layout — the §27.8 list fallback engages; a smarter layout
 raises the ceiling through the Decision Log, never silently.
-Viewer acceptance ceilings (#37, §16.5) — named here, values
-pending the measured-floor process (#56/#61 wave): graph-file
-bytes, graph node count, graph edge count — checked before
-parsing; raw-fragment bytes and per-parameter decoded bytes —
-checked before use. Until a value lands through a Decision Log
-entry, the viewer refuses what it cannot bound (§24.2); the
-2,400-node line above stays a rendering fallback, never an
-acceptance bound.
+Viewer acceptance ceilings (#37, §16.5, #44): graph file
+≤ 67,108,864 bytes, ≤ 131,072 nodes, ≤ 262,144 edges — the
+byte cap before parsing, the counts before any per-item work;
+raw fragment ≤ 1,024 bytes and each decoded parameter value
+≤ 512 bytes — checked before use. Measured floor 2026-07-21:
+the 10k corpus emitted 7,294,150 B / 10,000 nodes / 19,479
+edges; the longest legitimate fragment was 74 B raw, the
+longest parameter value 40 B decoded — values are ×~10 rounded
+to powers of two, conjunctive (whichever bound trips first
+rejects). The 2,400-node line above stays a rendering
+fallback, never an acceptance bound.
 Foreign-input acceptance ceilings (#37, §24.2): intake batches
 ≤ 16,777,216 total bytes, ≤ 16,384 records, ≤ 16,384 bytes per
 record, ≤ 8,192 bytes per string, nesting depth ≤ 8 (§33.2, #56).
