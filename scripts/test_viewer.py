@@ -450,14 +450,26 @@ class ViewerBrowserTests(unittest.TestCase):
         self.page.locator("#list-view").click()
         self.page.wait_for_selector('#main[data-state="LIST"]')
         self.page.wait_for_selector("#details:not([hidden])")
+
+        def status_edge_count():
+            return self.page.locator("#status-bar").evaluate(
+                "bar => Number(bar.textContent.match(/· (\\d+) edges/)[1])")
+
         def headings():
             return [text.lower() for text in
                     self.page.locator("#details .edge-groups h3").all_inner_texts()]
 
         self.assertIn("step_of_route", headings())
+        all_edge_count = status_edge_count()
         self.page.locator("#routes-toggle").click()
         self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.wait_for_function(
+            "before => Number(document.querySelector('#status-bar')"
+            ".textContent.match(/· (\\d+) edges/)[1]) < before",
+            arg=all_edge_count,
+        )
         without_routes = headings()
+        self.assertLess(status_edge_count(), all_edge_count)
         self.assertNotIn("step_of_route", without_routes)
         self.assertNotIn("suggested_next", without_routes)
 

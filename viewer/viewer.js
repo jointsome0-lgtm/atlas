@@ -311,7 +311,7 @@ async function expandSection(rows, typeNodes, selected, showAll) {
 function renderList(field, nodes, edges, selected, banner, pastCeiling) {
   resetScreen(field);
   setMainState("LIST");
-  setStatus(nodes.length, edges.length);
+  setStatus(nodes.length, visibleEdges(edges).length);
   const list = htmlElement("div", "node-list");
   if (banner) list.classList.add("has-banner");
   if (pastCeiling) {
