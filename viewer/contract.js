@@ -47,13 +47,12 @@ const DERIVED_WEIGHT_TYPES = new Set(EDGE_TYPES.filter((type) => !AUTHORED_WEIGH
 const STATUS_FORBIDDEN = new Set(["concept", "pattern", "zone", "material_part", "personal_trail", "trail_segment", "artifact", "encounter", "question", "plan"]);
 const EDGE_DISCRIMINANTS = {
   "step_of_route": ["order"],
-  "suggested_next": ["context"],
-  "primary_for": ["step"],
-  "supporting_for": ["step"]
+  "suggested_next": ["context"]
 };
 // §34.4: journal record ids get no redirect machinery — hand-editing the
 // row is the owner's mechanism, so formerly never appears on these kinds.
 const NO_REDIRECT_KINDS = new Set(["trail_segment", "artifact", "encounter", "question"]);
+const NODE_COMMON_KEYS = new Set(["id", "type", "title", "fields", "formerly", "sensitivity"]);
 
 const NODE_PAYLOAD_FIELDS = {
   "concept": ["aliases"],
@@ -160,6 +159,15 @@ function validateNode(node, index) {
   if (node.type === "concept" && (node.fields.length !== 1 || node.fields[0] !== "knowledge")) return diagnostic(path + "/fields", "registryField");
   if ((node.type === "zone" || node.type === "pattern") && (node.fields.length !== 1 || node.fields[0] !== "body")) return diagnostic(path + "/fields", "registryField");
 
+  // §10.4 is a closed per-kind emission table. A globally known payload key
+  // on the wrong kind is malformed input, not an unknown forward-compatible
+  // field: projectNode would otherwise drop it and render only part of a node.
+  for (const key of Object.keys(node)) {
+    if (!NODE_COMMON_KEYS.has(key) && !NODE_PAYLOAD_FIELDS[node.type].includes(key)) {
+      return diagnostic(path + "/" + key, "kindProperty");
+    }
+  }
+
   for (const key of NODE_KEYS) {
     if (["id", "type", "title", "fields"].includes(key) || !Object.prototype.hasOwnProperty.call(node, key)) continue;
     if (!validateOptionalNodeProperty(node, key, path + "/" + key)) return diagnostic(path + "/" + key, "shape");
@@ -217,9 +225,12 @@ function validateEdge(edge, index) {
   // order on step_of_route, context on suggested_next, step on the
   // route-context role edges. Anywhere else they could mint duplicate
   // identities past the §20.3 dedup, so a stray one rejects the file.
+  const routeRole = (edge.type === "primary_for" || edge.type === "supporting_for")
+    && edge.target.startsWith("suggested-route:");
   for (const meta of ["order", "context", "step"]) {
     if (Object.prototype.hasOwnProperty.call(edge, meta)
-        && !(EDGE_DISCRIMINANTS[edge.type] || []).includes(meta)) {
+        && !(EDGE_DISCRIMINANTS[edge.type] || []).includes(meta)
+        && !(routeRole && meta === "step")) {
       return diagnostic(path + "/" + meta, "forbiddenDiscriminant");
     }
   }

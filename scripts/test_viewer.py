@@ -224,6 +224,8 @@ class ViewerBrowserTests(unittest.TestCase):
                     "id": "zone:core", "type": "zone", "title": "Core",
                     "fields": ["body"], "notes": "",
                 }]),
+            "payload field on the wrong node kind": self.graph_envelope(
+                nodes=[{**alone, "url": "https://example.test"}]),
             "material-part parent mismatch": self.graph_envelope(nodes=[
                 {
                     "id": "material:a", "type": "material", "title": "A",
@@ -243,6 +245,26 @@ class ViewerBrowserTests(unittest.TestCase):
             "discriminant on the wrong edge type": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "order": 1}]),
+            "step on a non-route material role": self.graph_envelope(
+                nodes=[alone, {
+                    "id": "material:m", "type": "material", "title": "M",
+                    "fields": ["knowledge"], "kind": "docs", "url": "",
+                    "status": "active",
+                }, {
+                    "id": "question:q", "type": "question", "title": "",
+                    "fields": ["knowledge"], "text": "t",
+                    "created_at": "2026-07-10",
+                    "source": {"artifact": "artifact:a"},
+                }, {
+                    "id": "artifact:a", "type": "artifact", "title": "",
+                    "fields": ["knowledge"], "kind": "script", "path": "p",
+                    "observed_at": "2026-07-10", "summary": "s",
+                    "evidence_strength": "applied",
+                }], edges=[{
+                    "source": "material:m", "target": "question:q",
+                    "type": "primary_for", "provenance": ["question:q"],
+                    "step": "concept:alone",
+                }]),
             "reversed related_to pair": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "source": "concept:other",
