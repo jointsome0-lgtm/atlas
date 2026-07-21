@@ -451,6 +451,12 @@ def _runner_manifest_errors(instance, source: Path | str) -> list[str]:
                 f"{source}: unsupported runner v1 role has no registered "
                 "transport schema pair (§17.7)"
             )
+        decisions = instance.get("decisions")
+        if isinstance(decisions, list) and decisions:
+            errors.append(
+                f"{source}: unsupported runner v1 preflight must record no "
+                "decisions (§17.7)"
+            )
 
     if instance.get("outcome") == "aborted":
         outputs = instance.get("outputs")

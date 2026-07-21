@@ -1519,7 +1519,8 @@ class SchemaValidatorTests(unittest.TestCase):
 
     def test_unsupported_runner_role_is_preflight_only(self):
         # §17.7: governance roles without a closed pair may leave only an
-        # aborted, output-free audit line; they never use a generic payload.
+        # aborted, output- and decision-free audit line; they never use a
+        # generic payload.
         manifest = json.loads(self.VALID_RUN_MANIFEST)
         manifest["role"] = "field-cartographer"
         manifest["prompt_bundle"]["components"] = [
@@ -1545,6 +1546,16 @@ class SchemaValidatorTests(unittest.TestCase):
             code, stdout, stderr = self.run_cli("validate", directory)
         self.assertEqual(0, code, stderr)
         self.assertIn("0 errors", stdout)
+
+        manifest["decisions"] = ["decision:example"]
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("preflight must record no decisions (§17.7)", stderr)
 
     def test_aborted_runner_manifest_has_no_outputs_and_a_warning_code(self):
         # §17.7: cancellation, timeout, malformed output, and preflight
