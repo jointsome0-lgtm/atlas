@@ -285,14 +285,23 @@ function makeListRow(node, selected) {
 
 async function expandSection(rows, typeNodes, selected, showAll) {
   const generation = renderGeneration;
+  let hadFocus = document.activeElement === showAll;
   showAll.remove();
   // The out-of-order selected row (appended after the preview) is recreated
   // at its sorted position by the tail.
   const misplaced = rows.querySelector(".node-list-row.out-of-order");
   if (misplaced) misplaced.remove();
+  let firstAppended = null;
   for (let start = LIST_SECTION_PREVIEW; start < typeNodes.length; start += LIST_EXPAND_CHUNK) {
     for (const node of typeNodes.slice(start, start + LIST_EXPAND_CHUNK)) {
-      rows.append(makeListRow(node, selected));
+      const row = makeListRow(node, selected);
+      if (!firstAppended) firstAppended = row;
+      rows.append(row);
+    }
+    if (hadFocus && firstAppended) {
+      // The activated control is gone; Tab continues from the revealed rows.
+      firstAppended.focus({preventScroll: true});
+      hadFocus = false;
     }
     await nextFrame();
     if (generation !== renderGeneration) return;
@@ -631,6 +640,28 @@ function primaryShape(node) {
   return shape;
 }
 
+// The kind-distinguishing marks beyond the base shape — question ring,
+// personal-trail inner circle, sensitivity dot — shared by field nodes, list
+// glyphs, and the legend so no kind collapses to color alone.
+function appendKindMarks(target, node) {
+  if (node.type === "question") {
+    const pull = svgElement("circle", "question-ring");
+    pull.setAttribute("r", "11");
+    target.append(pull);
+  }
+  target.append(primaryShape(node));
+  if (node.type === "personal_trail") {
+    const inner = svgElement("circle", "node-shape");
+    inner.setAttribute("r", "4");
+    target.append(inner);
+  }
+  if (node.sensitivity) {
+    const dot = svgElement("circle", "sensitivity-dot");
+    dot.setAttribute("cx", "8"); dot.setAttribute("cy", "-8"); dot.setAttribute("r", "2.5");
+    target.append(dot);
+  }
+}
+
 function appendNodeGlyph(parent, node) {
   const glyph = svgElement("svg", "node-glyph " + NODE_CLASSES[node.type]);
   glyph.setAttribute("viewBox", "0 0 16 16");
@@ -638,14 +669,7 @@ function appendNodeGlyph(parent, node) {
   glyph.setAttribute("focusable", "false");
   const contents = svgElement("g");
   contents.setAttribute("transform", "translate(8 8) scale(0.8)");
-  contents.append(primaryShape(node));
-  if (node.sensitivity) {
-    const dot = svgElement("circle", "sensitivity-dot");
-    dot.setAttribute("cx", "7");
-    dot.setAttribute("cy", "-7");
-    dot.setAttribute("r", "2.2");
-    contents.append(dot);
-  }
+  appendKindMarks(contents, node);
   glyph.append(contents);
   parent.append(glyph);
 }
@@ -661,7 +685,10 @@ function makeNode(node, position, selected) {
   const group = svgElement("g", classes.join(" "));
   group.setAttribute("transform", "translate(" + position.x.toFixed(3) + " " + position.y.toFixed(3) + ")");
   group.setAttribute("role", "button");
-  group.setAttribute("tabindex", "0");
+  // Only the selection joins the tab order — near the 2,400-node ceiling a
+  // per-node tab stop buries everything after the graph. The list lens is
+  // the dense keyboard path; click-focus still works via tabindex="-1".
+  group.setAttribute("tabindex", selected ? "0" : "-1");
   group.dataset.nodeId = node.id;
   const accessible = svgElement("title");
   accessible.textContent = (node.title || node.id) + ", " + node.type.replaceAll("_", " ");
@@ -676,22 +703,7 @@ function makeNode(node, position, selected) {
     ring.setAttribute("r", "15");
     group.append(ring);
   }
-  if (node.type === "question") {
-    const pull = svgElement("circle", "question-ring");
-    pull.setAttribute("r", "11");
-    group.append(pull);
-  }
-  group.append(primaryShape(node));
-  if (node.type === "personal_trail") {
-    const inner = svgElement("circle", "node-shape");
-    inner.setAttribute("r", "4");
-    group.append(inner);
-  }
-  if (node.sensitivity) {
-    const dot = svgElement("circle", "sensitivity-dot");
-    dot.setAttribute("cx", "8"); dot.setAttribute("cy", "-8"); dot.setAttribute("r", "2.5");
-    group.append(dot);
-  }
+  appendKindMarks(group, node);
   const label = svgElement("text", "node-label");
   label.setAttribute("x", "11");
   label.setAttribute("y", "4");

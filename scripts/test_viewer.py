@@ -322,31 +322,29 @@ class ViewerBrowserTests(unittest.TestCase):
         self.page.wait_for_selector("#details:not([hidden])")
         self.assertEqual(1, self.page.locator(".node-list-row.selected").count())
 
-    def test_keyboard_navigation_activates_nodes_and_pans_graph(self):
+    def test_keyboard_navigation_focuses_selection_and_pans_graph(self):
+        # Without a selection no node sits in the tab order — the list lens is
+        # the dense keyboard path; the graph exposes only the selection.
         self.open_state("#mode=field", "FIELD")
-        focused = None
-        for _ in range(12):
-            self.page.keyboard.press("Tab")
-            focused = self.page.locator("g.node:focus")
-            if focused.count():
-                break
-        self.assertIsNotNone(focused)
+        self.assertEqual(0, self.page.locator('g.node[tabindex="0"]').count())
+
+        self.open_state("#mode=field&focus=concept:rest-api", "FIELD")
+        self.assertEqual(1, self.page.locator('g.node[tabindex="0"]').count())
+        # The deep link lands keyboard focus on the selection itself.
+        self.page.wait_for_function(
+            "document.activeElement?.getAttribute('data-node-id')"
+            " === 'concept:rest-api'")
+        # And the selection stays tab-reachable from the graph surface.
+        self.page.locator("svg.graph-svg").focus()
+        self.page.keyboard.press("Tab")
+        focused = self.page.locator("g.node:focus")
         self.assertEqual(1, focused.count())
-        node_id = focused.get_attribute("data-node-id")
+        self.assertEqual(
+            "concept:rest-api", focused.get_attribute("data-node-id"))
         ring_opacity = focused.locator(".focus-ring").evaluate(
             "ring => getComputedStyle(ring).opacity")
         self.assertNotEqual("0", ring_opacity)
 
-        self.page.keyboard.press("Enter")
-        self.page.wait_for_selector("#details:not([hidden])")
-        self.page.wait_for_function(
-            "id => document.activeElement?.getAttribute('data-node-id') === id",
-            arg=node_id,
-        )
-        self.assertIn(
-            "focus=" + node_id,
-            self.page.evaluate("decodeURIComponent(location.hash)"),
-        )
         before = self.page.locator("svg .viewport").get_attribute("transform")
         self.page.keyboard.press("ArrowRight")
         after = self.page.locator("svg .viewport").get_attribute("transform")
@@ -453,6 +451,21 @@ class ViewerBrowserTests(unittest.TestCase):
         self.page.keyboard.press("Escape")
         self.assertTrue(self.page.evaluate(
             "document.activeElement?.id === 'legend-toggle'"))
+
+    def test_glyphs_carry_kind_marks_beyond_color(self):
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        question_glyph = self.page.locator(
+            '.node-list-section[data-node-type="question"] .node-glyph')
+        self.assertEqual(1, question_glyph.locator(".question-ring").count())
+        trail_glyph = self.page.locator(
+            '.node-list-section[data-node-type="personal_trail"] .node-glyph')
+        self.assertEqual(2, trail_glyph.locator("circle.node-shape").count())
+        self.page.locator("#legend-toggle").click()
+        self.assertEqual(
+            1,
+            self.page.locator(".legend .node-question .question-ring").count())
 
     def test_escape_dismisses_layers_topmost_first(self):
         self.open_state("#mode=field&focus=concept:rest-api", "FIELD")

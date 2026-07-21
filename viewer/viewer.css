@@ -189,15 +189,17 @@ button {
 }
 
 .legend {
-  position: fixed;
+  /* Anchored inside the app shell, so a wrapped (taller) header can never be
+     covered — the shell starts wherever the header ends. */
+  position: absolute;
   z-index: 12;
-  top: 58px;
+  top: 0;
   right: 20px;
   display: grid;
   grid-template-columns: repeat(2, minmax(180px, 1fr));
   gap: 24px;
   width: min(520px, calc(100vw - 40px));
-  max-height: calc(100vh - 104px);
+  max-height: calc(100% - 18px);
   padding: 16px 18px;
   overflow: auto;
   border: 1px solid var(--line);
@@ -265,6 +267,12 @@ button {
   overflow: visible;
 }
 
+.node-glyph .question-ring {
+  animation: none;
+  opacity: 1;
+  transform: scale(1);
+}
+
 .legend-direction {
   margin: 9px 0 0;
   color: var(--muted);
@@ -273,6 +281,7 @@ button {
 }
 
 .app-shell {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -804,11 +813,13 @@ aside {
   }
 
   aside {
+    /* Absolute against the app shell, so the drawer starts below the header
+       and above the status bar whatever their wrapped heights are. */
     position: absolute;
     z-index: 8;
-    top: 58px;
+    top: 0;
     right: 0;
-    bottom: 30px;
+    bottom: 0;
     width: min(320px, 90vw);
   }
 }
