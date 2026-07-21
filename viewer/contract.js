@@ -233,9 +233,19 @@ export function validateGraph(value) {
     const failure = validateNode(value.nodes[index], index);
     if (failure) return failure;
   }
+  const nodeIds = new Set();
+  for (const node of value.nodes) {
+    if (isPlainObject(node) && typeof node.id === "string") nodeIds.add(node.id);
+  }
   for (let index = 0; index < value.edges.length; index += 1) {
     const failure = validateEdge(value.edges[index], index);
     if (failure) return failure;
+    // The builder never emits an edge whose endpoint is not a node (§20 step
+    // 11), so a dangling endpoint is a malformed file — a generic rejection,
+    // never a silently thinner render (§16.5 no-partial-render).
+    const edge = value.edges[index];
+    if (!nodeIds.has(edge.source)) return diagnostic("/edges/" + index + "/source", "danglingEndpoint");
+    if (!nodeIds.has(edge.target)) return diagnostic("/edges/" + index + "/target", "danglingEndpoint");
   }
   return null;
 }
@@ -333,10 +343,12 @@ export function parseFragment(rawFragment) {
     } catch (_error) {
       return {kind: "BAD_ADDRESS"};
     }
-    if (!/^[a-z]+$/.test(key) || TEXT_ENCODER.encode(value).byteLength > CEILINGS.parameter_decoded_bytes) {
+    if (TEXT_ENCODER.encode(value).byteLength > CEILINGS.parameter_decoded_bytes) {
       return {kind: "BAD_ADDRESS"};
     }
     entries.push({key, value});
+    // §16.4 forward compatibility: an unknown key of any shape is ignored;
+    // only its decoded-value ceiling above bounds the work it can cost.
     if (!KNOWN_FRAGMENT_KEYS.has(key)) continue;
     if (Object.prototype.hasOwnProperty.call(known, key)) return {kind: "BAD_ADDRESS"};
     known[key] = value;

@@ -635,8 +635,10 @@ function appendDetailValue(parent, key, value) {
     if (parsed && parsed.protocol === "https:") {
       const link = htmlElement("a", "", value);
       link.setAttribute("href", value);
+      // No target="_blank": the §16.5 sandbox grants no popups, so an
+      // auxiliary context would make user-clicked links inert in a
+      // conforming embed; same-context navigation stays the user's click.
       link.setAttribute("rel", "noopener noreferrer");
-      link.setAttribute("target", "_blank");
       parent.append(link);
     } else {
       parent.textContent = value;

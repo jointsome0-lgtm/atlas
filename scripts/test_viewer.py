@@ -150,6 +150,30 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(1, self.page.locator(".node.field-undefined.selected").count())
         self.assertIn("field undefined", self.page.locator("#details").inner_text())
 
+    def test_unknown_fragment_params_of_any_shape_are_ignored(self):
+        # §16.4 forward compatibility: unknown keys — underscores, digits,
+        # future names — never invalidate the address.
+        self.open_state("#mode=field&utm_source=x&foo-bar=1&X9=%20", "FIELD")
+        self.assertEqual(0, self.page.locator(".banner").count())
+
+    def test_dangling_edge_endpoint_rejects_the_whole_file(self):
+        graph = self.graph_envelope(
+            nodes=[{
+                "id": "concept:alone", "type": "concept", "title": "Alone",
+                "fields": ["knowledge"], "aliases": [],
+            }],
+            edges=[{
+                "source": "concept:alone", "target": "concept:absent",
+                "type": "related_to", "provenance": ["concept:alone"],
+                "weight": "unassessed",
+            }],
+        )
+        self.write_graph(graph)
+        self.open_state("#mode=field", "REJECTED")
+        self.assertIn(
+            "This graph file can't be displayed",
+            self.page.locator("#main").inner_text())
+
     def test_node_link_ceiling_uses_fixed_pr2_state(self):
         nodes = [
             {
@@ -239,7 +263,9 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(1, link.count())
         self.assertEqual("https://example.test/Guide", link.inner_text())
         self.assertEqual("noopener noreferrer", link.get_attribute("rel"))
-        self.assertEqual("_blank", link.get_attribute("target"))
+        # No target="_blank": the §16.5 sandbox grants no popups, so an
+        # auxiliary context would leave embedded links inert.
+        self.assertIsNone(link.get_attribute("target"))
 
         self.open_state("#mode=field&focus=material%3Ainert", "FIELD")
         self.assertEqual(0, self.page.locator("#details .detail-row a").count())
