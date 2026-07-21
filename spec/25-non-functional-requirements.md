@@ -45,16 +45,19 @@ The Atlas instance repository is a git repository — not optionally so: journal
 
 The instance is single-writer (#36). Every writing flow — import (§12/§21), observation (§13), the builder (§20), snapshot export (§33.4), the purge runbook (§34), and any future writer — takes `.atlas-lock` at the instance root: created atomically (acquire-if-absent — O_CREAT|O_EXCL semantics, never check-then-create), untracked, holding `{pid, started_at}`. A run that finds it already held refuses (exit 1); no merge semantics exist. A stale lock after a crash is removed by hand on the refusal message's evidence — there is no automatic reclaim (§28.3). Git is the durability layer, not a concurrency model: merging two branches' JSONL journals is out of scope — single-writer covers the model.
 
-## §25.7 Persisted Formats
+## §25.7 Persisted and Contract Formats
 
-Every persisted format has one machine-readable schema — JSON Schema 2020-12, one file per format, authored under `spec/schemas/` (#30). Schemas are canon like the §§ they sit beside, never emitted artifacts; enum canon stays the § prose (§9, §14 — #24): a schema transcribes and cites the lists, never forks them. `scripts/validate_atlas.py` (§8) validates instance files against the schemas and checks the builder's constants against the same schemas — code constants are checked, never canonical (§20.3's discipline, format-wide). The YAML-shaped surfaces parse by the §20.4 grammar first; a schema validates the parsed object, never raw markdown.
+Every persisted format and transient runner-contract format has one machine-readable schema — JSON Schema 2020-12, one file per format, authored under `spec/schemas/` (#30, #46). Schemas are canon like the §§ they sit beside, never emitted artifacts; enum canon stays the § prose (§9, §14 — #24): a schema transcribes and cites the lists, never forks them. `scripts/validate_atlas.py` (§8) validates instance files against the schemas and checks the builder's constants against the same schemas — code constants are checked, never canonical (§20.3's discipline, format-wide). The YAML-shaped surfaces parse by the §20.4 grammar first; a schema validates the parsed object, never raw markdown.
 
-Versioning — stated here once for every persisted format (the boundary formats, §33.1, are its instances):
+Versioning — stated here once for every registered format (the boundary formats, §33.1, are its instances):
 
 ```text
 Emitted files — the graph (§10), the snapshot (§33.4), the
 redacted variant, every report, the run manifest (§17.6) —
 carry format + integer version.
+Transient runner input/output files (§17.7) carry the same
+envelope and version discipline; their delete-on-exit lifecycle
+does not make their wire shape open or implicit.
 Additive change is the norm, landed with its schema in the
 emitting change — the schemas are closed (#37), so an emitted
 file never carries a field its schema lacks; a rename, removal,
@@ -78,7 +81,7 @@ ships with the migration of the curated content — curation is
 editable where journals are not.
 ```
 
-The persisted formats and their schema files (`spec/schemas/<name>.schema.json`; the numeric ceilings are §20.4's and §25.8's — #23):
+The registered formats and their schema files (`spec/schemas/<name>.schema.json`; the numeric ceilings are §20.4's and §25.8's — #23):
 
 ```text
 concept, zone, pattern, material, direction, suggested-route,
@@ -97,13 +100,17 @@ report-batch           — deterministic intake result (§33.2, #56)
 run-manifest           — per-run audit of a model-assisted
                          agent run (§17.6, #41); the #46 runner
                          is its one writer
+runner-plan-importer-input, runner-plan-importer-output,
+runner-artifact-observer-input, runner-artifact-observer-output
+                       — transient closed role boundary (§17.7,
+                         #46), deleted with the contract workspace
 report-import, report-build
                        — reserved derived, purgeable reports (§12.2
                          step 11, §20); their shapes stay their
                          flows' to define so no report ships schema-less
 ```
 
-The set is closed: a new persisted format registers here in the same change that creates it.
+The registry is closed: a new persisted or runner-contract format registers here in the same change that creates it.
 
 ## §25.8 Executable Floors
 

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-sdd.local/schemas/runner-plan-importer-input.schema.json",
+  "description": "Closed transient input for the §17.7 plan-importer runner boundary (#46); selected content is typed data, and instance paths and sensitivity policy stay service-owned.",
+  "type": "object",
+  "properties": {
+    "format": {"const": "runner-plan-importer-input"},
+    "version": {"type": "integer", "const": 1},
+    "run_id": {"$ref": "#/$defs/runId"},
+    "source": {"$ref": "#/$defs/source"},
+    "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}}
+  },
+  "required": ["format", "version", "run_id", "source", "nodes"],
+  "additionalProperties": false,
+  "$defs": {
+    "runId": {
+      "type": "string",
+      "pattern": "^run:[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$"
+    },
+    "sourceRef": {"type": "string", "pattern": "^source:[0-9]+$"},
+    "nodeRef": {"type": "string", "pattern": "^node:[0-9]+$"},
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["plan", "intake-plan-record"],
+          "description": "The two §12/§33.3 source lanes admitted by the §17.7 plan-importer boundary."
+        },
+        "fragments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/fragment"}
+        }
+      },
+      "required": ["kind", "fragments"],
+      "additionalProperties": false
+    },
+    "fragment": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/sourceRef"},
+        "kind": {
+          "type": "string",
+          "enum": ["heading", "list-item", "code-block", "link", "test-name", "text"],
+          "description": "Deterministic parser fragments transcribed from §12.2 and §21.1."
+        },
+        "text": {"type": "string"}
+      },
+      "required": ["ref", "kind", "text"],
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/nodeRef"},
+        "id": {
+          "type": "string",
+          "pattern": "^(?:(?:plan|concept|material|direction|suggested-route|probe):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["plan", "concept", "material", "material_part", "direction", "suggested_route", "probe"],
+          "description": "Runner v1 importer subset of the closed §10.1 node kinds; Body Atlas-specific zone and pattern species stay gated by #45."
+        },
+        "label": {"type": "string"},
+        "aliases": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+      },
+      "required": ["ref", "id", "kind", "label", "aliases"],
+      "additionalProperties": false
+    }
+  }
+}

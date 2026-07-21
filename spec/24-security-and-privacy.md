@@ -128,9 +128,9 @@ gate is a security property, not workflow: nothing a foreign
 text proposes becomes state without the user's confirming hand.
 Enforcement — a fixed precomputed input manifest, no tool,
 file, or scope expansion at the text's request — is the
-isolated-runner contract (#46) under the §17.3 role matrix
-and §17.4 session contract; model-assisted import and
-observation wait for the runner.
+pinned §17.7 isolated-runner boundary under the §17.3 role
+matrix and §17.4 session contract; model-assisted import and
+observation wait for that boundary.
 Redaction before context: a session consuming graph state
 builds and validates graph/atlas-graph.redacted.json (§32.6)
 immediately before context assembly. Missing, stale, or failed

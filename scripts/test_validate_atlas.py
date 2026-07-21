@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import atlas_io
 import validate_atlas
 
 
@@ -1051,6 +1052,227 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual(validate_atlas.SCHEMA_NAMES, set(schemas))
 
+    def test_runner_contract_envelopes_are_closed(self):
+        # §17.7/#46: the four transient role boundaries accept their minimal
+        # envelopes, while model-authored sensitivity or write authority has
+        # no structural channel.
+        schemas, errors = validate_atlas._load_registry()
+        self.assertEqual([], errors)
+        for name in (
+                "runner-plan-importer-input",
+                "runner-plan-importer-output",
+                "runner-artifact-observer-input",
+                "runner-artifact-observer-output"):
+            stack = [schemas[name]]
+            while stack:
+                value = stack.pop()
+                if isinstance(value, dict):
+                    if value.get("type") == "object":
+                        self.assertIs(value.get("additionalProperties"), False,
+                                      name)
+                    stack.extend(value.values())
+                elif isinstance(value, list):
+                    stack.extend(value)
+        instances = {
+            "runner-plan-importer-input": {
+                "format": "runner-plan-importer-input",
+                "version": 1,
+                "run_id": "run:2026-07-21-001",
+                "source": {"kind": "plan", "fragments": [
+                    {"ref": "source:0", "kind": "heading",
+                     "text": "Vera Example plan"},
+                ]},
+                "nodes": [],
+            },
+            "runner-plan-importer-output": {
+                "format": "runner-plan-importer-output",
+                "version": 1,
+                "candidates": [],
+                "relations": [],
+                "routes": [],
+                "mapping_questions": [],
+                "self_claims": [],
+                "warnings": [],
+            },
+            "runner-artifact-observer-input": {
+                "format": "runner-artifact-observer-input",
+                "version": 1,
+                "run_id": "run:2026-07-21-001",
+                "units": [{
+                    "ref": "source:0",
+                    "kind": "file",
+                    "media_type": "text/plain",
+                    "label": "Vera Example note",
+                    "text": "Vera Example studied one invented topic.",
+                }],
+                "nodes": [],
+                "edges": [],
+                "journal_context": [],
+            },
+            "runner-artifact-observer-output": {
+                "format": "runner-artifact-observer-output",
+                "version": 1,
+                "artifacts": [],
+                "encounters": [],
+                "questions": [],
+                "trail_segments": [],
+                "state_proposals": [],
+                "warnings": [],
+            },
+        }
+        for name, instance in instances.items():
+            with self.subTest(name=name):
+                validator = validate_atlas.SchemaValidator(schemas[name])
+                self.assertEqual([], validator.validate(instance))
+                for forbidden in ("sensitivity", "write_path", "decision"):
+                    attacked = {**instance, forbidden: "model-asserted"}
+                    self.assertTrue(validator.validate(attacked), forbidden)
+
+    def test_runner_observer_separates_evidence_from_recognition(self):
+        # §9.12/§17.7: non-evidence memory can support recognition but its
+        # namespace cannot be emitted as support for a state proposal.
+        schemas, errors = validate_atlas._load_registry()
+        self.assertEqual([], errors)
+        observer_input = {
+            "format": "runner-artifact-observer-input",
+            "version": 1,
+            "run_id": "run:2026-07-21-001",
+            "units": [{
+                "ref": "source:0",
+                "kind": "file",
+                "media_type": "text/plain",
+                "label": "Vera Example note",
+                "text": "Vera Example studied one invented topic.",
+            }],
+            "nodes": [],
+            "edges": [],
+            "journal_context": [
+                {"ref": "evidence:0", "kind": "artifact",
+                 "summary": "Invented Vera Example evidence."},
+                {"ref": "recognition:0", "kind": "decision",
+                 "summary": "Invented Vera Example recognition."},
+            ],
+        }
+        input_validator = validate_atlas.SchemaValidator(
+            schemas["runner-artifact-observer-input"])
+        self.assertEqual([], input_validator.validate(observer_input))
+
+        observer_output = {
+            "format": "runner-artifact-observer-output",
+            "version": 1,
+            "artifacts": [],
+            "encounters": [],
+            "questions": [],
+            "trail_segments": [],
+            "state_proposals": [{
+                "ref": "proposal:0",
+                "target_ref": "node:0",
+                "dimension": "confidence",
+                "proposed_value": "low",
+                "evidence_refs": ["evidence:0"],
+            }],
+            "warnings": [],
+        }
+        output_validator = validate_atlas.SchemaValidator(
+            schemas["runner-artifact-observer-output"])
+        self.assertEqual([], output_validator.validate(observer_output))
+        observer_output["state_proposals"][0]["evidence_refs"] = [
+            "recognition:0"
+        ]
+        self.assertTrue(output_validator.validate(observer_output))
+
+    def test_runner_v1_schemas_reject_body_only_values(self):
+        # §17.7/#45: the active v1 schemas have no Body Atlas graph, edge,
+        # evidence-strength, or review-dimension channel.
+        schemas, errors = validate_atlas._load_registry()
+        self.assertEqual([], errors)
+        cases = {
+            "importer-zone": (
+                "runner-plan-importer-input",
+                {
+                    "format": "runner-plan-importer-input",
+                    "version": 1,
+                    "run_id": "run:2026-07-21-001",
+                    "source": {"kind": "plan", "fragments": [{
+                        "ref": "source:0", "kind": "text",
+                        "text": "Invented Vera Example plan.",
+                    }]},
+                    "nodes": [{
+                        "ref": "node:0", "id": "zone:example",
+                        "kind": "zone", "label": "Example",
+                        "aliases": [],
+                    }],
+                },
+            ),
+            "importer-loads": (
+                "runner-plan-importer-output",
+                {
+                    "format": "runner-plan-importer-output",
+                    "version": 1,
+                    "candidates": [],
+                    "relations": [{
+                        "source_ref": "node:0", "target_ref": "node:1",
+                        "role": "loads", "source_refs": ["source:0"],
+                    }],
+                    "routes": [], "mapping_questions": [],
+                    "self_claims": [], "warnings": [],
+                },
+            ),
+            "observer-zone": (
+                "runner-artifact-observer-input",
+                {
+                    "format": "runner-artifact-observer-input",
+                    "version": 1,
+                    "run_id": "run:2026-07-21-001",
+                    "units": [{
+                        "ref": "source:0", "kind": "file",
+                        "media_type": "text/plain", "label": "Example",
+                        "text": "Invented Vera Example observation.",
+                    }],
+                    "nodes": [{
+                        "ref": "node:0", "id": "zone:example",
+                        "kind": "zone", "label": "Example",
+                    }],
+                    "edges": [], "journal_context": [],
+                },
+            ),
+            "observer-performed": (
+                "runner-artifact-observer-output",
+                {
+                    "format": "runner-artifact-observer-output",
+                    "version": 1,
+                    "artifacts": [{
+                        "ref": "proposal:0", "source_ref": "source:0",
+                        "artifact_type": "note", "summary": "Example",
+                        "touches": [], "supports_state_updates": [],
+                        "evidence_strength": "performed",
+                    }],
+                    "encounters": [], "questions": [],
+                    "trail_segments": [], "state_proposals": [],
+                    "warnings": [],
+                },
+            ),
+            "observer-condition": (
+                "runner-artifact-observer-output",
+                {
+                    "format": "runner-artifact-observer-output",
+                    "version": 1,
+                    "artifacts": [], "encounters": [], "questions": [],
+                    "trail_segments": [],
+                    "state_proposals": [{
+                        "ref": "proposal:0", "target_ref": "node:0",
+                        "dimension": "condition", "proposed_value": "chronic",
+                        "evidence_refs": ["evidence:0"],
+                    }],
+                    "warnings": [],
+                },
+            ),
+        }
+        for name, (schema_name, instance) in cases.items():
+            with self.subTest(name=name):
+                validator = validate_atlas.SchemaValidator(schemas[schema_name])
+                self.assertTrue(validator.validate(instance))
+
     def test_unsupported_schema_keyword_fails_closed(self):
         with self.assertRaises(validate_atlas.SchemaSubsetError):
             validate_atlas.SchemaValidator({"type": "string", "format": "date"})
@@ -1114,16 +1336,26 @@ class SchemaValidatorTests(unittest.TestCase):
 
     VALID_RUN_MANIFEST = json.dumps({
         "format": "run-manifest",
-        "version": 1,
+        "version": 2,
         "run_id": "run:2026-07-21-001",
         "role": "plan-importer",
         "model": {"provider": "example", "id": "model-1",
                   "parameters": [{"name": "temperature", "value": "0.2"}]},
         "engine_revision": "0" * 40,
         "runner_version": "0.1.0",
+        "runner_protocol": {
+            "version": 1,
+            "commit": "be83303bfbe3a1523c72ebaa3f0baa03389c5832",
+        },
         "prompt_bundle": {
-            "components": [{"id": "plan-importer-core", "version": "1",
-                            "sha256": "a" * 64}],
+            "components": [
+                {"id": "plan-importer-core", "version": "1",
+                 "sha256": "a" * 64},
+                {"id": "runner-plan-importer-input", "version": "1",
+                 "sha256": "c" * 64},
+                {"id": "runner-plan-importer-output", "version": "1",
+                 "sha256": "d" * 64},
+            ],
             "sha256": "b" * 64},
         "inputs": {
             "included": [{"path": "plans/imported/example.md", "bytes": 123}],
@@ -1140,8 +1372,8 @@ class SchemaValidatorTests(unittest.TestCase):
     })
 
     def test_valid_run_manifest_passes_the_boundary(self):
-        # §17.6/§25.7: a runs/ manifest validates against the closed
-        # run-manifest schema like any emitted file.
+        # §17.6/§17.7/§25.7: a runner-emitted v2 manifest validates against
+        # the closed shape and semantic bindings like any emitted file.
         instance = {
             **VALID_INSTANCE,
             "runs/2026-07-21-001.json": self.VALID_RUN_MANIFEST,
@@ -1149,8 +1381,62 @@ class SchemaValidatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             materialize(instance, Path(directory))
             code, stdout, stderr = self.run_cli("validate", directory)
+            shared_format = atlas_io.AtlasInstance(directory).validate_format(
+                json.loads(self.VALID_RUN_MANIFEST))
         self.assertEqual(0, code, stderr)
         self.assertIn("0 errors", stdout)
+        self.assertEqual("run-manifest", shared_format)
+
+    def test_legacy_run_manifest_v1_remains_readable(self):
+        # §25.7/#41: adding the required #46 pin is a version bump, not a
+        # retroactive invalidation or a false claim about historical runs.
+        manifest = json.loads(self.VALID_RUN_MANIFEST)
+        manifest["version"] = 1
+        manifest.pop("runner_protocol")
+        manifest["prompt_bundle"]["components"] = [
+            manifest["prompt_bundle"]["components"][0]
+        ]
+        instance = {
+            **VALID_INSTANCE,
+            "runs/2026-07-21-001.json": json.dumps(manifest),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+            shared_format = atlas_io.AtlasInstance(directory).validate_format(
+                manifest)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("0 errors", stdout)
+        self.assertEqual("run-manifest", shared_format)
+
+        manifest["prompt_bundle"]["components"].append({
+            "id": "runner-plan-importer-input",
+            "version": "1",
+            "sha256": "c" * 64,
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("v1 cannot claim runner transport schemas", stderr)
+        manifest["prompt_bundle"]["components"] = [
+            manifest["prompt_bundle"]["components"][0]
+        ]
+
+        manifest["runner_protocol"] = {
+            "version": 1,
+            "commit": "be83303bfbe3a1523c72ebaa3f0baa03389c5832",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, _ = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
 
     def test_run_manifest_id_must_match_its_file_name(self):
         # §17.6: run_id is the file's date-serial — a disagreeing pair
@@ -1188,6 +1474,140 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertIn("closed key set", stderr)
         self.assertNotIn("transcript", stderr)
         self.assertNotIn("rendered prompt text", stderr)
+
+    def test_run_manifest_requires_exact_runner_protocol_pin(self):
+        # §17.7: v2 requires the pin, and version plus defining commit are
+        # one fail-closed value.
+        manifest = json.loads(self.VALID_RUN_MANIFEST)
+        manifest["runner_protocol"]["commit"] = "f" * 40
+        instance = {
+            **VALID_INSTANCE,
+            "runs/2026-07-21-001.json": json.dumps(manifest),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("$.runner_protocol.commit", stderr)
+
+        manifest.pop("runner_protocol")
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, _ = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+
+    def test_run_manifest_requires_selected_runner_schema_pair(self):
+        # §17.7: id presence, uniqueness, version, and role pairing are
+        # semantic manifest checks, not claims left to the generic shape.
+        cases = {}
+        missing = json.loads(self.VALID_RUN_MANIFEST)
+        missing["prompt_bundle"]["components"] = [
+            component for component in missing["prompt_bundle"]["components"]
+            if component["id"] != "runner-plan-importer-output"
+        ]
+        cases["missing"] = (
+            missing, "runner-plan-importer-output' exactly once")
+
+        duplicate = json.loads(self.VALID_RUN_MANIFEST)
+        duplicate["prompt_bundle"]["components"].append({
+            **duplicate["prompt_bundle"]["components"][1]
+        })
+        cases["duplicate"] = (
+            duplicate, "runner-plan-importer-input' exactly once")
+
+        wrong_version = json.loads(self.VALID_RUN_MANIFEST)
+        wrong_version["prompt_bundle"]["components"][1]["version"] = "2"
+        cases["version"] = (wrong_version, "must declare version '1'")
+
+        wrong_role_pair = json.loads(self.VALID_RUN_MANIFEST)
+        wrong_role_pair["prompt_bundle"]["components"].append({
+            "id": "runner-artifact-observer-input",
+            "version": "1",
+            "sha256": "e" * 64,
+        })
+        cases["role-pair"] = (
+            wrong_role_pair, "outside the selected role's closed pair")
+
+        for name, (manifest, expected) in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    **VALID_INSTANCE,
+                    "runs/2026-07-21-001.json": json.dumps(manifest),
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code)
+            self.assertIn(expected, stderr)
+
+    def test_unsupported_runner_role_is_preflight_only(self):
+        # §17.7: governance roles without a closed pair may leave only an
+        # aborted, output- and decision-free audit line; they never use a
+        # generic payload.
+        manifest = json.loads(self.VALID_RUN_MANIFEST)
+        manifest["role"] = "field-cartographer"
+        manifest["prompt_bundle"]["components"] = [
+            manifest["prompt_bundle"]["components"][0]
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("must close as aborted at preflight (§17.7)", stderr)
+
+        manifest["outcome"] = "aborted"
+        manifest["outputs"] = []
+        manifest["warnings"] = ["unsupported-role"]
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("0 errors", stdout)
+
+        manifest["decisions"] = ["decision:example"]
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("execution must record no decisions (§17.7)", stderr)
+
+    def test_aborted_runner_manifest_has_no_outputs_and_a_warning_code(self):
+        # §17.7: cancellation, timeout, malformed output, and preflight
+        # failures all close through one no-output, coded shape.
+        manifest = json.loads(self.VALID_RUN_MANIFEST)
+        manifest["outcome"] = "aborted"
+        manifest["warnings"] = []
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("must record no outputs (§17.7)", stderr)
+        self.assertIn("must record a stable warning code (§17.7)", stderr)
+
+        manifest["outputs"] = []
+        manifest["warnings"] = ["timeout"]
+        manifest["decisions"] = ["decision:example"]
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("must record no decisions (§17.7)", stderr)
 
     def test_stale_route_step_resolves_through_formerly(self):
         # §34.4: steps already use the survivor while material_roles[].step
