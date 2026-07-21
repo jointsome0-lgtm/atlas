@@ -1,0 +1,494 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "generated_at": "2026-07-10T00:00:00Z",
+  "nodes": [
+    {
+      "id": "artifact:demo-retry-script",
+      "type": "artifact",
+      "title": "",
+      "kind": "script",
+      "path": "projects/demo/retry.py",
+      "observed_at": "2026-07-10",
+      "summary": "Wrote a retry wrapper that reuses one idempotency key per request. Demo fixture authored by Vera Example.",
+      "evidence_strength": "applied",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "concept:http-methods",
+      "type": "concept",
+      "title": "HTTP Methods",
+      "aliases": [],
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "concept:idempotency",
+      "type": "concept",
+      "title": "Idempotency",
+      "aliases": [
+        "idempotent operations"
+      ],
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "concept:redis",
+      "type": "concept",
+      "title": "Redis",
+      "aliases": [],
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "concept:rest-api",
+      "type": "concept",
+      "title": "REST API",
+      "formerly": [
+        "concept:restful-api"
+      ],
+      "aliases": [],
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "direction:backend-distributed-systems-python",
+      "type": "direction",
+      "title": "Backend Distributed Systems in Python",
+      "status": "active",
+      "attractor": "Understand how backend systems coordinate HTTP APIs, caches, and idempotent request handling.",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "direction:demo-unanchored",
+      "type": "direction",
+      "title": "Unanchored Direction",
+      "status": "active",
+      "attractor": "A direction sketched before any concept was placed under it. Demo fixture authored by Vera Example.",
+      "fields": []
+    },
+    {
+      "id": "encounter:demo-mdn-idempotency-read",
+      "type": "encounter",
+      "title": "",
+      "date": "2026-07-09",
+      "target": "part:mdn-http-methods/idempotency",
+      "depth": "applied",
+      "mode": "question-driven",
+      "context": {
+        "question": "question:demo-when-is-retry-safe"
+      },
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "material:fastapi-tutorial",
+      "type": "material",
+      "title": "FastAPI Official Tutorial",
+      "status": "active",
+      "kind": "tutorial",
+      "url": "",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "material:mdn-http-methods",
+      "type": "material",
+      "title": "MDN HTTP Methods Reference",
+      "status": "active",
+      "kind": "docs",
+      "url": "",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "part:fastapi-tutorial/path-operations",
+      "type": "material_part",
+      "title": "Path Operations",
+      "material": "material:fastapi-tutorial",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "part:mdn-http-methods/idempotency",
+      "type": "material_part",
+      "title": "Idempotent Methods",
+      "material": "material:mdn-http-methods",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "pattern:push-up",
+      "type": "pattern",
+      "title": "Push-up",
+      "aliases": [],
+      "fields": [
+        "body"
+      ]
+    },
+    {
+      "id": "personal-trail:backend-distributed-systems",
+      "type": "personal_trail",
+      "title": "Backend systems trail",
+      "direction": "direction:backend-distributed-systems-python",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "plan:demo-backend-plan",
+      "type": "plan",
+      "title": "Backend Distributed Systems Demo Plan",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "probe:duplicate-post-idempotency",
+      "type": "probe",
+      "title": "Duplicate POST with idempotency key",
+      "status": "active",
+      "body": "\nSend the same POST twice with one idempotency key; explain what the\nserver must return the second time and why.\n\nDemo fixture authored by Vera Example.\n",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "question:demo-when-is-retry-safe",
+      "type": "question",
+      "title": "",
+      "text": "When is it safe to retry a failed request automatically?",
+      "created_at": "2026-07-10",
+      "source": {
+        "artifact": "artifact:demo-retry-script"
+      },
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "suggested-route:demo-backend-default",
+      "type": "suggested_route",
+      "title": "REST → Idempotency → Redis",
+      "status": "available",
+      "source_plan": "plan:demo-backend-plan",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "trail-segment:2026-07-10-retry-with-idempotency",
+      "type": "trail_segment",
+      "title": "",
+      "date": "2026-07-10",
+      "direction": "direction:backend-distributed-systems-python",
+      "from": "concept:rest-api",
+      "to": "concept:idempotency",
+      "via": [
+        "part:mdn-http-methods/idempotency",
+        "artifact:demo-retry-script"
+      ],
+      "reason": "Retries kept duplicating writes; went to the idempotent-methods reference and wrapped the client. Demo fixture authored by Vera Example.",
+      "resulting_questions": [
+        "question:demo-when-is-retry-safe"
+      ],
+      "fields": [
+        "knowledge"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "source": "part:fastapi-tutorial/path-operations",
+      "target": "concept:http-methods",
+      "type": "demonstrates",
+      "provenance": [
+        "part:fastapi-tutorial/path-operations"
+      ],
+      "weight": "medium"
+    },
+    {
+      "source": "part:mdn-http-methods/idempotency",
+      "target": "concept:http-methods",
+      "type": "explains",
+      "provenance": [
+        "part:mdn-http-methods/idempotency"
+      ],
+      "weight": "medium"
+    },
+    {
+      "source": "part:mdn-http-methods/idempotency",
+      "target": "concept:idempotency",
+      "type": "explains",
+      "provenance": [
+        "part:mdn-http-methods/idempotency"
+      ],
+      "weight": "high"
+    },
+    {
+      "source": "material:fastapi-tutorial",
+      "target": "part:fastapi-tutorial/path-operations",
+      "type": "has_part",
+      "provenance": [
+        "material:fastapi-tutorial"
+      ]
+    },
+    {
+      "source": "material:mdn-http-methods",
+      "target": "part:mdn-http-methods/idempotency",
+      "type": "has_part",
+      "provenance": [
+        "material:mdn-http-methods"
+      ]
+    },
+    {
+      "source": "part:fastapi-tutorial/path-operations",
+      "target": "concept:rest-api",
+      "type": "implements",
+      "provenance": [
+        "part:fastapi-tutorial/path-operations"
+      ],
+      "weight": "high"
+    },
+    {
+      "source": "artifact:demo-retry-script",
+      "target": "concept:idempotency",
+      "type": "influences",
+      "provenance": [
+        "artifact:demo-retry-script"
+      ]
+    },
+    {
+      "source": "concept:rest-api",
+      "target": "concept:idempotency",
+      "type": "moved_to",
+      "provenance": [
+        "trail-segment:2026-07-10-retry-with-idempotency"
+      ]
+    },
+    {
+      "source": "material:fastapi-tutorial",
+      "target": "concept:rest-api",
+      "type": "overall_concept",
+      "provenance": [
+        "material:fastapi-tutorial"
+      ]
+    },
+    {
+      "source": "material:mdn-http-methods",
+      "target": "concept:http-methods",
+      "type": "overall_concept",
+      "provenance": [
+        "material:mdn-http-methods"
+      ]
+    },
+    {
+      "source": "concept:redis",
+      "target": "direction:backend-distributed-systems-python",
+      "type": "part_of_direction",
+      "provenance": [
+        "direction:backend-distributed-systems-python"
+      ]
+    },
+    {
+      "source": "concept:rest-api",
+      "target": "direction:backend-distributed-systems-python",
+      "type": "part_of_direction",
+      "provenance": [
+        "direction:backend-distributed-systems-python"
+      ]
+    },
+    {
+      "source": "part:mdn-http-methods/idempotency",
+      "target": "question:demo-when-is-retry-safe",
+      "type": "primary_for",
+      "provenance": [
+        "encounter:demo-mdn-idempotency-read"
+      ]
+    },
+    {
+      "source": "part:mdn-http-methods/idempotency",
+      "target": "trail-segment:2026-07-10-retry-with-idempotency",
+      "type": "primary_for",
+      "provenance": [
+        "trail-segment:2026-07-10-retry-with-idempotency"
+      ]
+    },
+    {
+      "source": "concept:idempotency",
+      "target": "probe:duplicate-post-idempotency",
+      "type": "probed_by",
+      "provenance": [
+        "probe:duplicate-post-idempotency"
+      ]
+    },
+    {
+      "source": "concept:rest-api",
+      "target": "probe:duplicate-post-idempotency",
+      "type": "probed_by",
+      "provenance": [
+        "probe:duplicate-post-idempotency"
+      ]
+    },
+    {
+      "source": "trail-segment:2026-07-10-retry-with-idempotency",
+      "target": "artifact:demo-retry-script",
+      "type": "produced_artifact",
+      "provenance": [
+        "trail-segment:2026-07-10-retry-with-idempotency"
+      ]
+    },
+    {
+      "source": "concept:http-methods",
+      "target": "question:demo-when-is-retry-safe",
+      "type": "pulled_by",
+      "provenance": [
+        "question:demo-when-is-retry-safe"
+      ]
+    },
+    {
+      "source": "concept:idempotency",
+      "target": "question:demo-when-is-retry-safe",
+      "type": "pulled_by",
+      "provenance": [
+        "question:demo-when-is-retry-safe"
+      ]
+    },
+    {
+      "source": "concept:http-methods",
+      "target": "concept:rest-api",
+      "type": "related_to",
+      "provenance": [
+        "concept:http-methods",
+        "concept:rest-api"
+      ],
+      "weight": "unassessed"
+    },
+    {
+      "source": "concept:idempotency",
+      "target": "concept:redis",
+      "type": "related_to",
+      "provenance": [
+        "concept:idempotency",
+        "concept:redis"
+      ],
+      "weight": "unassessed"
+    },
+    {
+      "source": "concept:idempotency",
+      "target": "concept:rest-api",
+      "type": "related_to",
+      "provenance": [
+        "concept:idempotency",
+        "concept:rest-api"
+      ],
+      "weight": "unassessed"
+    },
+    {
+      "source": "concept:idempotency",
+      "target": "suggested-route:demo-backend-default",
+      "type": "step_of_route",
+      "provenance": [
+        "suggested-route:demo-backend-default"
+      ],
+      "order": 2
+    },
+    {
+      "source": "concept:redis",
+      "target": "suggested-route:demo-backend-default",
+      "type": "step_of_route",
+      "provenance": [
+        "suggested-route:demo-backend-default"
+      ],
+      "order": 3
+    },
+    {
+      "source": "concept:rest-api",
+      "target": "suggested-route:demo-backend-default",
+      "type": "step_of_route",
+      "provenance": [
+        "suggested-route:demo-backend-default"
+      ],
+      "order": 1
+    },
+    {
+      "source": "concept:idempotency",
+      "target": "concept:redis",
+      "type": "suggested_next",
+      "provenance": [
+        "suggested-route:demo-backend-default"
+      ],
+      "context": "suggested-route:demo-backend-default"
+    },
+    {
+      "source": "concept:rest-api",
+      "target": "concept:idempotency",
+      "type": "suggested_next",
+      "provenance": [
+        "suggested-route:demo-backend-default"
+      ],
+      "context": "suggested-route:demo-backend-default"
+    },
+    {
+      "source": "material:mdn-http-methods",
+      "target": "material:fastapi-tutorial",
+      "type": "supports",
+      "provenance": [
+        "material:fastapi-tutorial"
+      ],
+      "weight": "unassessed"
+    },
+    {
+      "source": "part:mdn-http-methods/idempotency",
+      "target": "part:fastapi-tutorial/path-operations",
+      "type": "supports",
+      "provenance": [
+        "part:fastapi-tutorial/path-operations"
+      ],
+      "note": "Unpacks the idempotency semantics path operations assume.",
+      "weight": "unassessed"
+    },
+    {
+      "source": "artifact:demo-retry-script",
+      "target": "concept:idempotency",
+      "type": "updates_state",
+      "provenance": [
+        "artifact:demo-retry-script"
+      ]
+    },
+    {
+      "source": "trail-segment:2026-07-10-retry-with-idempotency",
+      "target": "part:mdn-http-methods/idempotency",
+      "type": "via",
+      "provenance": [
+        "trail-segment:2026-07-10-retry-with-idempotency"
+      ]
+    },
+    {
+      "source": "encounter:demo-mdn-idempotency-read",
+      "target": "part:mdn-http-methods/idempotency",
+      "type": "visited",
+      "provenance": [
+        "encounter:demo-mdn-idempotency-read"
+      ]
+    }
+  ],
+  "trails": [],
+  "state": {},
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}
