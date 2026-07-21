@@ -395,6 +395,40 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertNotIn("step_of_route", without_routes)
         self.assertNotIn("suggested_next", without_routes)
 
+    def test_redraw_restores_focus_only_when_orphaned(self):
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        row = self.page.locator(".node-list-row").first
+        node_id = row.get_attribute("data-node-id")
+        row.click()
+        self.page.wait_for_selector("#details:not([hidden])")
+        # The activated row was destroyed by the rebuild; focus lands on its
+        # replacement so Tab continues from the selection.
+        self.page.wait_for_function(
+            "id => document.activeElement?.getAttribute('data-node-id') === id",
+            arg=node_id,
+        )
+        # A live control keeps focus across the redraw it triggers.
+        toggle = self.page.locator("#routes-toggle")
+        toggle.focus()
+        toggle.press(" ")
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.evaluate(
+            "new Promise(done => requestAnimationFrame("
+            "() => requestAnimationFrame(done)))")
+        self.assertTrue(self.page.evaluate(
+            "document.activeElement?.id === 'routes-toggle'"))
+
+    def test_focus_ring_sits_outside_selection_ring(self):
+        self.open_state("#mode=field&focus=concept:rest-api", "FIELD")
+        selected = self.page.locator(".node.selected")
+        focus_radius = float(
+            selected.locator(".focus-ring").get_attribute("r"))
+        selection_radius = float(
+            selected.locator(".selection-ring").get_attribute("r"))
+        self.assertGreater(focus_radius, selection_radius)
+
     def test_escape_dismisses_layers_topmost_first(self):
         self.open_state("#mode=field&focus=concept:rest-api", "FIELD")
         self.page.wait_for_selector("#details:not([hidden])")

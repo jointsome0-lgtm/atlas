@@ -306,7 +306,18 @@ function renderList(field, nodes, edges, selected, banner, pastCeiling) {
   main.append(list);
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
   if (banner) appendBanner(banner.kind, banner.value);
-  if (selectedRow) selectedRow.scrollIntoView({block: "nearest"});
+  if (selectedRow) {
+    selectedRow.scrollIntoView({block: "nearest"});
+    if (focusOrphaned()) selectedRow.focus({preventScroll: true});
+  }
+}
+
+// A redraw may destroy the element that held keyboard focus (an activated
+// node or list row lives inside the rebuilt tree). Restore focus to the
+// selection only in that case — never steal it from a live control such as
+// the Routes toggle.
+function focusOrphaned() {
+  return document.activeElement === null || document.activeElement === document.body;
 }
 
 function fnv1a32(text) {
@@ -464,7 +475,7 @@ async function renderField(field, nodes, edges, selected, banner) {
   installKeyboardPanZoom(stage, currentTransform);
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
   if (banner) appendBanner(banner.kind, banner.value);
-  if (selectedGroup) selectedGroup.focus({preventScroll: true});
+  if (selectedGroup && focusOrphaned()) selectedGroup.focus({preventScroll: true});
 }
 
 // §16.2: the Routes lens is coherent across surfaces — hidden routes leave
@@ -617,8 +628,10 @@ function makeNode(node, position, selected) {
   const accessible = svgElement("title");
   accessible.textContent = (node.title || node.id) + ", " + node.type.replaceAll("_", " ");
   group.append(accessible);
+  // Concentric outside the r=15 selection ring so "selected" and "focused"
+  // stay readable at the same time.
   const focusRing = svgElement("circle", "focus-ring");
-  focusRing.setAttribute("r", "15");
+  focusRing.setAttribute("r", "19");
   group.append(focusRing);
   if (selected) {
     const ring = svgElement("circle", "selection-ring");
