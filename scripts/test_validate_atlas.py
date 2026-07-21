@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import atlas_io
 import validate_atlas
 
 
@@ -1380,8 +1381,11 @@ class SchemaValidatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             materialize(instance, Path(directory))
             code, stdout, stderr = self.run_cli("validate", directory)
+            shared_format = atlas_io.AtlasInstance(directory).validate_format(
+                json.loads(self.VALID_RUN_MANIFEST))
         self.assertEqual(0, code, stderr)
         self.assertIn("0 errors", stdout)
+        self.assertEqual("run-manifest", shared_format)
 
     def test_legacy_run_manifest_v1_remains_readable(self):
         # §25.7/#41: adding the required #46 pin is a version bump, not a
@@ -1399,8 +1403,28 @@ class SchemaValidatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             materialize(instance, Path(directory))
             code, stdout, stderr = self.run_cli("validate", directory)
+            shared_format = atlas_io.AtlasInstance(directory).validate_format(
+                manifest)
         self.assertEqual(0, code, stderr)
         self.assertIn("0 errors", stdout)
+        self.assertEqual("run-manifest", shared_format)
+
+        manifest["prompt_bundle"]["components"].append({
+            "id": "runner-plan-importer-input",
+            "version": "1",
+            "sha256": "c" * 64,
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("v1 cannot claim runner transport schemas", stderr)
+        manifest["prompt_bundle"]["components"] = [
+            manifest["prompt_bundle"]["components"][0]
+        ]
 
         manifest["runner_protocol"] = {
             "version": 1,
@@ -1555,7 +1579,7 @@ class SchemaValidatorTests(unittest.TestCase):
             }, Path(directory))
             code, _, stderr = self.run_cli("validate", directory)
         self.assertEqual(1, code)
-        self.assertIn("preflight must record no decisions (§17.7)", stderr)
+        self.assertIn("execution must record no decisions (§17.7)", stderr)
 
     def test_aborted_runner_manifest_has_no_outputs_and_a_warning_code(self):
         # §17.7: cancellation, timeout, malformed output, and preflight
@@ -1572,6 +1596,18 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("must record no outputs (§17.7)", stderr)
         self.assertIn("must record a stable warning code (§17.7)", stderr)
+
+        manifest["outputs"] = []
+        manifest["warnings"] = ["timeout"]
+        manifest["decisions"] = ["decision:example"]
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
+        self.assertIn("must record no decisions (§17.7)", stderr)
 
     def test_stale_route_step_resolves_through_formerly(self):
         # §34.4: steps already use the survivor while material_roles[].step

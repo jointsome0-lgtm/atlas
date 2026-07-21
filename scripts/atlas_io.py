@@ -525,7 +525,23 @@ class AtlasInstance:
         ) != format_name:
             _fail(ReasonCode.UNKNOWN_FORMAT)
         version_schema = schema.get("properties", {}).get("version", {})
-        if version_schema.get("const") != version:
+        if not isinstance(version_schema, Mapping):
+            _fail(ReasonCode.SCHEMA_REGISTRY_INVALID)
+        if "const" in version_schema:
+            supported_versions = (version_schema["const"],)
+        elif isinstance(version_schema.get("enum"), list):
+            supported_versions = tuple(version_schema["enum"])
+        else:
+            _fail(ReasonCode.SCHEMA_REGISTRY_INVALID)
+        if (
+            not supported_versions
+            or any(
+                not isinstance(item, int) or isinstance(item, bool)
+                for item in supported_versions
+            )
+        ):
+            _fail(ReasonCode.SCHEMA_REGISTRY_INVALID)
+        if version not in supported_versions:
             _fail(ReasonCode.UNSUPPORTED_VERSION)
         self.validate_schema(value, format_name, definition=definition)
         return format_name
