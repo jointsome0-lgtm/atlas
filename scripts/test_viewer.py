@@ -224,6 +224,22 @@ class ViewerBrowserTests(unittest.TestCase):
                     "id": "zone:core", "type": "zone", "title": "Core",
                     "fields": ["body"], "notes": "",
                 }]),
+            "material-part parent mismatch": self.graph_envelope(nodes=[
+                {
+                    "id": "material:a", "type": "material", "title": "A",
+                    "fields": ["knowledge"], "kind": "docs", "url": "",
+                    "status": "active",
+                }, {
+                    "id": "material:b", "type": "material", "title": "B",
+                    "fields": ["knowledge"], "kind": "docs", "url": "",
+                    "status": "active",
+                }, {
+                    "id": "part:a/p", "type": "material_part", "title": "P",
+                    "fields": ["knowledge"], "material": "material:b",
+                }], edges=[{
+                    "source": "material:b", "target": "part:a/p",
+                    "type": "has_part", "provenance": ["material:b"],
+                }]),
             "discriminant on the wrong edge type": self.graph_envelope(
                 nodes=[alone, other],
                 edges=[{**related, "order": 1}]),
@@ -326,8 +342,12 @@ class ViewerBrowserTests(unittest.TestCase):
         initial_hash = self.page.evaluate("location.hash")
         self.page.locator("#routes-toggle").uncheck()
         self.page.wait_for_selector('#main[data-state="FIELD"]')
-        self.assertLess(
-            self.page.locator("svg .edge-line").count(), len(visible_edges))
+        rendered_edge_count = self.page.locator("svg .edge-line").count()
+        self.assertLess(rendered_edge_count, len(visible_edges))
+        self.assertIn(
+            f"{len(visible_ids)} nodes · {rendered_edge_count} edges in view",
+            self.page.locator("#status-bar").inner_text(),
+        )
         self.assertEqual(initial_hash, self.page.evaluate("location.hash"))
 
     def test_focus_opens_panel_for_each_rendered_kind(self):

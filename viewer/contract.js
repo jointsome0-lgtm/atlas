@@ -176,6 +176,12 @@ function validateNode(node, index) {
     "personal_trail": ["direction"], "plan": []
   };
   if (!hasKeys(node, requiredByType[node.type])) return diagnostic(path, "kindRequired");
+  // §10.1/§10.4: a part id embeds its owning material slug; the payload's
+  // material reference must name that same parent, as validate_atlas enforces.
+  if (node.type === "material_part") {
+    const parentSlug = node.id.slice("part:".length, node.id.indexOf("/"));
+    if (node.material !== "material:" + parentSlug) return diagnostic(path + "/material", "partParent");
+  }
   if (STATUS_FORBIDDEN.has(node.type) && Object.prototype.hasOwnProperty.call(node, "status")) return diagnostic(path + "/status", "forbidden");
   if ((node.type === "material" || node.type === "probe" || node.type === "direction") && !LIFECYCLE_STATUSES.includes(node.status)) return diagnostic(path + "/status", "enum");
   if (node.type === "material" && !MATERIAL_KINDS.includes(node.kind)) return diagnostic(path + "/kind", "enum");
