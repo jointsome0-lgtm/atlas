@@ -206,6 +206,25 @@ class ViewerBrowserTests(unittest.TestCase):
                 self.write_graph(graph)
                 self.open_state("#mode=field", "REJECTED")
 
+    def test_bom_crlf_and_withheld_reject_whole(self):
+        clean = json.dumps(self.graph_envelope(), ensure_ascii=False)
+        self.graph_path.write_bytes(b"\xef\xbb\xbf" + clean.encode("utf-8"))
+        self.open_state("#mode=field", "REJECTED")
+
+        self.graph_path.write_bytes(
+            clean.replace("{", "{\r\n", 1).encode("utf-8"))
+        self.open_state("#mode=field", "REJECTED")
+
+        # §20: the full graph never carries withheld — a withheld-bearing
+        # file at the viewer's single input path is a partial graph.
+        redacted = self.graph_envelope()
+        redacted["withheld"] = {
+            "nodes": 1, "edges": 0, "trails": 0, "state": 0,
+            "influence": 0, "frontier": 0, "projections": 0,
+        }
+        self.write_graph(redacted)
+        self.open_state("#mode=field", "REJECTED")
+
     def test_duplicate_json_keys_reject_whole(self):
         text = (
             '{"format": "atlas-graph", "version": 1, "nodes": [], "nodes": [],'

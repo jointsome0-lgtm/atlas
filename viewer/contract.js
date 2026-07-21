@@ -210,12 +210,6 @@ function validateEdge(edge, index) {
   return null;
 }
 
-function validateWithheld(value) {
-  const keys = ["nodes", "edges", "trails", "state", "influence", "frontier", "projections"];
-  return isPlainObject(value) && hasOnlyKeys(value, keys) && hasKeys(value, keys)
-    && keys.every((key) => Number.isInteger(value[key]) && value[key] >= 0);
-}
-
 // §16.5 fail-closed parity with the other Atlas readers (§25.7): native
 // JSON.parse keeps the last of duplicate keys, so an ambiguous file could
 // pass validation after silently overwriting a field. Scan the raw text for
@@ -284,7 +278,11 @@ export function validateGraph(value) {
   if (!isPlainObject(value.influence) || Object.keys(value.influence).length !== 0) return diagnostic("/influence", "producerClosed");
   if (!Array.isArray(value.frontier) || value.frontier.length !== 0) return diagnostic("/frontier", "producerClosed");
   if (!isPlainObject(value.projections) || !Object.values(value.projections).every((item) => typeof item === "string" && SLUG_RE.test(item))) return diagnostic("/projections", "slugMap");
-  if (Object.prototype.hasOwnProperty.call(value, "withheld") && !validateWithheld(value.withheld)) return diagnostic("/withheld", "shape");
+  // §20: the full graph never carries withheld — that key marks the redacted
+  // variant, which lives beside the full graph, never at the viewer's single
+  // input path. A withheld-bearing file here is a partial graph presented as
+  // complete: reject, never render.
+  if (Object.prototype.hasOwnProperty.call(value, "withheld")) return diagnostic("/withheld", "fullGraphNeverWithholds");
   const nodeIds = new Set();
   for (let index = 0; index < value.nodes.length; index += 1) {
     const failure = validateNode(value.nodes[index], index);
@@ -359,11 +357,21 @@ export function acceptGraphBuffer(buffer) {
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength > CEILINGS.graph_file_bytes) {
     return {kind: "REJECTED", diagnostic: diagnostic("", "graphFileBytes")};
   }
+  // §25.8 text canon, reader parity: Atlas-authored persisted text is strict
+  // UTF-8 without BOM, LF only — TextDecoder would silently strip a BOM and
+  // JSON.parse accepts \r, so both are checked on the raw bytes/text.
+  const head = new Uint8Array(buffer, 0, Math.min(3, buffer.byteLength));
+  if (head.length === 3 && head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) {
+    return {kind: "REJECTED", diagnostic: diagnostic("", "bom")};
+  }
   let text;
   try {
     text = new TextDecoder("utf-8", {fatal: true}).decode(buffer);
   } catch (_error) {
     return {kind: "REJECTED", diagnostic: diagnostic("", "utf8")};
+  }
+  if (text.includes("\r")) {
+    return {kind: "REJECTED", diagnostic: diagnostic("", "crlf")};
   }
   let value;
   try {
@@ -401,8 +409,7 @@ export function acceptGraphBuffer(buffer) {
       nodes,
       edges: value.edges.map(projectEdge),
       trails: [], state: {}, influence: {}, frontier: [],
-      projections: {...value.projections},
-      withheld: value.withheld ? {...value.withheld} : undefined
+      projections: {...value.projections}
     },
     retired
   };
