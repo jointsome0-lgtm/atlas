@@ -386,7 +386,9 @@ def _schema_errors(instance, schema, source: Path | str):
 
 def _runner_manifest_errors(instance, source: Path | str) -> list[str]:
     """Validate the §17.7 role/prompt/outcome bindings without echoing data."""
-    if not isinstance(instance, dict):
+    # §25.7/#41: v1 remains readable as the pre-runner historical shape.
+    # Only the #46 runner's v2 manifests claim and enforce §17.7.
+    if not isinstance(instance, dict) or instance.get("version") != 2:
         return []
 
     errors: list[str] = []

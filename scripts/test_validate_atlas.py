@@ -1335,7 +1335,7 @@ class SchemaValidatorTests(unittest.TestCase):
 
     VALID_RUN_MANIFEST = json.dumps({
         "format": "run-manifest",
-        "version": 1,
+        "version": 2,
         "run_id": "run:2026-07-21-001",
         "role": "plan-importer",
         "model": {"provider": "example", "id": "model-1",
@@ -1371,8 +1371,8 @@ class SchemaValidatorTests(unittest.TestCase):
     })
 
     def test_valid_run_manifest_passes_the_boundary(self):
-        # §17.6/§25.7: a runs/ manifest validates against the closed
-        # run-manifest schema like any emitted file.
+        # §17.6/§17.7/§25.7: a runner-emitted v2 manifest validates against
+        # the closed shape and semantic bindings like any emitted file.
         instance = {
             **VALID_INSTANCE,
             "runs/2026-07-21-001.json": self.VALID_RUN_MANIFEST,
@@ -1382,6 +1382,37 @@ class SchemaValidatorTests(unittest.TestCase):
             code, stdout, stderr = self.run_cli("validate", directory)
         self.assertEqual(0, code, stderr)
         self.assertIn("0 errors", stdout)
+
+    def test_legacy_run_manifest_v1_remains_readable(self):
+        # §25.7/#41: adding the required #46 pin is a version bump, not a
+        # retroactive invalidation or a false claim about historical runs.
+        manifest = json.loads(self.VALID_RUN_MANIFEST)
+        manifest["version"] = 1
+        manifest.pop("runner_protocol")
+        manifest["prompt_bundle"]["components"] = [
+            manifest["prompt_bundle"]["components"][0]
+        ]
+        instance = {
+            **VALID_INSTANCE,
+            "runs/2026-07-21-001.json": json.dumps(manifest),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize(instance, Path(directory))
+            code, stdout, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("0 errors", stdout)
+
+        manifest["runner_protocol"] = {
+            "version": 1,
+            "commit": "be83303bfbe3a1523c72ebaa3f0baa03389c5832",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, _ = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
 
     def test_run_manifest_id_must_match_its_file_name(self):
         # §17.6: run_id is the file's date-serial — a disagreeing pair
@@ -1421,7 +1452,8 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertNotIn("rendered prompt text", stderr)
 
     def test_run_manifest_requires_exact_runner_protocol_pin(self):
-        # §17.7: version and defining commit are one fail-closed pin.
+        # §17.7: v2 requires the pin, and version plus defining commit are
+        # one fail-closed value.
         manifest = json.loads(self.VALID_RUN_MANIFEST)
         manifest["runner_protocol"]["commit"] = "f" * 40
         instance = {
@@ -1433,6 +1465,15 @@ class SchemaValidatorTests(unittest.TestCase):
             code, stdout, stderr = self.run_cli("validate", directory)
         self.assertEqual(1, code)
         self.assertIn("$.runner_protocol.commit", stderr)
+
+        manifest.pop("runner_protocol")
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                **VALID_INSTANCE,
+                "runs/2026-07-21-001.json": json.dumps(manifest),
+            }, Path(directory))
+            code, _, _ = self.run_cli("validate", directory)
+        self.assertEqual(1, code)
 
     def test_run_manifest_requires_selected_runner_schema_pair(self):
         # §17.7: id presence, uniqueness, version, and role pairing are
