@@ -202,7 +202,10 @@ class _Parser:
             if fields > MAX_FIELDS:
                 self.fail(line.number, f"mapping has more than {MAX_FIELDS} fields")
             if key in result:
-                self.fail(line.number, f"duplicate key {key!r}")
+                self.fail(
+                    line.number,
+                    "duplicate-key; expected unique mapping keys",
+                )
             if raw is None:
                 child = self.significant(next_pos)
                 if child >= len(self.lines) or self.lines[child].indent <= indent:

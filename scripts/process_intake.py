@@ -359,46 +359,23 @@ def _load_known_ids(
 def _preflight_tree(instance: atlas_io.AtlasInstance) -> None:
     """Refuse symlinks and special files under the resolution input roots.
 
-    §24.2 containment: the builder's own readers follow paths normally, so
-    reference resolution must not trust ids reachable only through a
-    symlink out of the instance or ignore boundary — the tree is walked
-    lstat-only before any id is loaded.
+    §24.2 containment: reference resolution must not trust ids reachable only
+    through a symlink out of the instance or ignore boundary. The same shared
+    lstat/no-follow walker used by the validator and builder checks the whole
+    input tree before any id is loaded.
     """
 
-    for top in ("atlas", "state"):
-        stack = [instance.path(top)]
-        while stack:
-            directory = stack.pop()
-            try:
-                entries = list(os.scandir(directory))
-            except OSError:
-                _preflight_fail(instance, directory)
-            for entry in entries:
-                is_directory = False
-                try:
-                    if entry.is_symlink():
-                        _preflight_fail(instance, entry.path)
-                    is_directory = entry.is_dir(follow_symlinks=False)
-                    if not is_directory and not entry.is_file(
-                        follow_symlinks=False
-                    ):
-                        _preflight_fail(instance, entry.path)
-                except OSError:
-                    _preflight_fail(instance, entry.path)
-                if is_directory:
-                    stack.append(Path(entry.path))
-
-
-def _preflight_fail(instance: atlas_io.AtlasInstance, path) -> None:
     try:
-        relative = Path(path).relative_to(instance.root).as_posix()
-    except ValueError:
-        relative = "."
-    raise atlas_io.AtlasIOError(
-        atlas_io.Diagnostic(
-            reason=atlas_io.ReasonCode.UNSAFE_PATH, relative_path=relative
-        )
-    )
+        reader = validate_atlas.AtlasReader(instance.root)
+        for top in ("atlas", "state"):
+            reader.scan(top, recursive=True)
+    except validate_atlas.ReaderError as exc:
+        raise atlas_io.AtlasIOError(
+            atlas_io.Diagnostic(
+                reason=atlas_io.ReasonCode.UNSAFE_PATH,
+                relative_path=exc.relative_path,
+            )
+        ) from None
 
 
 def _journal_outputs(
@@ -407,18 +384,34 @@ def _journal_outputs(
     """Map every journal row's intake key to its (record kind, row)."""
 
     outputs: dict[str, tuple[str, dict]] = {}
-    state = instance.path("state")
-    for stem, kind in (
-        ("encounters", "encounter"),
-        ("artifacts", "artifact"),
-        ("questions", "question"),
-    ):
-        for found in validate_atlas._journal_paths(state, stem):
-            relative = found.relative_to(instance.root).as_posix()
-            path = atlas_io._NoFollowPath(instance.root, instance.path(relative))
-            for _number, row in validate_atlas._read_jsonl(path):
-                if isinstance(row, dict) and isinstance(row.get("intake"), str):
-                    outputs[row["intake"]] = (kind, row)
+    relative = "state"
+    try:
+        reader = validate_atlas.AtlasReader(instance.root)
+        for stem, kind in (
+            ("encounters", "encounter"),
+            ("artifacts", "artifact"),
+            ("questions", "question"),
+        ):
+            for found in validate_atlas._journal_paths(reader, stem):
+                relative = found.relative_path.as_posix()
+                for _number, row in validate_atlas._read_jsonl(found):
+                    if (isinstance(row, dict)
+                            and isinstance(row.get("intake"), str)):
+                        outputs[row["intake"]] = (kind, row)
+    except validate_atlas.ReaderError as exc:
+        raise atlas_io.AtlasIOError(
+            atlas_io.Diagnostic(
+                reason=atlas_io.ReasonCode.UNSAFE_PATH,
+                relative_path=exc.relative_path,
+            )
+        ) from None
+    except validate_atlas.JsonInputError:
+        raise atlas_io.AtlasIOError(
+            atlas_io.Diagnostic(
+                reason=atlas_io.ReasonCode.INVALID_JSONL,
+                relative_path=relative,
+            )
+        ) from None
     return outputs
 
 

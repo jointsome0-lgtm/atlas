@@ -1,10 +1,10 @@
-import json
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 import validate_atlas
+from atlas_reader import strict_json_loads
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,22 +13,7 @@ VIEWER_ACCEPTANCE = ROOT / "fixtures" / "viewer-acceptance"
 
 
 def strict_json(raw: bytes):
-    def reject_duplicate_keys(items):
-        result = {}
-        for key, value in items:
-            if key in result:
-                raise ValueError(f"duplicate JSON key {key!r}")
-            result[key] = value
-        return result
-
-    def reject_non_finite(name):
-        raise ValueError(f"non-finite JSON number {name!r} is unsupported")
-
-    return json.loads(
-        raw.decode("utf-8"),
-        object_pairs_hook=reject_duplicate_keys,
-        parse_constant=reject_non_finite,
-    )
+    return strict_json_loads(raw.decode("utf-8"))
 
 
 class DemoGraphFixtureTests(unittest.TestCase):
