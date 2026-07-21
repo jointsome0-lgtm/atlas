@@ -208,15 +208,6 @@
       "fields": [
         "knowledge"
       ]
-    },
-    {
-      "id": "zone:shoulders",
-      "type": "zone",
-      "title": "Shoulders",
-      "notes": "\n# Shoulders\n\nDemo fixture authored by Vera Example.\n",
-      "fields": [
-        "body"
-      ]
     }
   ],
   "edges": [
@@ -279,15 +270,6 @@
       "provenance": [
         "artifact:demo-retry-script"
       ]
-    },
-    {
-      "source": "pattern:push-up",
-      "target": "zone:shoulders",
-      "type": "loads",
-      "provenance": [
-        "pattern:push-up"
-      ],
-      "weight": "high"
     },
     {
       "source": "concept:rest-api",
