@@ -17,6 +17,21 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_GRAPH = ROOT / "fixtures" / "demo-graph" / "atlas-graph.json"
+VIEWER_ACCEPTANCE = ROOT / "fixtures" / "viewer-acceptance"
+UNSUPPORTED_VERSION_FIXTURE = VIEWER_ACCEPTANCE / "unsupported-version.json"
+REJECTED_ACCEPTANCE = VIEWER_ACCEPTANCE / "rejected"
+EXPECTED_REJECTED_FIXTURES = {
+    "dangling-provenance.json",
+    "discriminant-on-wrong-edge-type.json",
+    "duplicate-edge-identity.json",
+    "duplicate-node-id.json",
+    "formerly-on-journal-backed-kind.json",
+    "kind-changing-formerly-redirect.json",
+    "living-formerly-redirect.json",
+    "one-to-n-formerly-redirect.json",
+    "primary-supporting-role-conflict.json",
+    "reversed-related-to-pair.json",
+}
 NODE_TYPE_ORDER = [
     "plan", "concept", "material", "material_part", "direction",
     "suggested_route", "personal_trail", "trail_segment", "artifact",
@@ -119,9 +134,9 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual("alert", self.page.locator(".state-block").get_attribute("role"))
         self.assertIn("This graph file can't be displayed", self.page.locator("#main").inner_text())
 
-        self.write_graph(self.graph_envelope(version=7))
+        shutil.copyfile(UNSUPPORTED_VERSION_FIXTURE, self.graph_path)
         self.open_state("#mode=field", "UNSUPPORTED_VERSION")
-        self.assertIn("format version 7", self.page.locator("#main").inner_text())
+        self.assertIn("format version 2", self.page.locator("#main").inner_text())
 
         self.write_graph(self.graph_envelope())
         self.open_state("#mode=field", "EMPTY")
@@ -187,73 +202,12 @@ class ViewerBrowserTests(unittest.TestCase):
             self.page.locator("#main").inner_text())
 
     def test_malformed_builder_impossible_graphs_reject_whole(self):
-        alone = {
-            "id": "concept:alone", "type": "concept", "title": "Alone",
-            "fields": ["knowledge"], "aliases": [],
-        }
-        other = {
-            "id": "concept:other", "type": "concept", "title": "Other",
-            "fields": ["knowledge"], "aliases": [],
-        }
-        related = {
-            "source": "concept:alone", "target": "concept:other",
-            "type": "related_to", "provenance": ["concept:alone"],
-            "weight": "unassessed",
-        }
-        variants = {
-            "duplicate node id": self.graph_envelope(nodes=[alone, dict(alone)]),
-            "dangling provenance": self.graph_envelope(
-                nodes=[alone, other],
-                edges=[{**related, "provenance": ["concept:absent"]}]),
-            "duplicate edge identity": self.graph_envelope(
-                nodes=[alone, other], edges=[related, dict(related)]),
-            "living formerly redirect": self.graph_envelope(
-                nodes=[alone, {**other, "formerly": ["concept:alone"]}]),
-            "1-to-n formerly redirect": self.graph_envelope(
-                nodes=[{**alone, "formerly": ["concept:old"]},
-                       {**other, "formerly": ["concept:old"]}]),
-            "kind-changing formerly redirect": self.graph_envelope(
-                nodes=[{**alone, "formerly": ["material:old"]}]),
-            "formerly on a journal-backed kind": self.graph_envelope(
-                nodes=[alone, {
-                    "id": "question:q", "type": "question", "title": "",
-                    "fields": ["knowledge"], "formerly": ["question:old"],
-                    "text": "t", "created_at": "2026-07-10",
-                    "source": {"artifact": "artifact:a"},
-                }]),
-            "discriminant on the wrong edge type": self.graph_envelope(
-                nodes=[alone, other],
-                edges=[{**related, "order": 1}]),
-            "reversed related_to pair": self.graph_envelope(
-                nodes=[alone, other],
-                edges=[{**related, "source": "concept:other",
-                        "target": "concept:alone"}]),
-            "primary and supporting role conflict": self.graph_envelope(
-                nodes=[alone, {
-                    "id": "material:m", "type": "material", "title": "M",
-                    "fields": ["knowledge"], "kind": "docs", "url": "",
-                    "status": "active",
-                }, {
-                    "id": "question:q", "type": "question", "title": "",
-                    "fields": ["knowledge"], "text": "t",
-                    "created_at": "2026-07-10",
-                    "source": {"artifact": "artifact:a"},
-                }, {
-                    "id": "artifact:a", "type": "artifact", "title": "",
-                    "fields": ["knowledge"], "kind": "script", "path": "p",
-                    "observed_at": "2026-07-10", "summary": "s",
-                    "evidence_strength": "applied",
-                }],
-                edges=[
-                    {"source": "material:m", "target": "question:q",
-                     "type": "primary_for", "provenance": ["question:q"]},
-                    {"source": "material:m", "target": "question:q",
-                     "type": "supporting_for", "provenance": ["question:q"]},
-                ]),
-        }
-        for name, graph in variants.items():
-            with self.subTest(variant=name):
-                self.write_graph(graph)
+        fixture_names = sorted(path.name for path in REJECTED_ACCEPTANCE.iterdir())
+        self.assertTrue(fixture_names)
+        self.assertEqual(sorted(EXPECTED_REJECTED_FIXTURES), fixture_names)
+        for name in fixture_names:
+            with self.subTest(fixture=name):
+                shutil.copyfile(REJECTED_ACCEPTANCE / name, self.graph_path)
                 self.open_state("#mode=field", "REJECTED")
 
     def test_bom_crlf_and_withheld_reject_whole(self):
