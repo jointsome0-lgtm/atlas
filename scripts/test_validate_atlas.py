@@ -87,6 +87,19 @@ GRAPH_WITH_NODE = VALID_EMPTY_GRAPH.replace(
     ' "fields": ["knowledge"], "aliases": []}],',
 )
 
+# §20 step 9 is total over concepts and questions: the no-knowledge values
+# every one carries until evidence or a decision moves it (§14, §27.1).
+NO_KNOWLEDGE_CONCEPT = ('{"exposure": "unseen", "confidence": "unknown",'
+                        ' "clarity": "vague", "coverage": "none",'
+                        ' "evidence": [], "decisions": []}')
+
+
+def graph_state(*concept_ids):
+    entries = ", ".join(f'"{concept_id}": {NO_KNOWLEDGE_CONCEPT}'
+                        for concept_id in concept_ids)
+    return f'"state": {{{entries}}},'
+
+
 GRAPH_WITH_EDGE = VALID_EMPTY_GRAPH.replace(
     '"edges": [],',
     '"edges": [{"source": "concept:a", "target": "concept:b", "type": "loads",'
@@ -185,6 +198,8 @@ VALID_INSTANCE = {
         '"edges": [{"source": "concept:example", "target": "concept:other",'
         ' "type": "related_to", "provenance": ["concept:example"],'
         ' "weight": "low"}],',
+    ).replace(
+        '"state": {},', graph_state("concept:example", "concept:other"),
     ),
     "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH,
     "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH,
@@ -1808,6 +1823,7 @@ class SchemaValidatorTests(unittest.TestCase):
             ' {"source": "encounter:e", "target": "material:m",'
             ' "type": "visited", "provenance": ["encounter:e"]}],',
         )
+        graph = graph.replace('"state": {},', graph_state("concept:a"))
         with tempfile.TemporaryDirectory() as directory:
             materialize({"graph/atlas-graph.json": graph}, Path(directory))
             code, stdout, stderr = self.run_cli("validate", directory)
@@ -1818,6 +1834,51 @@ class SchemaValidatorTests(unittest.TestCase):
         code, stdout, stderr = self.run_cli("validate", str(root))
         self.assertEqual(0, code, stderr)
         self.assertIn("11 frontmatter documents", stdout)
+
+    def test_graph_boundary_holds_the_step_9_state_contract(self):
+        # Three producer guarantees the schema cannot express on its own:
+        # the fold is total over concepts and questions (§20 step 9, §27.1),
+        # a review-gated value moves only with its decision reference
+        # (§14.6/§9.8/§31.3), and one dimension never carries two.
+        gated = ('{"exposure": "unseen", "confidence": "high",'
+                 ' "clarity": "vague", "coverage": "none",'
+                 ' "evidence": [], "decisions": []}')
+        twice = ('{"exposure": "unseen", "confidence": "high",'
+                 ' "clarity": "vague", "coverage": "none", "evidence": [],'
+                 ' "decisions": [{"dimension": "confidence",'
+                 ' "date": "2026-07-16", "evidence": []},'
+                 ' {"dimension": "confidence", "date": "2026-07-17",'
+                 ' "evidence": []}]}')
+        cases = {
+            "sparse": ('"state": {},', "carries no /state entry"),
+            "gated-without-decision": (
+                f'"state": {{"concept:example": {gated}}},',
+                "with no decision reference",
+            ),
+            "two-references-for-one-dimension": (
+                f'"state": {{"concept:example": {twice}}},',
+                "two decision references for confidence",
+            ),
+        }
+        for name, (state, expected) in cases.items():
+            graph = (GRAPH_WITH_NODE % "concept").replace('"state": {},', state)
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                materialize({"graph/atlas-graph.json": graph}, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(expected, stderr)
+
+    def test_impossible_calendar_date_is_rejected_like_the_builder(self):
+        # §9/§10: the boundary preflight has to predict the build, so the
+        # reader that enforces the declared date shape enforces the calendar
+        # the builder parses — without echoing the rejected value (§24.4).
+        row = VALID_ARTIFACT_ROW.replace('"2026-07-16"', '"2026-02-30"')
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({"state/artifacts.jsonl": row}, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code, stderr)
+        self.assertIn("not a real calendar date", stderr)
+        self.assertNotIn("2026-02-30", stderr)
 
     def test_each_negative_instance_emits_error(self):
         for name, tree in sorted(INVALID_INSTANCES.items()):

@@ -329,7 +329,15 @@ export function validateGraph(value) {
   if (Object.prototype.hasOwnProperty.call(value, "generated_at") && (typeof value.generated_at !== "string" || !GENERATED_AT_RE.test(value.generated_at))) return diagnostic("/generated_at", "shape");
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return diagnostic("", "arrayShape");
   if (!Array.isArray(value.trails) || value.trails.length !== 0) return diagnostic("/trails", "producerClosed");
-  if (!isPlainObject(value.state) || Object.keys(value.state).length !== 0) return diagnostic("/state", "producerClosed");
+  // §20 step 9 is implemented, so state is no longer producer-closed: the
+  // fold is live and every emission carries it. The viewer does not render
+  // state yet, so it checks the join it would rest on — an entry is an
+  // object keyed by a node this same file emits (below, once node ids are
+  // known) — instead of restating the §10.4 value shapes it does not read.
+  if (!isPlainObject(value.state)) return diagnostic("/state", "type");
+  for (const entry of Object.values(value.state)) {
+    if (!isPlainObject(entry)) return diagnostic("/state", "entryShape");
+  }
   if (!isPlainObject(value.influence) || Object.keys(value.influence).length !== 0) return diagnostic("/influence", "producerClosed");
   if (!Array.isArray(value.frontier) || value.frontier.length !== 0) return diagnostic("/frontier", "producerClosed");
   if (!isPlainObject(value.projections) || !Object.values(value.projections).every((item) => typeof item === "string" && SLUG_RE.test(item))) return diagnostic("/projections", "slugMap");
@@ -352,6 +360,12 @@ export function validateGraph(value) {
     // resolve ambiguously (§16.5).
     if (nodeIds.has(value.nodes[index].id)) return diagnostic("/nodes/" + index + "/id", "duplicateId");
     nodeIds.add(value.nodes[index].id);
+  }
+  // §20 step 9: state is keyed by the living node whose derived value it
+  // carries. A key with no node is a partial or foreign file — the same
+  // reason a dangling edge endpoint rejects the whole graph (§16.5).
+  for (const key of Object.keys(value.state)) {
+    if (!nodeIds.has(key)) return diagnostic("/state", "danglingKey");
   }
   // §20 step 12/§32.1: every emitted zone carries its curated figure_region —
   // a zone the silhouette cannot place never leaves the build, so a missing

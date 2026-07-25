@@ -7,6 +7,7 @@ schema keyword is a validation error, never an ignored annotation.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import sys
@@ -34,6 +35,24 @@ from frontmatter import (
 ROOT = Path(__file__).resolve().parents[1]
 JOURNAL_ROW_BYTES = _builder.JOURNAL_ROW_BYTES  # §25.8 — one source
 _JOURNAL_READ_BYTES = 8_192
+
+# §25.7 schemas declare a date by its shape, and JSON Schema cannot express
+# calendar validity. The reader that enforces the declared shape enforces the
+# calendar too: otherwise a clean preflight would still not predict the
+# build, which parses the same fields and refuses 2026-02-30 (§9/§10).
+_DATE_SHAPE_PATTERNS = frozenset({
+    "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+    "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$",
+    "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+})
+
+
+def _is_calendar_date(value: str) -> bool:
+    try:
+        datetime.date.fromisoformat(value[:10])
+    except ValueError:
+        return False
+    return True
 
 SCHEMA_NAMES = {
     "concept",
@@ -289,6 +308,11 @@ class SchemaValidator:
             if not _ecma_search(schema["pattern"], instance):
                 errors.append(f"{path}: string does not match pattern "
                               f"{schema['pattern']!r}")
+            elif (schema["pattern"] in _DATE_SHAPE_PATTERNS
+                    and not _is_calendar_date(instance)):
+                # §24.4: the rejected value stays out of the diagnostic.
+                errors.append(f"{path}: date shape is not a real calendar "
+                              "date (§9/§10)")
         if "minimum" in schema and isinstance(instance, int) and not isinstance(instance, bool):
             if instance < schema["minimum"]:
                 errors.append(f"{path}: value is below minimum "
@@ -603,6 +627,38 @@ _PROVENANCE_TARGET_OWNED = {
 # primary_for/supporting_for ownership is contextual (§11.1–§11.3):
 # authored on a route target, derived from journal records on question
 # and trail targets — checked against the payload-backing sets.
+
+
+def _review_gate_errors(entry: dict, path: Path, position: int) -> list[str]:
+    """§14.6/§9.8: a gated value moves only by a reviewed decision, so a
+    non-default value must carry that dimension's current decision
+    reference, and one dimension never carries two competing references.
+    The schema closes each value independently and cannot express the
+    join, which would let a fixture or an alternate producer import
+    understanding past the gate (§31)."""
+    errors: list[str] = []
+    seen: set[str] = set()
+    for reference in _as_list(entry.get("decisions")):
+        if not isinstance(reference, dict):
+            continue
+        dimension = reference.get("dimension")
+        if not isinstance(dimension, str):
+            continue
+        if dimension in seen:
+            errors.append(
+                f"{path}: /state property #{position} carries two decision "
+                f"references for {dimension} (§9.13)"
+            )
+        seen.add(dimension)
+    for dimension, default in sorted(_builder.GATED_DEFAULTS.items()):
+        value = entry.get(dimension)
+        if value is None or value == default or dimension in seen:
+            continue
+        errors.append(
+            f"{path}: /state property #{position} moves {dimension} off its "
+            "default with no decision reference (§14.6/§9.8)"
+        )
+    return errors
 
 
 def _graph_field_errors(instance: dict, path: Path) -> list[str]:
@@ -1105,6 +1161,25 @@ def validate_instance(root: Path):
                         errors.append(
                             f"{path}: /state property #{position} does not "
                             f"carry the {node_type} fold shape (§20 step 9)"
+                        )
+                    if isinstance(state_entry, dict):
+                        errors.extend(
+                            _review_gate_errors(state_entry, path, position))
+                # §14.6/§9.8 make every gated value review-gated, and §20
+                # step 9 makes the fold total over the kinds that carry a
+                # default: a concept is at worst `unseen`/no-knowledge and a
+                # question is at worst `open`. Material state stays sparse —
+                # contact is what creates it. Without this, `state: {}`
+                # satisfies the schema and a producer or hand-written
+                # fixture can erase "no evidence yet" vs "never folded".
+                state_keys = set(_as_dict(instance.get("state")))
+                for state_id, node_type in sorted(node_types.items()):
+                    if (node_type in ("concept", "question")
+                            and state_id not in state_keys):
+                        errors.append(
+                            f"{path}: {state_id} carries no /state entry — "
+                            "the step-9 fold is total over concepts and "
+                            "questions (§20 step 9)"
                         )
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):

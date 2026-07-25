@@ -2828,6 +2828,61 @@ class StateFoldTests(unittest.TestCase):
                     for error in errors), errors)
             self.assertNotIn("zone:shoulder", graph["state"])
 
+    def test_decisions_the_slice_cannot_fold_are_all_refused(self):
+        # The genus behind the body ladders: §14.9 edge weight and §32's
+        # pattern targets validate as canon but fall outside this fold too.
+        # Anything the fold does not apply fails closed, so no build reports
+        # success while dropping a confirmed decision.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        cases = {
+            "weight": (
+                self._decision(
+                    "2026-01-02", "supports:part:b/y->part:a/x", "weight",
+                    "high", ["artifact:2026-01-01-001"]),
+                "§14.9 edge weight",
+            ),
+            "pattern-target": (
+                self._decision(
+                    "2026-01-02", "pattern:press", "confidence", "high",
+                    ["artifact:2026-01-01-001"]),
+                "§32 body-domain target",
+            ),
+        }
+        for name, (decision, expected) in cases.items():
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "patterns/press.md": (
+                    "---\nid: pattern:press\ntype: pattern\n"
+                    "title: Press (Vera Example)\n---\n"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertTrue(any(expected in error for error in errors), errors)
+            self.assertNotIn("pattern:press", graph["state"])
+
+    def test_non_scalar_decision_fields_fail_closed_without_a_traceback(self):
+        # §24.4: a persisted row is untrusted input. An unhashable value in
+        # a field the reader tests for membership must produce the ordinary
+        # prefixed diagnostic, never a set-lookup traceback.
+        for field, value in (("dimension", ["confidence"]),
+                             ("decision", {"confirmed": True}),
+                             ("to", ["high"])):
+            decision = self._decision(
+                "2026-01-02", "concept:c", "confidence", "high",
+                ["artifact:2026-01-01-001"])
+            decision[field] = value
+            with self.subTest(field=field), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertTrue(any(f"/{field}" in error for error in errors),
+                            errors)
+
     def test_invalid_encounter_date_fails_closed_without_a_traceback(self):
         # §9/§10: a rejected date leaves the node dateless, and the material
         # fold still has to reduce over it — the owner gets the prefixed

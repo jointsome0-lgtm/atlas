@@ -46,6 +46,8 @@ EXPECTED_REJECTED_FIXTURES = {
     "primary-supporting-role-conflict.json",
     "projection-key-not-zone-id.json",
     "reversed-related-to-pair.json",
+    "state-entry-not-an-object.json",
+    "state-key-without-node.json",
     "step-on-non-route-material-role.json",
     "unsorted-provenance.json",
     "zone-without-projection.json",

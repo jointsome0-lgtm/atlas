@@ -266,6 +266,11 @@ CONCEPT_DEFAULTS = {
     "clarity": "vague",
     "coverage": "none",
 }
+QUESTION_DEFAULT_STATUS = "open"
+# §14.6/§9.8: the review-gated values and the value each one holds until a
+# decision moves it. A non-default value without its decision is imported
+# understanding (§31), so the graph boundary rejects it.
+GATED_DEFAULTS = CONCEPT_DEFAULTS | {"status": QUESTION_DEFAULT_STATUS}
 DECISION_VALUES = {
     "confidence": {"unknown", "low", "medium", "high"},
     "clarity": {"vague", "rough", "stable", "disputed"},
@@ -273,11 +278,34 @@ DECISION_VALUES = {
     "weight": {"low", "medium", "high"},
     "status": {"open", "clarified", "resolved", "stale"},
 }
-# §29/#45: §9.13's body ladders are canon but their fold is a deferred
-# implementation requirement during the Body Atlas freeze (#58). The builder
-# names them only to refuse them: accepting a body decision it cannot fold
-# would swallow owner-authored state in a build that reports success.
-FROZEN_BODY_DIMENSIONS = {"strength", "endurance", "mobility", "condition"}
+# §20 step 9 slice boundary, in one place. FOLDED_DECISION_TARGETS is the
+# only source of truth for what this build applies: the refusals below and
+# the fold's own scope predicate both read it, so no dimension or target
+# kind can be accepted into a build that then quietly fails to fold it.
+FOLDED_DECISION_TARGETS = {
+    "confidence": {"concept"},
+    "clarity": {"concept"},
+    "coverage": {"concept"},
+    "status": {"question"},
+}
+# Canon-valid §9.13 rows this slice does not fold, with the reason the owner
+# reads. §9.13 and journal-decision.schema.json keep the whole vocabulary
+# (#58): only the builder defers, and each gate reopens by deleting a line.
+DEFERRED_DIMENSIONS = {
+    "weight": "§14.9 edge weight, folded in a later slice",
+    "strength": "a §32 body ladder, deferred during the Body Atlas freeze "
+                "(§29, #45)",
+    "endurance": "a §32 body ladder, deferred during the Body Atlas freeze "
+                 "(§29, #45)",
+    "mobility": "a §32 body ladder, deferred during the Body Atlas freeze "
+                "(§29, #45)",
+    "condition": "a §32 body ladder, deferred during the Body Atlas freeze "
+                 "(§29, #45)",
+}
+DEFERRED_DECISION_TARGET_KINDS = {
+    "pattern": "a §32 body-domain target, deferred during the Body Atlas "
+               "freeze (§29, #45)",
+}
 DECISION_TARGET_PREFIXES = {
     "confidence": {"concept", "pattern"},
     "clarity": {"concept", "pattern"},
@@ -1173,31 +1201,6 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         shape = PART_ID_RE if prefix == "part" else NODE_ID_RE
         return prefix in prefixes and bool(shape.fullmatch(value))
 
-    def valid_weight_target(value):
-        # §9.13/§14.9: validate the out-of-slice decision row without
-        # applying it. This keeps step 8's reader schema-complete while
-        # leaving every edge weight untouched in this slice.
-        if not isinstance(value, str) or ":" not in value or "->" not in value:
-            return False
-        role, endpoints = value.split(":", 1)
-        if role not in AUTHORED_ROLES | {"supports"}:
-            return False
-        source, separator, target = endpoints.partition("->")
-        if not separator or "->" in target:
-            return False
-        rule = ENDPOINT_RULES.get(role)
-        return bool(
-            rule
-            and valid_node_ref(source, {
-                prefix for prefix, kind in ID_PREFIXES.items()
-                if kind in rule[0]
-            })
-            and valid_node_ref(target, {
-                prefix for prefix, kind in ID_PREFIXES.items()
-                if kind in rule[1]
-            })
-        )
-
     for position, (origin, row, row_date) in enumerate(
             journal_rows("decisions", "date"), 1):
         # §9.13: diagnostics name the row and field expectation without
@@ -1209,25 +1212,33 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             errors.append(f"{origin}: decision row requires {field} (§9.13)")
         dimension = row.get("dimension")
         valid = not missing
-        if dimension in FROZEN_BODY_DIMENSIONS:
-            errors.append(f"{origin}: /dimension {dimension} is a §32 body "
-                          "ladder, deferred during the Body Atlas freeze "
-                          "(§29, #45)")
-            valid = False
-        elif not isinstance(dimension, str) or dimension not in DECISION_VALUES:
+        # isinstance first: a persisted row can carry an unhashable
+        # /dimension, and set membership on one raises instead of
+        # reporting the ordinary prefixed diagnostic (§24.4).
+        if not isinstance(dimension, str) or (
+                dimension not in DECISION_VALUES
+                and dimension not in DEFERRED_DIMENSIONS):
             errors.append(f"{origin}: /dimension must name a §9.13 "
                           "StateDecision dimension")
             valid = False
+        elif dimension in DEFERRED_DIMENSIONS:
+            errors.append(f"{origin}: /dimension {dimension} is "
+                          f"{DEFERRED_DIMENSIONS[dimension]}")
+            valid = False
         target = row.get("target")
-        if isinstance(dimension, str) and dimension in DECISION_VALUES:
-            if dimension == "weight":
-                target_valid = valid_weight_target(target)
-            else:
-                target_valid = valid_node_ref(
-                    target, DECISION_TARGET_PREFIXES[dimension])
+        if (isinstance(dimension, str) and dimension in DECISION_VALUES
+                and dimension not in DEFERRED_DIMENSIONS):
+            target_valid = valid_node_ref(
+                target, DECISION_TARGET_PREFIXES[dimension])
             if not target_valid:
                 errors.append(f"{origin}: /target must match the "
                               f"{dimension} target kind (§9.13)")
+                valid = False
+            elif id_type(target) in DEFERRED_DECISION_TARGET_KINDS:
+                # Canon accepts the kind (§9.13); this slice does not fold it.
+                errors.append(
+                    f"{origin}: /target is "
+                    f"{DEFERRED_DECISION_TARGET_KINDS[id_type(target)]}")
                 valid = False
             if (not isinstance(row.get("to"), str)
                     or row.get("to") not in DECISION_VALUES[dimension]):
@@ -1244,7 +1255,8 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         if not isinstance(row.get("proposed_by"), str):
             errors.append(f"{origin}: /proposed_by must be a string (§9.13)")
             valid = False
-        if row.get("decision") not in DECISION_OUTCOMES:
+        outcome = row.get("decision")
+        if not isinstance(outcome, str) or outcome not in DECISION_OUTCOMES:
             errors.append(f"{origin}: /decision must be confirmed or "
                           "rejected (§9.13)")
             valid = False
@@ -1751,18 +1763,19 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     for position, origin, row, row_date in decision_records:
         dimension = row["dimension"]
         target = row["target"]
-        if dimension != "weight":
-            survivor = retired.get(target)
-            if survivor is not None:
-                warnings.append(
-                    f"{origin}: stale journal ref {target} resolved to "
-                    f"{survivor} (§34.4)")
-                target = survivor
-            if target not in nodes:
-                warnings.append(
-                    f"{origin}: {target} missing — decision target skipped "
-                    "(deletion is the owner's right)")
-                continue
+        # Every accepted dimension targets a node id: the one dimension that
+        # named an edge (§14.9 weight) is refused above, not folded here.
+        survivor = retired.get(target)
+        if survivor is not None:
+            warnings.append(
+                f"{origin}: stale journal ref {target} resolved to "
+                f"{survivor} (§34.4)")
+            target = survivor
+        if target not in nodes:
+            warnings.append(
+                f"{origin}: {target} missing — decision target skipped "
+                "(deletion is the owner's right)")
+            continue
         for ref in sorted(set(row["evidence"])):
             if ref not in nodes:
                 # §20.1: a decision inside the cut still applies when its
@@ -1772,14 +1785,10 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                     "dangling evidence ref (§20.1)")
         if row["decision"] != "confirmed":
             continue
-        in_scope = (
-            dimension in CONCEPT_DEFAULTS
-            and nodes.get(target, {}).get("type") == "concept"
-        ) or (
-            dimension == "status"
-            and nodes.get(target, {}).get("type") == "question"
-        )
-        if not in_scope:
+        # The same table the refusals above read: an accepted row is a
+        # folded row, so nothing validates into a silently dropped decision.
+        if (nodes.get(target, {}).get("type")
+                not in FOLDED_DECISION_TARGETS.get(dimension, frozenset())):
             continue
         key = (target, dimension)
         score = (row_date, position)
@@ -1855,7 +1864,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             if node["type"] == "question"):
         winner = decision_winners.get((question_id, "status"))
         entry = {
-            "status": winner[1] if winner else "open",
+            "status": winner[1] if winner else QUESTION_DEFAULT_STATUS,
             "evidence": winner[2] if winner else [],
             "decisions": (
                 [decision_ref("status", winner)] if winner else []),
