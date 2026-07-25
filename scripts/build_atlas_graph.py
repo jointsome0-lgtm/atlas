@@ -267,6 +267,17 @@ CONCEPT_DEFAULTS = {
     "coverage": "none",
 }
 QUESTION_DEFAULT_STATUS = "open"
+
+
+def freshness_of(last_seen: str, as_of: str) -> str:
+    """§14.7: freshness is a derivation, not a stored judgement — the age of
+    the last contact against the fold's as-of, in inclusive 30/90-day
+    buckets. The boundary recomputes it from this one definition."""
+    age = (datetime.date.fromisoformat(as_of)
+           - datetime.date.fromisoformat(last_seen)).days
+    return "fresh" if age <= 30 else "aging" if age <= 90 else "stale"
+
+
 # §14.6/§9.8: the review-gated values and the value each one holds until a
 # decision moves it. A non-default value without its decision is imported
 # understanding (§31), so the graph boundary rejects it.
@@ -958,11 +969,16 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             return
         paths = []
         try:
+            # §8/§20.1: rotation moves old rows OUT of the direct file, so
+            # the per-year files are the older half of the concatenation
+            # (lexicographic among themselves) and state/<stem>.jsonl is its
+            # newest tail — the rank atlas_io already gives receipts. §20.1
+            # counts position through that order, so a same-day tie on one
+            # target and dimension resolves to the row appended last.
+            paths.extend(reader.scan(Path("state") / stem, suffix=".jsonl"))
             direct = reader.optional_file(Path("state") / f"{stem}.jsonl")
             if direct is not None:
                 paths.append(direct)
-            # §8: per-year rotation concatenates lexicographically (§20.1).
-            paths.extend(reader.scan(Path("state") / stem, suffix=".jsonl"))
         except ReaderError as exc:
             errors.append(str(exc))
             return
@@ -1647,7 +1663,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             "exposure_rank": 0,
             "last_seen": None,
             "evidence": set(),
-            "strengths": set(),
+            "strengths": {},  # §14.5 strength → the dates it was recorded
             "sensitivity": node.get("sensitivity"),
         }
 
@@ -1695,13 +1711,20 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             observe_concept(
                 concept_id, artifact_rank.get(strength, 0), date, artifact_id)
             current = concept_work.get(concept_id)
-            if current is not None:
-                current["strengths"].add(strength)
+            if current is not None and date is not None:
+                current["strengths"].setdefault(strength, []).append(date)
 
     # explained + reviewed is the only compound artifact transition: an
-    # explanation that survived review reaches taught (§14.5).
+    # explanation that survived review reaches taught (§14.1/§14.5). The
+    # review has to be able to be a review OF that explanation, so it cannot
+    # predate it — old review history on a concept does not make the next
+    # explanation taught. Absent a link from review to reviewed work, dates
+    # are the evidence available: the latest review against the earliest
+    # explanation, same day included (both land undated-by-hour).
     for current in concept_work.values():
-        if {"explained", "reviewed"} <= current["strengths"]:
+        explanations = current["strengths"].get("explained")
+        reviews = current["strengths"].get("reviewed")
+        if explanations and reviews and max(reviews) >= min(explanations):
             current["exposure_rank"] = len(CONCEPT_EXPOSURE) - 1
 
     # Encounters use the exact id they target for material state (§14.8).
@@ -1838,12 +1861,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         last_seen = current["last_seen"]
         if last_seen is not None and effective_as_of is not None:
             entry["last_seen"] = last_seen
-            age = (
-                datetime.date.fromisoformat(effective_as_of)
-                - datetime.date.fromisoformat(last_seen)
-            ).days
-            entry["freshness"] = (
-                "fresh" if age <= 30 else "aging" if age <= 90 else "stale")
+            entry["freshness"] = freshness_of(last_seen, effective_as_of)
         if current["sensitivity"] is not None:
             entry["sensitivity"] = current["sensitivity"]
         state[concept_id] = entry

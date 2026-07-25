@@ -2828,6 +2828,59 @@ class StateFoldTests(unittest.TestCase):
                     for error in errors), errors)
             self.assertNotIn("zone:shoulder", graph["state"])
 
+    def test_direct_journal_is_the_newest_tail_of_the_rotation(self):
+        # §8/§20.1: rotation moves old rows out, so the per-year files are
+        # the older half and state/decisions.jsonl is the newest tail. A
+        # same-day tie on one target and dimension resolves to the row
+        # appended last — the direct one, never the rotated one.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        rotated = self._decision(
+            "2026-02-01", "concept:c", "confidence", "low",
+            ["artifact:2026-01-01-001"])
+        direct = self._decision(
+            "2026-02-01", "concept:c", "confidence", "high",
+            ["artifact:2026-01-01-001"])
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([artifact]),
+            "state/decisions/2026.jsonl": self._jsonl([rotated]),
+            "state/decisions.jsonl": self._jsonl([direct]),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual("high", graph["state"]["concept:c"]["confidence"])
+
+    def test_taught_needs_a_review_that_can_follow_the_explanation(self):
+        # §14.1/§14.5: taught is an explanation that survived review, so a
+        # review predating the explanation cannot establish it — old review
+        # history must not promote the next explanation.
+        cases = {
+            "review-after": ("2026-01-01", "2026-02-01", "taught"),
+            "same-day": ("2026-01-01", "2026-01-01", "taught"),
+            "review-before": ("2026-02-01", "2026-01-01", "summarized"),
+        }
+        for name, (explained_on, reviewed_on, expected) in cases.items():
+            rows = [
+                self._artifact("artifact:2026-01-01-001", explained_on,
+                               "explained", supports=["concept:c"]),
+                self._artifact("artifact:2026-01-02-001", reviewed_on,
+                               "reviewed", supports=["concept:c"]),
+            ]
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl(rows),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertEqual([], errors)
+            # `reviewed` alone still reaches applied (§14.5); the compound is
+            # what the ordering gates.
+            exposure = graph["state"]["concept:c"]["exposure"]
+            self.assertEqual(
+                expected if expected == "taught" else "applied", exposure)
+
     def test_decisions_the_slice_cannot_fold_are_all_refused(self):
         # The genus behind the body ladders: §14.9 edge weight and §32's
         # pattern targets validate as canon but fall outside this fold too.

@@ -1868,6 +1868,60 @@ class SchemaValidatorTests(unittest.TestCase):
             self.assertEqual(1, code, stderr)
             self.assertIn(expected, stderr)
 
+    def test_graph_boundary_holds_the_derived_state_joins(self):
+        # §14.5/§14.8 move a ladder only on recorded evidence, and §14.7
+        # freshness is a derivation against the as-of, not a stored opinion.
+        moved = ('{"exposure": "applied", "confidence": "unknown",'
+                 ' "clarity": "vague", "coverage": "none",'
+                 ' "evidence": [], "decisions": []}')
+        contradicted = ('{"exposure": "unseen", "confidence": "unknown",'
+                        ' "clarity": "vague", "coverage": "none",'
+                        ' "evidence": [], "decisions": [],'
+                        ' "last_seen": "2026-07-16", "freshness": "stale"}')
+        ahead = ('{"exposure": "unseen", "confidence": "unknown",'
+                 ' "clarity": "vague", "coverage": "none",'
+                 ' "evidence": [], "decisions": [],'
+                 ' "last_seen": "2027-01-01", "freshness": "fresh"}')
+        cases = {
+            "exposure-without-evidence": (moved, "with no evidence"),
+            "freshness-not-derived": (
+                contradicted, "the §14.7 derivation does not produce"),
+            "last-seen-after-as-of": (ahead, "last seen after the graph"),
+        }
+        for name, (entry, expected) in cases.items():
+            graph = (GRAPH_WITH_NODE % "concept").replace(
+                '"version": 1,',
+                '"version": 1, "generated_at": "2026-07-16T00:00:00Z",',
+            ).replace(
+                '"state": {},', f'"state": {{"concept:example": {entry}}},')
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                materialize({"graph/atlas-graph.json": graph}, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(expected, stderr)
+
+    def test_redacted_variant_may_omit_state_it_accounts_for(self):
+        # §32.6: the agent-facing variant keeps a public node whose fold
+        # rested on classed evidence and drops the value, disclosing the
+        # count. Totality holds up to that count and no further.
+        for withheld_state, expected_code in ((1, 0), (0, 1)):
+            graph = VALID_REDACTED_GRAPH.replace(
+                '"nodes": [],',
+                '"nodes": [{"id": "concept:example", "type": "concept",'
+                ' "title": "Example", "fields": ["knowledge"],'
+                ' "aliases": []}],',
+            ).replace('"state": 0,', f'"state": {withheld_state},')
+            with self.subTest(withheld_state=withheld_state), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": (
+                        GRAPH_WITH_NODE % "concept").replace(
+                            '"state": {},', graph_state("concept:example")),
+                    "graph/atlas-graph.redacted.json": graph,
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+
     def test_impossible_calendar_date_is_rejected_like_the_builder(self):
         # §9/§10: the boundary preflight has to predict the build, so the
         # reader that enforces the declared date shape enforces the calendar

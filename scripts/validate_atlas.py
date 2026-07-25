@@ -629,14 +629,43 @@ _PROVENANCE_TARGET_OWNED = {
 # and trail targets — checked against the payload-backing sets.
 
 
-def _review_gate_errors(entry: dict, path: Path, position: int) -> list[str]:
-    """§14.6/§9.8: a gated value moves only by a reviewed decision, so a
-    non-default value must carry that dimension's current decision
-    reference, and one dimension never carries two competing references.
-    The schema closes each value independently and cannot express the
-    join, which would let a fixture or an alternate producer import
-    understanding past the gate (§31)."""
+def _review_gate_errors(entry: dict, path: Path, position: int,
+                        as_of: str | None) -> list[str]:
+    """§14.5–§14.7/§9.8: a gated value moves only by a reviewed decision and
+    never carries two competing references, a ladder moves only on recorded
+    evidence, and freshness is a derivation against the fold as-of. The
+    schema closes each value independently and cannot express those joins,
+    which would let a fixture or an alternate producer import understanding
+    past the gate (§31)."""
     errors: list[str] = []
+    # §14.5/§14.8: the ladders move on recorded artifact or encounter
+    # evidence, so only a first value can stand uncited.
+    for dimension in ("exposure", "depth_reached"):
+        value = entry.get(dimension)
+        if value is None or value == _builder.CONCEPT_EXPOSURE[0]:
+            continue
+        if not _as_list(entry.get("evidence")):
+            errors.append(
+                f"{path}: /state property #{position} moves {dimension} off "
+                "its first value with no evidence (§14.5/§14.8)"
+            )
+    # §14.7/§20.1: last_seen is a fold input, never later than the as-of it
+    # is measured against, and freshness is recomputed from the two.
+    last_seen = entry.get("last_seen")
+    if isinstance(last_seen, str) and as_of is not None:
+        if last_seen > as_of:
+            errors.append(
+                f"{path}: /state property #{position} was last seen after "
+                "the graph as-of (§20.1)"
+            )
+        elif (isinstance(entry.get("freshness"), str)
+              and _is_calendar_date(last_seen)
+              and entry["freshness"] != _builder.freshness_of(
+                  last_seen, as_of)):
+            errors.append(
+                f"{path}: /state property #{position} carries a freshness "
+                "the §14.7 derivation does not produce"
+            )
     seen: set[str] = set()
     for reference in _as_list(entry.get("decisions")):
         if not isinstance(reference, dict):
@@ -1142,6 +1171,11 @@ def validate_instance(root: Path):
                     "material_part": "depth_reached",
                     "question": "status",
                 }
+                # §20.1: generated_at stamps the as-of the fold measured
+                # against — the anchor §14.7 freshness is derived from.
+                generated_at = instance.get("generated_at")
+                graph_as_of = (generated_at[:10]
+                               if isinstance(generated_at, str) else None)
                 for position, (state_id, state_entry) in enumerate(
                         _as_dict(instance.get("state")).items(), 1):
                     if state_id not in node_ids:
@@ -1163,8 +1197,8 @@ def validate_instance(root: Path):
                             f"carry the {node_type} fold shape (§20 step 9)"
                         )
                     if isinstance(state_entry, dict):
-                        errors.extend(
-                            _review_gate_errors(state_entry, path, position))
+                        errors.extend(_review_gate_errors(
+                            state_entry, path, position, graph_as_of))
                 # §14.6/§9.8 make every gated value review-gated, and §20
                 # step 9 makes the fold total over the kinds that carry a
                 # default: a concept is at worst `unseen`/no-knowledge and a
@@ -1172,15 +1206,28 @@ def validate_instance(root: Path):
                 # contact is what creates it. Without this, `state: {}`
                 # satisfies the schema and a producer or hand-written
                 # fixture can erase "no evidence yet" vs "never folded".
+                # §32.6 is the one licensed gap: the redacted variant keeps a
+                # public node whose fold rested on classed evidence and drops
+                # the value, disclosing a count. Totality then holds up to
+                # that count — never in the full graph, which carries no
+                # `withheld` key at all.
                 state_keys = set(_as_dict(instance.get("state")))
-                for state_id, node_type in sorted(node_types.items()):
-                    if (node_type in ("concept", "question")
-                            and state_id not in state_keys):
-                        errors.append(
-                            f"{path}: {state_id} carries no /state entry — "
-                            "the step-9 fold is total over concepts and "
-                            "questions (§20 step 9)"
-                        )
+                withheld_state = _as_dict(instance.get("withheld")).get("state")
+                budget = (withheld_state
+                          if isinstance(withheld_state, int)
+                          and not isinstance(withheld_state, bool) else 0)
+                missing = [
+                    state_id
+                    for state_id, node_type in sorted(node_types.items())
+                    if node_type in ("concept", "question")
+                    and state_id not in state_keys
+                ]
+                for state_id in missing[budget:]:
+                    errors.append(
+                        f"{path}: {state_id} carries no /state entry — the "
+                        "step-9 fold is total over concepts and questions "
+                        "(§20 step 9)"
+                    )
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue
