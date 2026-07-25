@@ -272,22 +272,17 @@ DECISION_VALUES = {
     "coverage": {"none", "partial", "broad"},
     "weight": {"low", "medium", "high"},
     "status": {"open", "clarified", "resolved", "stale"},
-    "strength": {"unknown", "low", "medium", "high"},
-    "endurance": {"unknown", "low", "medium", "high"},
-    "mobility": {"unknown", "low", "medium", "high"},
-    "condition": {
-        "unknown", "fine", "irritated", "recovering", "restricted", "chronic",
-    },
 }
+# §29/#45: §9.13's body ladders are canon but their fold is a deferred
+# implementation requirement during the Body Atlas freeze (#58). The builder
+# names them only to refuse them: accepting a body decision it cannot fold
+# would swallow owner-authored state in a build that reports success.
+FROZEN_BODY_DIMENSIONS = {"strength", "endurance", "mobility", "condition"}
 DECISION_TARGET_PREFIXES = {
     "confidence": {"concept", "pattern"},
     "clarity": {"concept", "pattern"},
     "coverage": {"concept", "pattern"},
     "status": {"question"},
-    "strength": {"zone"},
-    "endurance": {"zone"},
-    "mobility": {"zone"},
-    "condition": {"zone"},
 }
 DECISION_OUTCOMES = {"confirmed", "rejected"}
 EVIDENCE_PREFIXES = {"artifact", "encounter", "question"}
@@ -1214,7 +1209,12 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             errors.append(f"{origin}: decision row requires {field} (§9.13)")
         dimension = row.get("dimension")
         valid = not missing
-        if not isinstance(dimension, str) or dimension not in DECISION_VALUES:
+        if dimension in FROZEN_BODY_DIMENSIONS:
+            errors.append(f"{origin}: /dimension {dimension} is a §32 body "
+                          "ladder, deferred during the Body Atlas freeze "
+                          "(§29, #45)")
+            valid = False
+        elif not isinstance(dimension, str) or dimension not in DECISION_VALUES:
             errors.append(f"{origin}: /dimension must name a §9.13 "
                           "StateDecision dimension")
             valid = False
@@ -1730,7 +1730,10 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         })
         current["depth_rank"] = max(
             current["depth_rank"], material_depth.index(depth))
-        current["last_seen"] = max(current["last_seen"], date)
+        # A rejected date is already an error; the fold must still reduce
+        # without it so the CLI reports that error instead of a traceback.
+        current["last_seen"] = max(
+            filter(None, (current["last_seen"], date)), default=None)
         current["evidence"].add(encounter_id)
         if encounter.get("sensitivity") is not None:
             current["sensitivity"] = encounter["sensitivity"]
@@ -2218,12 +2221,25 @@ def _redact_graph(graph: dict) -> dict:
         if zone not in withheld_ids
     }
     # Folded values are their own §32.6 granularity: omit a value whole when
-    # its provenance union marked it, or when its target node was withheld.
+    # its provenance union marked it, when its target node was withheld, or
+    # when it cites a withheld id — a fold resting on withheld evidence is
+    # the node closure's citation taint one layer up, and its `evidence` and
+    # `decisions` refs would otherwise carry that id into the output. State
+    # ends the closure: nothing derives from it, so no second fixpoint.
     # The full graph remains untouched and the disclosure is a count only.
+    def keep_state(node_id, entry):
+        if node_id in withheld_ids:
+            return False
+        if not isinstance(entry, dict):
+            return True
+        if "sensitivity" in entry:
+            return False
+        text = payload_text(entry, set())
+        return not any(marked in text for marked in withheld_ids)
+
     state = {
         node_id: entry for node_id, entry in graph["state"].items()
-        if node_id not in withheld_ids
-        and not (isinstance(entry, dict) and "sensitivity" in entry)
+        if keep_state(node_id, entry)
     }
 
     redacted = dict(graph)

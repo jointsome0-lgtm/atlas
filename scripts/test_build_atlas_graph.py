@@ -2768,6 +2768,83 @@ class StateFoldTests(unittest.TestCase):
         self.assertIn("concept:c",
                       {node["id"] for node in redacted["nodes"]})
 
+    def test_redaction_drops_state_citing_a_transitively_withheld_id(self):
+        # §32.6: an unclassed artifact withheld for citing a classed one
+        # taints the fold that rests on it. The concept itself is public and
+        # its own union is clean, so only the citation closure keeps the
+        # withheld id out of the agent-facing `evidence` list.
+        classed = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "applied",
+            sensitivity="medical")
+        citing = self._artifact(
+            "artifact:2026-01-02-001", "2026-01-02", "applied",
+            supports=["concept:c"])
+        citing["summary"] = "follow-up to artifact:2026-01-01-001 (Vera Example)"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([classed, citing]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertEqual(["artifact:2026-01-02-001"],
+                         graph["state"]["concept:c"]["evidence"])
+        self.assertNotIn("sensitivity", graph["state"]["concept:c"])
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertNotIn("concept:c", redacted["state"])
+        self.assertEqual(1, redacted["withheld"]["state"])
+        self.assertIn("concept:c",
+                      {node["id"] for node in redacted["nodes"]})
+        payload = json.dumps(redacted)
+        self.assertNotIn("artifact:2026-01-01-001", payload)
+        self.assertNotIn("artifact:2026-01-02-001", payload)
+
+    def test_body_decision_dimensions_are_refused_under_the_freeze(self):
+        # §29/#45/#58: §9.13's body ladders stay canon but unfolded during
+        # the freeze. Accepting one would report a successful build that
+        # silently dropped owner-authored state, so the row fails closed.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        for dimension, value in (("strength", "high"), ("endurance", "low"),
+                                 ("mobility", "medium"),
+                                 ("condition", "irritated")):
+            decision = self._decision(
+                "2026-01-02", "zone:shoulder", dimension, value,
+                ["artifact:2026-01-01-001"])
+            with self.subTest(dimension=dimension), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "zones/shoulder.md": (
+                    "---\nid: zone:shoulder\ntype: zone\n"
+                    "title: Shoulder (Vera Example)\n"
+                    "figure_region: shoulder\n---\n"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertTrue(
+                any(f"/dimension {dimension} is a §32 body ladder" in error
+                    for error in errors), errors)
+            self.assertNotIn("zone:shoulder", graph["state"])
+
+    def test_invalid_encounter_date_fails_closed_without_a_traceback(self):
+        # §9/§10: a rejected date leaves the node dateless, and the material
+        # fold still has to reduce over it — the owner gets the prefixed
+        # validation error, never an uncaught reduction failure.
+        encounter = json.loads(_encounter_row())
+        encounter["date"] = "not-a-date"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/encounters.jsonl": json.dumps(encounter) + "\n",
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+        self.assertTrue(
+            any("date is not a valid YYYY-MM-DD date" in error
+                for error in errors), errors)
+
     def test_graph_boundary_closes_state_keys_and_target_shapes(self):
         # The schema closes each value; the boundary joins its dynamic key
         # to the emitted node and that node's fold shape without echoing an
