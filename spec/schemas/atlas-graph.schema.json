@@ -10,7 +10,82 @@
     "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
     "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}},
     "trails": {"const": [], "description": "Producer-closed (#37): the builder emits no trail projection yet (§29 V-build); the emitting change extends this schema — until then any content is invalid, never passed through."},
-    "state": {"const": {}, "description": "Producer-closed (#37): the §14.5–§14.8 fold is unimplemented (§29 V-build); the emitting change extends this schema."},
+    "state": {
+      "type": "object",
+      "description": "The id-keyed §20 step-9 fold. Values are closed concept understanding, material/part contact, or question-status entries; Body ladders and §14.9 edge weight remain outside this emitting slice.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "exposure": {"type": "string", "enum": ["unseen", "touched", "read", "summarized", "applied", "taught"], "description": "Concept exposure values transcribed verbatim from §14.1."},
+              "confidence": {"type": "string", "enum": ["unknown", "low", "medium", "high"], "description": "Confidence values transcribed verbatim from §14.2."},
+              "clarity": {"type": "string", "enum": ["vague", "rough", "stable", "disputed"], "description": "Clarity values transcribed verbatim from §14.3."},
+              "coverage": {"type": "string", "enum": ["none", "partial", "broad"], "description": "Coverage values transcribed verbatim from §14.4."},
+              "freshness": {"type": "string", "enum": ["fresh", "aging", "stale"], "description": "Freshness values transcribed verbatim from §14.7."},
+              "last_seen": {"$ref": "#/$defs/date"},
+              "evidence": {"type": "array", "items": {"type": "string", "pattern": "^(?:artifact|encounter|question):[a-z0-9]+(?:-[a-z0-9]+)*$"}, "uniqueItems": true},
+              "decisions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "dimension": {"type": "string", "enum": ["confidence", "clarity", "coverage"], "description": "Concept review-gated dimensions transcribed from §14.6."},
+                    "date": {"$ref": "#/$defs/date"},
+                    "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^(?:artifact|encounter|question):[a-z0-9]+(?:-[a-z0-9]+)*$"}, "uniqueItems": true}
+                  },
+                  "required": ["dimension", "date", "evidence"],
+                  "additionalProperties": false
+                },
+                "uniqueItems": true
+              },
+              "sensitivity": {"type": "string", "enum": ["medical"], "description": "The §32.6 provenance union on this folded value."}
+            },
+            "required": ["exposure", "confidence", "clarity", "coverage", "evidence", "decisions"],
+            "additionalProperties": false,
+            "allOf": [
+              {"if": {"required": ["last_seen"]}, "then": {"required": ["freshness"]}},
+              {"if": {"required": ["freshness"]}, "then": {"required": ["last_seen"]}}
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "depth_reached": {"type": "string", "enum": ["skim", "read", "summarized", "applied", "taught"], "description": "Material encounter depths transcribed verbatim from §9.7 and §14.8."},
+              "last_seen": {"$ref": "#/$defs/date"},
+              "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^encounter:[a-z0-9]+(?:-[a-z0-9]+)*$"}, "uniqueItems": true},
+              "sensitivity": {"type": "string", "enum": ["medical"], "description": "The §32.6 provenance union on this folded value."}
+            },
+            "required": ["depth_reached", "last_seen", "evidence"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {"type": "string", "enum": ["open", "clarified", "resolved", "stale"], "description": "Question states transcribed verbatim from §9.8."},
+              "evidence": {"type": "array", "items": {"type": "string", "pattern": "^(?:artifact|encounter|question):[a-z0-9]+(?:-[a-z0-9]+)*$"}, "uniqueItems": true},
+              "decisions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "dimension": {"const": "status"},
+                    "date": {"$ref": "#/$defs/date"},
+                    "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^(?:artifact|encounter|question):[a-z0-9]+(?:-[a-z0-9]+)*$"}, "uniqueItems": true}
+                  },
+                  "required": ["dimension", "date", "evidence"],
+                  "additionalProperties": false
+                },
+                "uniqueItems": true
+              },
+              "sensitivity": {"type": "string", "enum": ["medical"], "description": "The §32.6 provenance union on this folded value."}
+            },
+            "required": ["status", "evidence", "decisions"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
     "influence": {"const": {}, "description": "Producer-closed (#37): the §9.10 influence baseline is unimplemented (§29 V-build); the emitting change extends this schema."},
     "frontier": {"const": [], "description": "Producer-closed (#37): the §15.4 baseline is unimplemented (§29 V-build); the emitting change extends this schema."},
     "projections": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}},

@@ -1536,8 +1536,7 @@ class LaneBTests(unittest.TestCase):
 
 class JournalProjectionTests(unittest.TestCase):
     # §20 step 8 (#31): the structural journal projection — rows become
-    # nodes plus their §10.2 derived edges and §11.2-§11.3 role edges;
-    # state folds stay §29 Phase 3/4.
+    # nodes plus their §10.2 derived edges and §11.2-§11.3 role edges.
 
     def _edges(self, graph, kind):
         return [e for e in graph["edges"] if e["type"] == kind]
@@ -1802,7 +1801,8 @@ class JournalProjectionTests(unittest.TestCase):
         }) as directory:
             _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
-            any("is not a YYYY-MM-DD date" in e for e in errors), errors)
+            any("is not a valid YYYY-MM-DD date" in e for e in errors),
+            errors)
 
     def test_dangling_trail_direction_warns(self):
         # §34.2/§20 step 11: direction is payload-only — a deleted or

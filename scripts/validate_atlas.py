@@ -1044,6 +1044,7 @@ def validate_instance(root: Path):
                 # §10: edge endpoints are node ids consumers resolve inside
                 # the same file — a dangling endpoint never leaves the build.
                 node_ids: set = set()
+                node_types: dict[str, str] = {}
                 zone_ids: set = set()
                 for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
@@ -1056,6 +1057,8 @@ def validate_instance(root: Path):
                             f"{path}: duplicate node id {node_id} (§10.1)"
                         )
                     node_ids.add(node_id)
+                    if isinstance(node.get("type"), str):
+                        node_types[node_id] = node["type"]
                     if node.get("type") == "zone":
                         zone_ids.add(node_id)
                     # §10.1/§10.4: a part id carries its owning material's
@@ -1072,6 +1075,37 @@ def validate_instance(root: Path):
                                 f"{parent} — the id's owner is "
                                 f"material:{slug} (§10.1/§10.4)"
                             )
+                # §20 step 9: state is keyed by the living node whose
+                # separately-emitted derived value it carries (§10.4).
+                # The schema closes each entry; this cross-check closes the
+                # dynamic map key to the three value shapes/four node kinds
+                # in this slice.
+                state_shapes = {
+                    "concept": "exposure",
+                    "material": "depth_reached",
+                    "material_part": "depth_reached",
+                    "question": "status",
+                }
+                for position, (state_id, state_entry) in enumerate(
+                        _as_dict(instance.get("state")).items(), 1):
+                    if state_id not in node_ids:
+                        errors.append(
+                            f"{path}: /state property #{position} is not "
+                            "keyed by an emitted node id (§20 step 9)"
+                        )
+                        continue
+                    node_type = node_types.get(state_id)
+                    if node_type not in state_shapes:
+                        errors.append(
+                            f"{path}: /state property #{position} targets a "
+                            "node kind outside the step-9 slice"
+                        )
+                    elif (isinstance(state_entry, dict)
+                          and state_shapes[node_type] not in state_entry):
+                        errors.append(
+                            f"{path}: /state property #{position} does not "
+                            f"carry the {node_type} fold shape (§20 step 9)"
+                        )
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue
@@ -1634,9 +1668,11 @@ def validate_instance(root: Path):
                     # from the agent-facing variant — a surviving classed
                     # entry means the gate would certify classed content
                     # into agent context.
-                    for section in ("nodes", "edges"):
+                    for section in ("nodes", "edges", "state"):
                         for position, entry in enumerate(
-                                _as_list(instance.get(section))):
+                                (_as_dict(instance.get(section)).values()
+                                 if section == "state"
+                                 else _as_list(instance.get(section)))):
                             if (isinstance(entry, dict)
                                     and "sensitivity" in entry):
                                 errors.append(

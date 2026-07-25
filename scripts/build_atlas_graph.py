@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Build OUTPUT_JSON from CURATED_TREE content (SDD §20, Phase 1).
 
-Phase 1 scope (§29): concept / material / direction / suggested-route parsing,
-reference validation, deterministic graph JSON. Journal folding, influence and
-frontier are later phases — their §10 keys are emitted empty so the output
-shape is final from the first build.
+V-build scope (§29): deterministic curated/journal projection plus the §20
+step-9 knowledge-state fold. Influence, frontier, and trail projection remain
+later slices and keep their producer-closed §10 placeholders.
 
-stdlib only (§20): json, os, pathlib, re, time.
+stdlib only (§20): datetime, json, os, pathlib, re, time.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -225,6 +225,8 @@ JOURNAL_ROW_KEYS = {
                    "sensitivity", "intake"},
     "questions": {"id", "type", "text", "created_at", "pulls", "source",
                   "sensitivity", "intake"},
+    "decisions": {"date", "target", "dimension", "to", "evidence",
+                  "proposed_by", "decision", "sensitivity", "intake"},
 }
 
 # §9.6/§9.8: touches, supports_state_updates and pulls hold region ids —
@@ -252,6 +254,43 @@ DEEP_USE_DEPTHS = {"applied", "taught"}
 # §9.6 — artifact evidence strengths, transcribed verbatim.
 EVIDENCE_STRENGTHS = {"noticed", "read", "summarized", "applied",
                       "explained", "reviewed", "performed", "drilled"}
+
+# §14.1–§14.8/§9.8 — the knowledge-only V-build fold scales. Pattern and
+# zone ladders remain frozen under #45; edge weight remains §20 step 10's
+# sibling work and is only validated when its decision rows are read.
+CONCEPT_EXPOSURE = (
+    "unseen", "touched", "read", "summarized", "applied", "taught",
+)
+CONCEPT_DEFAULTS = {
+    "confidence": "unknown",
+    "clarity": "vague",
+    "coverage": "none",
+}
+DECISION_VALUES = {
+    "confidence": {"unknown", "low", "medium", "high"},
+    "clarity": {"vague", "rough", "stable", "disputed"},
+    "coverage": {"none", "partial", "broad"},
+    "weight": {"low", "medium", "high"},
+    "status": {"open", "clarified", "resolved", "stale"},
+    "strength": {"unknown", "low", "medium", "high"},
+    "endurance": {"unknown", "low", "medium", "high"},
+    "mobility": {"unknown", "low", "medium", "high"},
+    "condition": {
+        "unknown", "fine", "irritated", "recovering", "restricted", "chronic",
+    },
+}
+DECISION_TARGET_PREFIXES = {
+    "confidence": {"concept", "pattern"},
+    "clarity": {"concept", "pattern"},
+    "coverage": {"concept", "pattern"},
+    "status": {"question"},
+    "strength": {"zone"},
+    "endurance": {"zone"},
+    "mobility": {"zone"},
+    "condition": {"zone"},
+}
+DECISION_OUTCOMES = {"confirmed", "rejected"}
+EVIDENCE_PREFIXES = {"artifact", "encounter", "question"}
 
 # §9.4 — route lifecycle vocabulary; task-state words are §4 leakage.
 ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archived"}
@@ -299,6 +338,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     artifact_touches: dict = {}  # artifact id -> touched region ids (§9.9)
     question_records: dict = {}  # question id -> (source object, pulls)
     encounter_records: list = []  # (id, target, depth, ctx question/artifact, origin)
+    decision_records: list = []  # (journal position, origin, row, row date)
     activity_dates: list = []  # §20.1 — the dated-input universe
     skipped_dated_inputs = 0
 
@@ -341,9 +381,15 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         value = str_field(value, origin, field)
         if value is None:
             return None
-        if not date_shape.fullmatch(value):
-            errors.append(f"{origin}: {field} {value!r} is not a "
-                          f"YYYY-MM-DD date (§9/§10)")
+        try:
+            valid = bool(date_shape.fullmatch(value))
+            if valid:
+                datetime.date.fromisoformat(value)
+        except ValueError:
+            valid = False
+        if not valid:
+            errors.append(f"{origin}: {field} is not a valid YYYY-MM-DD "
+                          "date (§9/§10)")
             return None
         return value
 
@@ -874,10 +920,9 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                         "plan nodes are not emitted until the §12 importer lands, "
                         "so the ref dangles in this build (§20 step 5)")
 
-    # §20 step 8 (#31): the structural journal projection — artifact,
-    # encounter, and question rows become nodes plus their §10.2 derived
-    # edges. State folds and influence/frontier (§20 steps 9-10) stay
-    # §29 Phase 3/4; every projected row obeys §20.1's as-of bound.
+    # §20 step 8 (#31): artifact, encounter, and question rows become nodes
+    # plus their §10.2 derived edges; decisions feed step 9 without becoming
+    # nodes. Every projected or folded row obeys §20.1's as-of bound.
     def strict_row(raw):
         # §25.7/§25.8: the journal is a persisted format — the builder
         # reads it exactly as strictly as the boundary (validate_atlas),
@@ -1125,6 +1170,94 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         for region in pulls:
             add_edge(region, qid, "pulled_by", origin, [qid], lenient=True)
         field_refs[qid] = pulls
+
+    def valid_node_ref(value, prefixes):
+        if not isinstance(value, str):
+            return False
+        prefix = value.split(":", 1)[0]
+        shape = PART_ID_RE if prefix == "part" else NODE_ID_RE
+        return prefix in prefixes and bool(shape.fullmatch(value))
+
+    def valid_weight_target(value):
+        # §9.13/§14.9: validate the out-of-slice decision row without
+        # applying it. This keeps step 8's reader schema-complete while
+        # leaving every edge weight untouched in this slice.
+        if not isinstance(value, str) or ":" not in value or "->" not in value:
+            return False
+        role, endpoints = value.split(":", 1)
+        if role not in AUTHORED_ROLES | {"supports"}:
+            return False
+        source, separator, target = endpoints.partition("->")
+        if not separator or "->" in target:
+            return False
+        rule = ENDPOINT_RULES.get(role)
+        return bool(
+            rule
+            and valid_node_ref(source, {
+                prefix for prefix, kind in ID_PREFIXES.items()
+                if kind in rule[0]
+            })
+            and valid_node_ref(target, {
+                prefix for prefix, kind in ID_PREFIXES.items()
+                if kind in rule[1]
+            })
+        )
+
+    for position, (origin, row, row_date) in enumerate(
+            journal_rows("decisions", "date"), 1):
+        # §9.13: diagnostics name the row and field expectation without
+        # echoing rejected content (§24.4).
+        required = ("date", "target", "dimension", "to", "evidence",
+                    "proposed_by", "decision")
+        missing = [field for field in required if field not in row]
+        for field in missing:
+            errors.append(f"{origin}: decision row requires {field} (§9.13)")
+        dimension = row.get("dimension")
+        valid = not missing
+        if not isinstance(dimension, str) or dimension not in DECISION_VALUES:
+            errors.append(f"{origin}: /dimension must name a §9.13 "
+                          "StateDecision dimension")
+            valid = False
+        target = row.get("target")
+        if isinstance(dimension, str) and dimension in DECISION_VALUES:
+            if dimension == "weight":
+                target_valid = valid_weight_target(target)
+            else:
+                target_valid = valid_node_ref(
+                    target, DECISION_TARGET_PREFIXES[dimension])
+            if not target_valid:
+                errors.append(f"{origin}: /target must match the "
+                              f"{dimension} target kind (§9.13)")
+                valid = False
+            if (not isinstance(row.get("to"), str)
+                    or row.get("to") not in DECISION_VALUES[dimension]):
+                errors.append(f"{origin}: /to must be on the {dimension} "
+                              "scale (§9.13)")
+                valid = False
+        evidence = row.get("evidence")
+        if (not isinstance(evidence, list) or not evidence
+                or any(not valid_node_ref(ref, EVIDENCE_PREFIXES)
+                       for ref in evidence)):
+            errors.append(f"{origin}: /evidence must be a non-empty list "
+                          "of §9.12 evidence ids")
+            valid = False
+        if not isinstance(row.get("proposed_by"), str):
+            errors.append(f"{origin}: /proposed_by must be a string (§9.13)")
+            valid = False
+        if row.get("decision") not in DECISION_OUTCOMES:
+            errors.append(f"{origin}: /decision must be confirmed or "
+                          "rejected (§9.13)")
+            valid = False
+        sensitivity = row.get("sensitivity")
+        if (sensitivity is not None
+                and (not isinstance(sensitivity, str)
+                     or sensitivity not in SENSITIVITY_CLASSES)):
+            errors.append(f"{origin}: /sensitivity must name a §32.6 class")
+            valid = False
+        if row_date is None:
+            valid = False
+        if valid:
+            decision_records.append((position, origin, row, row_date))
 
     # §34.4: the retired→living map — every retired id lives in exactly one
     # living formerly list, and a retired id that is also living, or present
@@ -1485,6 +1618,251 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         node["fields"] = sorted(fields_of(node_id))
         node.pop("_origin", None)
 
+    # §20.1: the fold anchor is known only after every dated journal has
+    # been read. It is shared by generated_at and §14.7 freshness.
+    effective_as_of = (as_of
+                       or (max(activity_dates) if activity_dates else None))
+
+    # §20 step 9 / §14.5–§14.8: one generic monotone-max fold over the
+    # knowledge-domain rows. Body ladders remain frozen under #45; filtering
+    # to concept nodes here is a slice boundary, not a body-kind branch.
+    concept_work: dict[str, dict] = {}
+    for node_id in sorted(nodes):
+        node = nodes[node_id]
+        if node["type"] != "concept":
+            continue
+        concept_work[node_id] = {
+            "exposure_rank": 0,
+            "last_seen": None,
+            "evidence": set(),
+            "strengths": set(),
+            "sensitivity": node.get("sensitivity"),
+        }
+
+    def observe_concept(concept_id, exposure_rank, date, evidence_id,
+                        *provenance_ids):
+        current = concept_work.get(concept_id)
+        if current is None:
+            return
+        current["exposure_rank"] = max(
+            current["exposure_rank"], exposure_rank)
+        current["last_seen"] = max(
+            filter(None, (current["last_seen"], date)), default=None)
+        current["evidence"].add(evidence_id)
+        for ref in (evidence_id, *provenance_ids):
+            sensitivity = nodes.get(ref, {}).get("sensitivity")
+            if sensitivity is not None:
+                current["sensitivity"] = sensitivity
+
+    artifact_links: dict[str, dict[str, set[str]]] = {}
+    for edge in edges:
+        if edge["type"] in ("influences", "updates_state"):
+            artifact_links.setdefault(edge["source"], {
+                "influences": set(), "updates_state": set(),
+            })[edge["type"]].add(edge["target"])
+    artifact_rank = {
+        "noticed": 1,
+        "read": 2,
+        "summarized": 3,
+        "explained": 3,
+        "applied": 4,
+        "reviewed": 4,
+        "performed": 4,
+        "drilled": 4,
+    }
+    for artifact_id in sorted(artifact_links):
+        artifact = nodes.get(artifact_id, {})
+        date = artifact.get("observed_at")
+        strength = artifact.get("evidence_strength")
+        links = artifact_links[artifact_id]
+        # Merely touched concepts move at most to touched, whatever the
+        # artifact's strength (§14.5).
+        for concept_id in sorted(links["influences"]):
+            observe_concept(concept_id, 1, date, artifact_id)
+        for concept_id in sorted(links["updates_state"]):
+            observe_concept(
+                concept_id, artifact_rank.get(strength, 0), date, artifact_id)
+            current = concept_work.get(concept_id)
+            if current is not None:
+                current["strengths"].add(strength)
+
+    # explained + reviewed is the only compound artifact transition: an
+    # explanation that survived review reaches taught (§14.5).
+    for current in concept_work.values():
+        if {"explained", "reviewed"} <= current["strengths"]:
+            current["exposure_rank"] = len(CONCEPT_EXPOSURE) - 1
+
+    # Encounters use the exact id they target for material state (§14.8).
+    # Their concept contact follows only that target's own mapping: a
+    # material's overall_concepts or a part's concept_edges (§9.2–§9.3).
+    material_concepts: dict[str, set[str]] = {}
+    for edge in edges:
+        source_kind = nodes.get(edge["source"], {}).get("type")
+        target_kind = nodes.get(edge["target"], {}).get("type")
+        if target_kind != "concept":
+            continue
+        if edge["type"] == "overall_concept" and source_kind == "material":
+            material_concepts.setdefault(edge["source"], set()).add(
+                edge["target"])
+        elif (source_kind == "material_part"
+              and edge["type"] in AUTHORED_ROLES):
+            material_concepts.setdefault(edge["source"], set()).add(
+                edge["target"])
+
+    visited: dict[str, str] = {
+        edge["source"]: edge["target"]
+        for edge in edges if edge["type"] == "visited"
+    }
+    material_depth = ("skim", "read", "summarized", "applied", "taught")
+    material_work: dict[str, dict] = {}
+    for encounter_id in sorted(visited):
+        encounter = nodes.get(encounter_id, {})
+        target = visited[encounter_id]
+        depth = encounter.get("depth")
+        date = encounter.get("date")
+        if depth not in material_depth:
+            continue
+        current = material_work.setdefault(target, {
+            "depth_rank": 0,
+            "last_seen": date,
+            "evidence": set(),
+            "sensitivity": nodes.get(target, {}).get("sensitivity"),
+        })
+        current["depth_rank"] = max(
+            current["depth_rank"], material_depth.index(depth))
+        current["last_seen"] = max(current["last_seen"], date)
+        current["evidence"].add(encounter_id)
+        if encounter.get("sensitivity") is not None:
+            current["sensitivity"] = encounter["sensitivity"]
+        # A skim is contact (touched); read or deeper is capped at read.
+        encounter_rank = 1 if depth == "skim" else 2
+        for concept_id in sorted(material_concepts.get(target, ())):
+            observe_concept(
+                concept_id, encounter_rank, date, encounter_id, target)
+
+    # §9.13/§20.1: each order-sensitive reduction stays inside the
+    # decisions journal. Earlier-dated backfill never beats a later decision;
+    # same-day ties resolve by physical journal position. Rejections do not
+    # move state and therefore never replace a confirmed winner.
+    decision_winners: dict[tuple[str, str], tuple] = {}
+    for position, origin, row, row_date in decision_records:
+        dimension = row["dimension"]
+        target = row["target"]
+        if dimension != "weight":
+            survivor = retired.get(target)
+            if survivor is not None:
+                warnings.append(
+                    f"{origin}: stale journal ref {target} resolved to "
+                    f"{survivor} (§34.4)")
+                target = survivor
+            if target not in nodes:
+                warnings.append(
+                    f"{origin}: {target} missing — decision target skipped "
+                    "(deletion is the owner's right)")
+                continue
+        for ref in sorted(set(row["evidence"])):
+            if ref not in nodes:
+                # §20.1: a decision inside the cut still applies when its
+                # cited evidence lies outside the cut or was deleted.
+                warnings.append(
+                    f"{origin}: {ref} missing — decision applies with a "
+                    "dangling evidence ref (§20.1)")
+        if row["decision"] != "confirmed":
+            continue
+        in_scope = (
+            dimension in CONCEPT_DEFAULTS
+            and nodes.get(target, {}).get("type") == "concept"
+        ) or (
+            dimension == "status"
+            and nodes.get(target, {}).get("type") == "question"
+        )
+        if not in_scope:
+            continue
+        key = (target, dimension)
+        score = (row_date, position)
+        previous = decision_winners.get(key)
+        if previous is None or score > previous[0]:
+            decision_winners[key] = (
+                score, row["to"], sorted(set(row["evidence"])),
+                row.get("sensitivity"),
+            )
+
+    def decision_ref(dimension, winner):
+        return {
+            "dimension": dimension,
+            "date": winner[0][0],
+            "evidence": winner[2],
+        }
+
+    def decision_sensitivity(target, winner):
+        candidates = (
+            nodes.get(target, {}).get("sensitivity"),
+            winner[3],
+            *(nodes.get(ref, {}).get("sensitivity") for ref in winner[2]),
+        )
+        return next((value for value in candidates if value is not None), None)
+
+    state: dict[str, dict] = {}
+    dimension_order = ("confidence", "clarity", "coverage")
+    for concept_id in sorted(concept_work):
+        current = concept_work[concept_id]
+        entry = {
+            "exposure": CONCEPT_EXPOSURE[current["exposure_rank"]],
+            **CONCEPT_DEFAULTS,
+            "evidence": sorted(current["evidence"]),
+            "decisions": [],
+        }
+        for dimension in dimension_order:
+            winner = decision_winners.get((concept_id, dimension))
+            if winner is None:
+                continue
+            entry[dimension] = winner[1]
+            entry["evidence"] = sorted(
+                set(entry["evidence"]) | set(winner[2]))
+            entry["decisions"].append(decision_ref(dimension, winner))
+            sensitivity = decision_sensitivity(concept_id, winner)
+            if sensitivity is not None:
+                current["sensitivity"] = sensitivity
+        last_seen = current["last_seen"]
+        if last_seen is not None and effective_as_of is not None:
+            entry["last_seen"] = last_seen
+            age = (
+                datetime.date.fromisoformat(effective_as_of)
+                - datetime.date.fromisoformat(last_seen)
+            ).days
+            entry["freshness"] = (
+                "fresh" if age <= 30 else "aging" if age <= 90 else "stale")
+        if current["sensitivity"] is not None:
+            entry["sensitivity"] = current["sensitivity"]
+        state[concept_id] = entry
+
+    for target in sorted(material_work):
+        current = material_work[target]
+        entry = {
+            "depth_reached": material_depth[current["depth_rank"]],
+            "last_seen": current["last_seen"],
+            "evidence": sorted(current["evidence"]),
+        }
+        if current["sensitivity"] is not None:
+            entry["sensitivity"] = current["sensitivity"]
+        state[target] = entry
+
+    for question_id in sorted(
+            node_id for node_id, node in nodes.items()
+            if node["type"] == "question"):
+        winner = decision_winners.get((question_id, "status"))
+        entry = {
+            "status": winner[1] if winner else "open",
+            "evidence": winner[2] if winner else [],
+            "decisions": (
+                [decision_ref("status", winner)] if winner else []),
+        }
+        sensitivity = (decision_sensitivity(question_id, winner)
+                       if winner else nodes[question_id].get("sensitivity"))
+        if sensitivity is not None:
+            entry["sensitivity"] = sensitivity
+        state[question_id] = entry
+
     # §20.1: generated_at is the fold's as-of date at UTC midnight, never
     # the wall clock (determinism: same inputs ⇒ byte-identical output).
     # The default as-of is the max activity date across the dated inputs —
@@ -1501,13 +1879,11 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             e["type"], e["source"], e["target"], e.get("context") or "",
             e.get("order") or 0, e.get("step") or "")),
         "trails": [],       # §29 Phase 3
-        "state": {},        # §29 Phase 3 (fold, §14.5-14.8)
+        "state": state,     # §20 step 9 (§14.5–§14.8, §9.8)
         "influence": {},    # §29 Phase 4 (§9.10)
         "frontier": [],     # §29 Phase 4 (§15)
         "projections": dict(sorted(projections.items())),  # §20 step 12, §32
     }
-    effective_as_of = (as_of
-                       or (max(activity_dates) if activity_dates else None))
     if effective_as_of is not None:
         graph["generated_at"] = effective_as_of + "T00:00:00Z"
     if skipped_dated_inputs:
@@ -1841,16 +2217,26 @@ def _redact_graph(graph: dict) -> dict:
         zone: region for zone, region in graph["projections"].items()
         if zone not in withheld_ids
     }
+    # Folded values are their own §32.6 granularity: omit a value whole when
+    # its provenance union marked it, or when its target node was withheld.
+    # The full graph remains untouched and the disclosure is a count only.
+    state = {
+        node_id: entry for node_id, entry in graph["state"].items()
+        if node_id not in withheld_ids
+        and not (isinstance(entry, dict) and "sensitivity" in entry)
+    }
+
     redacted = dict(graph)
     redacted["nodes"] = nodes
     redacted["edges"] = edges
+    redacted["state"] = state
     redacted["projections"] = projections
     # atlas-graph.schema.json requires every §10 payload key, zeros included.
     redacted["withheld"] = {
         "nodes": len(graph["nodes"]) - len(nodes),
         "edges": len(graph["edges"]) - len(edges),
         "trails": 0,
-        "state": 0,
+        "state": len(graph["state"]) - len(state),
         "influence": 0,
         "frontier": 0,
         "projections": len(graph["projections"]) - len(projections),
