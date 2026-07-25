@@ -14,6 +14,8 @@ modify no production resources
 
 User-initiated agent sessions are the one legal outward transit: invoking an agent on Atlas data is the user’s explicit act, and the user chooses the model provider. Secrets never ride along — the ignore paths below stay out of any agent context; §24.3 states the transit discipline.
 
+Encryption at rest is deployment hygiene, not an Atlas gate: instance confidentiality rests on the machine’s own protections plus the §24.3 provider terms the user accepts per session, and no § makes at-rest encryption a precondition for any record class, §32.6-classed records included (Decision Log 2026-07-25). Ecosystem deployment guidance may still recommend it.
+
 Ignore paths:
 
 ```text

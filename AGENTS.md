@@ -21,6 +21,12 @@ Specification: `SDD.md` is the map (§ index and numbering rules); the body live
 
 This is a public engine repository. All real data lives in a private instance repository outside this checkout. Only invented demo fixtures authored by the synthetic persona and marked with the literal `Vera Example` belong here. The [architecture](https://github.com/jointsome0-lgtm/selfos/blob/main/docs/architecture.md), [private-instance ownership](https://github.com/jointsome0-lgtm/selfos/blob/main/docs/instance.md), and [deletion](https://github.com/jointsome0-lgtm/selfos/blob/main/docs/deletion.md) contracts are canonical in selfos. Enable the committed pre-commit hook once per clone with `git config core.hooksPath .githooks`.
 
+## Privacy posture
+
+Owner decision, 2026-07-25 (Decision Log): provider transit is accepted for every Atlas record class, §32.6-classed medical records included — the model is the owner's machine plus the chosen provider's retention terms (§24.3), and encryption at rest is deployment hygiene, never an Atlas gate (§24). Do not raise encryption at rest, provider transit on owner-confidentiality grounds, or self-hosted inference as an obstacle, a precondition, or a standing caveat: the decision is made and dated, and re-deriving it each session is friction, not diligence.
+
+Untouched by that decision, because they address independent risks: §24.3's credential preflight before transit — which still aborts a session on a hit, transit acceptance notwithstanding — §24.1–§24.2 input hardening and reader containment, and §32.6's exclusion of classed rows from this public checkout and from contexts that have no use for them.
+
 ## Skills
 
 Shared skills install from the `selfos-skills` repo (an Agent Skills catalog): `npx skills add jointsome0-lgtm/selfos-skills --skill grill-sdd slice sdd-conventions --agent claude-code --global --yes` (full catalog: `--skill '*'`). To grill the spec: `/grill-sdd`. If a needed skill is missing from a session, ask the user to install/update it with the same command.
