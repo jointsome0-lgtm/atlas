@@ -27,6 +27,11 @@ export const ENCOUNTER_MODES = ["plan-driven", "question-driven", "artifact-driv
 export const SENSITIVITY_CLASSES = ["medical"];
 export const EDGE_WEIGHTS = ["low", "medium", "high", "unassessed"];
 export const CONFIDENCE_VALUES = ["unknown", "low", "medium", "high"];
+export const CONCEPT_EXPOSURES = ["unseen", "touched", "read", "summarized", "applied", "taught"];
+export const CLARITY_VALUES = ["vague", "rough", "stable", "disputed"];
+export const COVERAGE_VALUES = ["none", "partial", "broad"];
+export const FRESHNESS_VALUES = ["fresh", "aging", "stale"];
+export const QUESTION_STATUSES = ["open", "clarified", "resolved", "stale"];
 export const LIFECYCLE_STATUSES = ["active", "archived"];
 export const ROUTE_STATUSES = ["available", "hidden", "partially_followed", "ignored", "archived"];
 export const ENDPOINT_RULES = {"related_to": [["concept", "pattern"], ["concept", "pattern"]], "prerequisite_of": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "extends": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "implements": [["material_part"], ["concept", "pattern"]], "contradicts": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "explains": [["material_part"], ["concept", "pattern"]], "demonstrates": [["material_part"], ["concept", "pattern"]], "critiques": [["material_part"], ["concept", "pattern"]], "mentions": [["material_part"], ["concept", "pattern"]], "loads": [["pattern"], ["zone"]], "supports": [["material", "material_part"], ["material", "material_part"]], "has_part": [["material"], ["material_part"]], "overall_concept": [["material"], ["concept", "pattern"]], "part_of_direction": [["concept", "pattern"], ["direction"]], "step_of_route": [["concept", "pattern"], ["suggested_route"]], "suggested_next": [["concept", "pattern"], ["concept", "pattern"]], "probed_by": [["concept", "pattern", "zone"], ["probe"]], "pulled_by": [["concept", "pattern", "zone"], ["question"]], "visited": [["encounter"], ["material", "material_part"]], "influences": [["artifact"], ["concept", "pattern", "zone"]], "updates_state": [["artifact"], ["concept", "pattern", "zone"]], "moved_to": [["concept", "pattern"], ["concept", "pattern"]], "via": [["trail_segment"], ["material", "material_part"]], "produced_artifact": [["trail_segment"], ["artifact"]], "primary_for": [["material", "material_part"], ["suggested_route", "question", "trail_segment"]], "supporting_for": [["material", "material_part"], ["suggested_route", "question", "trail_segment"]]};
@@ -253,6 +258,80 @@ function validateEdge(edge, index) {
   return null;
 }
 
+const CONCEPT_STATE_KEYS = ["exposure", "confidence", "clarity", "coverage", "freshness", "last_seen", "evidence", "decisions", "sensitivity"];
+const MATERIAL_STATE_KEYS = ["depth_reached", "last_seen", "evidence", "sensitivity"];
+const QUESTION_STATE_KEYS = ["status", "evidence", "decisions", "sensitivity"];
+const DECISION_REFERENCE_KEYS = ["dimension", "date", "evidence"];
+
+function isEvidenceArray(value, prefixes, minimum = 0) {
+  return isStringArray(
+    value,
+    (item) => prefixes.some((prefix) => item.startsWith(prefix + ":"))
+      && NODE_ID_RE.test(item),
+  ) && value.length >= minimum && isUnique(value);
+}
+
+function validateDecisionReferences(value, dimensions, path) {
+  if (!Array.isArray(value)) return diagnostic(path, "type");
+  const identities = [];
+  for (const reference of value) {
+    if (!isPlainObject(reference)) return diagnostic(path, "itemType");
+    if (!hasOnlyKeys(reference, DECISION_REFERENCE_KEYS)) return diagnostic(path, "additionalProperties");
+    if (!hasKeys(reference, DECISION_REFERENCE_KEYS)) return diagnostic(path, "required");
+    if (!dimensions.includes(reference.dimension)) return diagnostic(path, "dimension");
+    if (typeof reference.date !== "string" || !DATE_RE.test(reference.date)) return diagnostic(path, "date");
+    if (!isEvidenceArray(reference.evidence, ["artifact", "encounter", "question"], 1)) return diagnostic(path, "evidence");
+    identities.push(JSON.stringify([
+      reference.dimension, reference.date, reference.evidence,
+    ]));
+  }
+  if (!isUnique(identities)) return diagnostic(path, "uniqueItems");
+  return null;
+}
+
+function validateStateEntry(entry, nodeType) {
+  const path = "/state";
+  if (!isPlainObject(entry)) return diagnostic(path, "entryShape");
+  if (nodeType === "concept") {
+    if (!hasOnlyKeys(entry, CONCEPT_STATE_KEYS)) return diagnostic(path, "additionalProperties");
+    if (!hasKeys(entry, ["exposure", "confidence", "clarity", "coverage", "evidence", "decisions"])) return diagnostic(path, "required");
+    if (!CONCEPT_EXPOSURES.includes(entry.exposure)) return diagnostic(path, "exposure");
+    if (!CONFIDENCE_VALUES.includes(entry.confidence)) return diagnostic(path, "confidence");
+    if (!CLARITY_VALUES.includes(entry.clarity)) return diagnostic(path, "clarity");
+    if (!COVERAGE_VALUES.includes(entry.coverage)) return diagnostic(path, "coverage");
+    if (!isEvidenceArray(entry.evidence, ["artifact", "encounter", "question"])) return diagnostic(path, "evidence");
+    const decisionFailure = validateDecisionReferences(
+      entry.decisions, ["confidence", "clarity", "coverage"], path,
+    );
+    if (decisionFailure) return decisionFailure;
+    const hasLastSeen = Object.prototype.hasOwnProperty.call(entry, "last_seen");
+    const hasFreshness = Object.prototype.hasOwnProperty.call(entry, "freshness");
+    if (hasLastSeen !== hasFreshness) return diagnostic(path, "freshnessPair");
+    if (hasLastSeen && (typeof entry.last_seen !== "string" || !DATE_RE.test(entry.last_seen))) return diagnostic(path, "lastSeen");
+    if (hasFreshness && !FRESHNESS_VALUES.includes(entry.freshness)) return diagnostic(path, "freshness");
+  } else if (nodeType === "material" || nodeType === "material_part") {
+    if (!hasOnlyKeys(entry, MATERIAL_STATE_KEYS)) return diagnostic(path, "additionalProperties");
+    if (!hasKeys(entry, ["depth_reached", "last_seen", "evidence"])) return diagnostic(path, "required");
+    if (!ENCOUNTER_DEPTHS.includes(entry.depth_reached)) return diagnostic(path, "depth");
+    if (typeof entry.last_seen !== "string" || !DATE_RE.test(entry.last_seen)) return diagnostic(path, "lastSeen");
+    if (!isEvidenceArray(entry.evidence, ["encounter"], 1)) return diagnostic(path, "evidence");
+  } else if (nodeType === "question") {
+    if (!hasOnlyKeys(entry, QUESTION_STATE_KEYS)) return diagnostic(path, "additionalProperties");
+    if (!hasKeys(entry, ["status", "evidence", "decisions"])) return diagnostic(path, "required");
+    if (!QUESTION_STATUSES.includes(entry.status)) return diagnostic(path, "status");
+    if (!isEvidenceArray(entry.evidence, ["artifact", "encounter", "question"])) return diagnostic(path, "evidence");
+    const decisionFailure = validateDecisionReferences(entry.decisions, ["status"], path);
+    if (decisionFailure) return decisionFailure;
+  } else {
+    return diagnostic(path, "nodeKind");
+  }
+  if (Object.prototype.hasOwnProperty.call(entry, "sensitivity")
+      && !SENSITIVITY_CLASSES.includes(entry.sensitivity)) {
+    return diagnostic(path, "sensitivity");
+  }
+  return null;
+}
+
 // §16.5 fail-closed parity with the other Atlas readers (§25.7): native
 // JSON.parse keeps the last of duplicate keys, so an ambiguous file could
 // pass validation after silently overwriting a field. Scan the raw text for
@@ -329,11 +408,9 @@ export function validateGraph(value) {
   if (Object.prototype.hasOwnProperty.call(value, "generated_at") && (typeof value.generated_at !== "string" || !GENERATED_AT_RE.test(value.generated_at))) return diagnostic("/generated_at", "shape");
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return diagnostic("", "arrayShape");
   if (!Array.isArray(value.trails) || value.trails.length !== 0) return diagnostic("/trails", "producerClosed");
-  // §20 step 9 is implemented, so state is no longer producer-closed: the
-  // fold is live and every emission carries it. The viewer does not render
-  // state yet, so it checks the join it would rest on — an entry is an
-  // object keyed by a node this same file emits (below, once node ids are
-  // known) — instead of restating the §10.4 value shapes it does not read.
+  // §20 step 9 is implemented, so state is no longer producer-closed. The
+  // viewer does not render it in this slice, but §16.5 still requires the
+  // whole untrusted graph to pass its closed input contract.
   if (!isPlainObject(value.state)) return diagnostic("/state", "type");
   for (const entry of Object.values(value.state)) {
     if (!isPlainObject(entry)) return diagnostic("/state", "entryShape");
@@ -352,6 +429,7 @@ export function validateGraph(value) {
   // complete: reject, never render.
   if (Object.prototype.hasOwnProperty.call(value, "withheld")) return diagnostic("/withheld", "fullGraphNeverWithholds");
   const nodeIds = new Set();
+  const nodesById = new Map();
   for (let index = 0; index < value.nodes.length; index += 1) {
     const failure = validateNode(value.nodes[index], index);
     if (failure) return failure;
@@ -360,12 +438,16 @@ export function validateGraph(value) {
     // resolve ambiguously (§16.5).
     if (nodeIds.has(value.nodes[index].id)) return diagnostic("/nodes/" + index + "/id", "duplicateId");
     nodeIds.add(value.nodes[index].id);
+    nodesById.set(value.nodes[index].id, value.nodes[index]);
   }
   // §20 step 9: state is keyed by the living node whose derived value it
-  // carries. A key with no node is a partial or foreign file — the same
-  // reason a dangling edge endpoint rejects the whole graph (§16.5).
-  for (const key of Object.keys(value.state)) {
-    if (!nodeIds.has(key)) return diagnostic("/state", "danglingKey");
+  // carries. Validate the closed value shape against that node kind: this is
+  // the minimal non-rendering join the later state view will rely on.
+  for (const [key, entry] of Object.entries(value.state)) {
+    const node = nodesById.get(key);
+    if (!node) return diagnostic("/state", "danglingKey");
+    const failure = validateStateEntry(entry, node.type);
+    if (failure) return failure;
   }
   // §20 step 12/§32.1: every emitted zone carries its curated figure_region —
   // a zone the silhouette cannot place never leaves the build, so a missing

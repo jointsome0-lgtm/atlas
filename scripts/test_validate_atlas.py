@@ -1935,6 +1935,54 @@ class SchemaValidatorTests(unittest.TestCase):
                 self.assertIn("beyond what its cited evidence can reach",
                               stderr)
 
+    def test_malformed_exposure_strength_reports_without_a_traceback(self):
+        # §24.4: schema-invalid graph values still reach the semantic joins,
+        # which must preserve the ordinary prefixed report. Lists and
+        # objects are unhashable and must never escape through set/dict use.
+        for malformed in ([], {"applied": True}):
+            nodes = [
+                {
+                    "id": "concept:example",
+                    "type": "concept",
+                    "title": "Example (Vera Example)",
+                    "fields": ["knowledge"],
+                    "aliases": [],
+                },
+                {
+                    "id": "artifact:2026-07-16-001",
+                    "type": "artifact",
+                    "title": "",
+                    "fields": [],
+                    "kind": "note",
+                    "path": "notes/example.md",
+                    "observed_at": "2026-07-16",
+                    "summary": "Synthetic boundary fixture (Vera Example).",
+                    "evidence_strength": malformed,
+                },
+            ]
+            entry = {
+                "exposure": "applied",
+                "confidence": "unknown",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": ["artifact:2026-07-16-001"],
+                "decisions": [],
+            }
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["nodes"] = nodes
+            graph["state"] = {"concept:example": entry}
+            with self.subTest(value_type=type(malformed).__name__), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertTrue(stderr)
+            self.assertTrue(
+                all(line.startswith("ERROR:")
+                    for line in stderr.splitlines()), stderr)
+
     def test_dated_state_is_bounded_by_a_usable_as_of(self):
         # §20.1: the as-of bounds every dated input. A missing or unparsable
         # stamp leaves freshness unchecked rather than half-checked, and an
@@ -1947,9 +1995,12 @@ class SchemaValidatorTests(unittest.TestCase):
             '{"exposure": "unseen", "confidence": "high",'
             ' "clarity": "vague", "coverage": "none", "evidence": [],'
             ' "decisions": [{"dimension": "confidence",'
-            ' "date": "2099-01-01", "evidence": []}]}')
+            ' "date": "2099-01-01",'
+            ' "evidence": ["artifact:missing"]}]}')
         cases = {
             "no-as-of": (None, dated, "no valid generated_at as-of"),
+            "decision-no-as-of": (
+                None, future_decision, "no valid generated_at as-of"),
             "impossible-as-of": (
                 "2026-13-30T00:00:00Z", dated, "not a real calendar date"),
             "decision-after-as-of": (

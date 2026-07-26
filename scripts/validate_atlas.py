@@ -629,6 +629,18 @@ _PROVENANCE_TARGET_OWNED = {
 # and trail targets — checked against the payload-backing sets.
 
 
+def _state_entry_has_dated_input(entry) -> bool:
+    """Whether a state entry rests on a §20.1 dated fold input."""
+    if not isinstance(entry, dict):
+        return False
+    if "last_seen" in entry:
+        return True
+    return any(
+        isinstance(reference, dict) and "date" in reference
+        for reference in _as_list(entry.get("decisions"))
+    )
+
+
 def _review_gate_errors(entry: dict, path: Path, position: int,
                         as_of: str | None, nodes: dict) -> list[str]:
     """§14.5–§14.7/§9.8: a gated value moves only by a reviewed decision and
@@ -1218,7 +1230,7 @@ def validate_instance(root: Path):
                 # future-date bound go unchecked and arbitrary values become
                 # contract-valid — so dated state without it is rejected.
                 if graph_as_of is None and any(
-                        isinstance(entry, dict) and "last_seen" in entry
+                        _state_entry_has_dated_input(entry)
                         for entry in _as_dict(instance.get("state")).values()):
                     errors.append(
                         f"{path}: /state carries dated entries with no valid "
@@ -1885,6 +1897,7 @@ def check_constants():
     schema_prefixes = {
         key: value["const"] for key, value in defs["idPrefixes"]["properties"].items()
     }
+    decision_defs = schemas["journal-decision"]["$defs"]
     checks = (
         ("NODE_TYPES", set(builder.NODE_TYPES), "schema $defs.nodeType", set(defs["nodeType"]["enum"])),
         ("EDGE_TYPES", set(builder.EDGE_TYPES), "schema $defs.edgeType", set(defs["edgeType"]["enum"])),
@@ -1904,7 +1917,33 @@ def check_constants():
         # boundary preflight predicts whether the builder accepts the row.
         ("PROPOSERS", set(builder.PROPOSERS),
          "journal-decision schema $defs.proposer",
-         set(schemas["journal-decision"]["$defs"]["proposer"]["enum"])),
+         set(decision_defs["proposer"]["enum"])),
+        # §9.13 is canon-complete while this slice defers named rows. Keep
+        # the active and deferred builder rosters exhaustive against that
+        # persisted contract so preflight/build drift fails in CI.
+        ("DECISION_DIMENSIONS",
+         set(builder.DECISION_VALUES) | set(builder.DEFERRED_DIMENSIONS),
+         "journal-decision schema $defs.dimension",
+         set(decision_defs["dimension"]["enum"])),
+        ("DECISION_OUTCOMES", set(builder.DECISION_OUTCOMES),
+         "journal-decision schema $defs.decision",
+         set(decision_defs["decision"]["enum"])),
+        ("DECISION_VALUES.confidence",
+         set(builder.DECISION_VALUES["confidence"]),
+         "journal-decision schema $defs.confidenceValue",
+         set(decision_defs["confidenceValue"]["enum"])),
+        ("DECISION_VALUES.clarity", set(builder.DECISION_VALUES["clarity"]),
+         "journal-decision schema $defs.clarityValue",
+         set(decision_defs["clarityValue"]["enum"])),
+        ("DECISION_VALUES.coverage", set(builder.DECISION_VALUES["coverage"]),
+         "journal-decision schema $defs.coverageValue",
+         set(decision_defs["coverageValue"]["enum"])),
+        ("DECISION_VALUES.weight", set(builder.DECISION_VALUES["weight"]),
+         "journal-decision schema $defs.weightValue",
+         set(decision_defs["weightValue"]["enum"])),
+        ("DECISION_VALUES.status", set(builder.DECISION_VALUES["status"]),
+         "journal-decision schema $defs.statusValue",
+         set(decision_defs["statusValue"]["enum"])),
     )
     for code_name, code_value, schema_name, schema_value in checks:
         if code_value != schema_value:

@@ -297,6 +297,11 @@ def exposure_ceiling(evidence_ids, nodes) -> int:
             continue
         if node.get("type") == "artifact":
             strength = node.get("evidence_strength")
+            # The graph is untrusted boundary input. Its schema reports a
+            # malformed strength, but this shared semantic check still runs;
+            # never feed an unhashable rejected value to set/dict lookup.
+            if not isinstance(strength, str):
+                continue
             strengths.add(strength)
             ceiling = max(ceiling, ARTIFACT_EXPOSURE_RANK.get(strength, 0))
         elif node.get("type") == "encounter":

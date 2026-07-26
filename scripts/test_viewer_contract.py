@@ -78,6 +78,10 @@ class ViewerContractTests(unittest.TestCase):
         self.assertEqual(expected, json_constant(self.source, "CEILINGS"))
 
     def test_closed_keys_and_enums_transcribe_schema(self):
+        state_shapes = self.schema["properties"]["state"][
+            "additionalProperties"]["oneOf"]
+        concept_state = state_shapes[0]["properties"]
+        question_state = state_shapes[2]["properties"]
         comparisons = {
             "ENVELOPE_KEYS": list(self.schema["properties"]),
             "NODE_KEYS": list(self.defs["node"]["properties"]),
@@ -93,6 +97,11 @@ class ViewerContractTests(unittest.TestCase):
             "SENSITIVITY_CLASSES": self.defs["node"]["properties"]["sensitivity"]["enum"],
             "EDGE_WEIGHTS": self.defs["emittedEdgeWeight"]["enum"],
             "CONFIDENCE_VALUES": self.defs["edge"]["properties"]["confidence"]["enum"],
+            "CONCEPT_EXPOSURES": concept_state["exposure"]["enum"],
+            "CLARITY_VALUES": concept_state["clarity"]["enum"],
+            "COVERAGE_VALUES": concept_state["coverage"]["enum"],
+            "FRESHNESS_VALUES": concept_state["freshness"]["enum"],
+            "QUESTION_STATUSES": question_state["status"]["enum"],
             "LIFECYCLE_STATUSES": self.defs["lifecycleStatus"]["enum"],
             "ROUTE_STATUSES": self.defs["routeStatus"]["enum"],
         }
