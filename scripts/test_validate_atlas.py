@@ -2068,6 +2068,10 @@ class SchemaValidatorTests(unittest.TestCase):
             "decision-after-as-of": (
                 "2026-07-10T00:00:00Z", future_decision,
                 "decision dated after the graph as-of"),
+            "suffixed-last-seen": (
+                "2026-07-10T00:00:00Z",
+                dated.replace("2026-07-01", "2026-07-01junk"),
+                "expected exactly one oneOf match"),
         }
         for name, (generated_at, entry, expected) in cases.items():
             graph = (GRAPH_WITH_NODE % "concept").replace(

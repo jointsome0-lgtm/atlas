@@ -48,8 +48,19 @@ _DATE_SHAPE_PATTERNS = frozenset({
 
 
 def _is_calendar_date(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        date_value = value
+    elif re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+            r"T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",
+            value):
+        date_value = value[:10]
+    else:
+        return False
     try:
-        datetime.date.fromisoformat(value[:10])
+        datetime.date.fromisoformat(date_value)
     except ValueError:
         return False
     return True
@@ -764,18 +775,22 @@ def _as_list(value):
     return value if isinstance(value, list) else []
 
 
-def _contains_withheld_id(value, withheld_ids: set[str]) -> bool:
-    """Mirror §32.6's whole-value citation taint without exposing content."""
-    if isinstance(value, str):
-        return any(node_id in value for node_id in withheld_ids)
-    if isinstance(value, list):
-        return any(_contains_withheld_id(item, withheld_ids) for item in value)
-    if isinstance(value, dict):
-        return any(
-            _contains_withheld_id(item, withheld_ids)
-            for item in value.values()
+def _state_cites_withheld_id(entry, withheld_ids: set[str]) -> bool:
+    """Mirror the builder's exact joins over structured state evidence."""
+    if not isinstance(entry, dict):
+        return False
+    refs = {
+        ref for ref in _as_list(entry.get("evidence"))
+        if isinstance(ref, str)
+    }
+    for decision in _as_list(entry.get("decisions")):
+        if not isinstance(decision, dict):
+            continue
+        refs.update(
+            ref for ref in _as_list(decision.get("evidence"))
+            if isinstance(ref, str)
         )
-    return False
+    return bool(refs & withheld_ids)
 
 
 def _user_self_proposal_errors(row, path, artifact_kinds) -> list[str]:
@@ -1349,7 +1364,9 @@ def validate_instance(root: Path):
                             isinstance(entry, dict)
                             and "sensitivity" in entry
                         )
-                        and not _contains_withheld_id(entry, withheld_ids)
+                        and not _state_cites_withheld_id(
+                            entry, withheld_ids
+                        )
                     }
                     licensed_missing = (
                         set(full_state) - set(expected_state)

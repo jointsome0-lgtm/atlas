@@ -1950,10 +1950,13 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         # apply on evidence outside the cut, so this speaks only when the
         # cited records resolve — and then one of them must be the note.
         if dimension == "status" and row["to"] == "stale":
-            resolved = [nodes[ref] for ref in row["evidence"] if ref in nodes]
-            if resolved and not any(
-                    node.get("kind") == STALE_EVIDENCE_KIND
-                    for node in resolved):
+            resolved = [
+                nodes[ref] for ref in row["evidence"] if ref in nodes
+            ]
+            if (len(resolved) == len(row["evidence"])
+                    and not any(
+                        node.get("kind") == STALE_EVIDENCE_KIND
+                        for node in resolved)):
                 errors.append(
                     f"{origin}: /evidence for a stale status must cite the "
                     "user's own note (§9.8/§31.5)")
@@ -2408,6 +2411,26 @@ def _redact_graph(graph: dict) -> dict:
     # `decisions` refs would otherwise carry that id into the output. State
     # ends the closure: nothing derives from it, so no second fixpoint.
     # The full graph remains untouched and the disclosure is a count only.
+    def state_evidence_refs(entry):
+        evidence = entry.get("evidence")
+        refs = {
+            ref for ref in evidence
+            if isinstance(ref, str)
+        } if isinstance(evidence, list) else set()
+        decisions = entry.get("decisions")
+        if not isinstance(decisions, list):
+            decisions = []
+        for decision in decisions:
+            if not isinstance(decision, dict):
+                continue
+            decision_evidence = decision.get("evidence")
+            if isinstance(decision_evidence, list):
+                refs.update(
+                    ref for ref in decision_evidence
+                    if isinstance(ref, str)
+                )
+        return refs
+
     def keep_state(node_id, entry):
         if node_id in withheld_ids:
             return False
@@ -2415,8 +2438,10 @@ def _redact_graph(graph: dict) -> dict:
             return True
         if "sensitivity" in entry:
             return False
-        text = payload_text(entry, set())
-        return not any(marked in text for marked in withheld_ids)
+        # State carries evidence only in closed id arrays. Unlike node/edge
+        # free text, these are exact joins: artifact:a must not taint the
+        # unrelated artifact:a-long.
+        return not (state_evidence_refs(entry) & withheld_ids)
 
     state = {
         node_id: entry for node_id, entry in graph["state"].items()

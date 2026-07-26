@@ -2808,6 +2808,46 @@ class StateFoldTests(unittest.TestCase):
         self.assertNotIn("artifact:2026-01-01-001", payload)
         self.assertNotIn("artifact:2026-01-02-001", payload)
 
+    def test_redaction_matches_structured_state_evidence_ids_exactly(self):
+        # Node/edge prose uses substring taint by design, but state evidence
+        # is a closed id join: withholding artifact:a must not remove a value
+        # whose only provenance is the distinct public artifact:a-long.
+        classed = self._artifact(
+            "artifact:a", "2026-01-01", "noticed",
+            sensitivity="medical")
+        public = self._artifact(
+            "artifact:a-long", "2026-01-02", "noticed",
+            supports=["concept:c"])
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([classed, public]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertEqual(
+            ["artifact:a-long"],
+            redacted["state"]["concept:c"]["evidence"],
+        )
+        self.assertEqual(0, redacted["withheld"]["state"])
+
+        # The boundary's full/redacted sibling check reads the same exact
+        # join, so a clean builder emission remains a clean preflight.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            graph_dir = root / "graph"
+            graph_dir.mkdir()
+            (graph_dir / "atlas-graph.json").write_text(
+                json.dumps(graph) + "\n", encoding="utf-8"
+            )
+            (graph_dir / "atlas-graph.redacted.json").write_text(
+                json.dumps(redacted) + "\n", encoding="utf-8"
+            )
+            validation_errors, _, _ = validate_atlas.validate_instance(root)
+        self.assertEqual([], validation_errors)
+
     def test_body_decision_dimensions_are_refused_under_the_freeze(self):
         # §29/#45/#58: §9.13's body ladders stay canon but unfolded during
         # the freeze. Accepting one would report a successful build that
@@ -2974,6 +3014,39 @@ class StateFoldTests(unittest.TestCase):
             else:
                 self.assertTrue(
                     any("note" in error for error in errors), errors)
+
+    def test_stale_note_outside_as_of_does_not_block_the_decision(self):
+        # §20.1: the in-cut decision applies even when its actual note lies
+        # after the cut. A different in-cut artifact must not turn the
+        # partially-resolved evidence set into a false non-note rejection.
+        question = json.loads(_QUESTION_ROW)
+        in_cut = self._artifact(
+            "artifact:in-cut", "2026-07-16", "noticed")
+        in_cut["type"] = "script"
+        future_note = self._artifact(
+            "artifact:future-note", "2026-08-01", "noticed")
+        decision = self._decision(
+            "2026-07-20", question["id"], "status", "stale",
+            [in_cut["id"], future_note["id"]])
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([in_cut, future_note]),
+            "state/questions.jsonl": self._jsonl([question]),
+            "state/decisions.jsonl": self._jsonl([decision]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(
+                Path(directory), "2026-07-31")
+
+        self.assertEqual([], errors)
+        self.assertEqual("stale", graph["state"][question["id"]]["status"])
+        self.assertTrue(
+            any(
+                future_note["id"] in warning
+                and "dangling evidence ref" in warning
+                for warning in warnings
+            ),
+            warnings,
+        )
 
     def test_direct_journal_is_the_newest_tail_of_the_rotation(self):
         # §8/§20.1: rotation moves old rows out, so the per-year files are
