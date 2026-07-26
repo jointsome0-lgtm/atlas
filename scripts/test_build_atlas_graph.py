@@ -2677,7 +2677,7 @@ class StateFoldTests(unittest.TestCase):
             supports=["concept:c"])
         late = self._artifact(
             "artifact:2026-02-01-001", "2026-02-01", "applied",
-            supports=["concept:c"])
+            supports=["concept:c"], sensitivity="medical")
         decisions = [
             # §20.1: the decision applies even though its cited evidence is
             # beyond the cut and therefore dangling in this dated graph.
@@ -2700,10 +2700,18 @@ class StateFoldTests(unittest.TestCase):
         state = graph["state"]["concept:c"]
         self.assertEqual("touched", state["exposure"])
         self.assertEqual("high", state["confidence"])
+        # The late artifact is not an emitted node, but the in-cut decision
+        # still cites it. Its §32.6 class therefore taints the derived value
+        # and the agent-facing graph omits that value whole.
+        self.assertEqual("medical", state["sensitivity"])
         self.assertEqual(
             [early["id"], late["id"]],
             state["evidence"],
         )
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertNotIn("concept:c", redacted["state"])
+        self.assertEqual(1, redacted["withheld"]["state"])
+        self.assertNotIn(late["id"], json.dumps(redacted))
         self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
         self.assertTrue(
             any(late["id"] in warning and "dangling evidence ref" in warning

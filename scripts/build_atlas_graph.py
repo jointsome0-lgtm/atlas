@@ -447,6 +447,10 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     question_records: dict = {}  # question id -> (source object, pulls)
     encounter_records: list = []  # (id, target, depth, ctx question/artifact, origin)
     decision_records: list = []  # (journal position, origin, row, row date)
+    # §20.1 decisions survive citations to evidence outside an explicit cut.
+    # Keep only the §32.6 class metadata from every dated evidence row so
+    # that an omitted node cannot also erase the folded value's taint.
+    evidence_sensitivity: dict[str, str] = {}
     activity_dates: list = []  # §20.1 — the dated-input universe
     skipped_dated_inputs = 0
 
@@ -1098,8 +1102,21 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                     origin = f"{path}:{number}"
                     # §20.1: the dated field is the first row field read. A row
                     # beyond an explicit cut is skipped whole, without unrelated
-                    # schema diagnostics or any projection.
+                    # schema diagnostics or any projection. Sensitivity is the
+                    # one metadata exception: an in-cut decision may still cite
+                    # this row, so §32.6's provenance union must survive the
+                    # projection cut.
                     row_date = date_field(row.get(date_key), origin, date_key)
+                    if stem in ("artifacts", "encounters", "questions"):
+                        evidence_id = row.get("id")
+                        sensitivity = row.get("sensitivity")
+                        expected_type = stem.removesuffix("s")
+                        if (isinstance(evidence_id, str)
+                                and NODE_ID_RE.fullmatch(evidence_id)
+                                and id_type(evidence_id) == expected_type
+                                and isinstance(sensitivity, str)
+                                and sensitivity in SENSITIVITY_CLASSES):
+                            evidence_sensitivity[evidence_id] = sensitivity
                     if skip_after_as_of(row_date):
                         continue
                     nulls = sorted(k for k, v in row.items() if v is None)
@@ -1966,7 +1983,11 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         candidates = (
             nodes.get(target, {}).get("sensitivity"),
             winner[3],
-            *(nodes.get(ref, {}).get("sensitivity") for ref in winner[2]),
+            *(
+                nodes.get(ref, {}).get("sensitivity")
+                or evidence_sensitivity.get(ref)
+                for ref in winner[2]
+            ),
         )
         return next((value for value in candidates if value is not None), None)
 
