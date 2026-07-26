@@ -630,7 +630,7 @@ _PROVENANCE_TARGET_OWNED = {
 
 
 def _review_gate_errors(entry: dict, path: Path, position: int,
-                        as_of: str | None) -> list[str]:
+                        as_of: str | None, nodes: dict) -> list[str]:
     """§14.5–§14.7/§9.8: a gated value moves only by a reviewed decision and
     never carries two competing references, a ladder moves only on recorded
     evidence, and freshness is a derivation against the fold as-of. The
@@ -639,15 +639,35 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
     past the gate (§31)."""
     errors: list[str] = []
     # §14.5/§14.8: the ladders move on recorded artifact or encounter
-    # evidence, so only a first value can stand uncited.
-    for dimension in ("exposure", "depth_reached"):
+    # evidence, so only a first value can stand uncited — and the cited
+    # records must be able to reach the asserted rung. The ceiling is an
+    # upper bound (the fold also weighs link kind and dates the emission
+    # does not repeat), which is exactly what rejects imported
+    # understanding without second-guessing a real fold (§31.3).
+    ladders = (
+        # `unseen` is the one rung standing for no contact at all; material
+        # state exists only because an encounter created it, so its first
+        # rung is a reading, not an exemption.
+        ("exposure", _builder.CONCEPT_EXPOSURE, _builder.exposure_ceiling,
+         _builder.CONCEPT_EXPOSURE[0]),
+        ("depth_reached", _builder.MATERIAL_DEPTH, _builder.depth_ceiling,
+         None),
+    )
+    for dimension, ladder, ceiling_of, uncited in ladders:
         value = entry.get(dimension)
-        if value is None or value == _builder.CONCEPT_EXPOSURE[0]:
+        if value is None or value == uncited:
             continue
-        if not _as_list(entry.get("evidence")):
+        evidence = _as_list(entry.get("evidence"))
+        if not evidence:
             errors.append(
                 f"{path}: /state property #{position} moves {dimension} off "
                 "its first value with no evidence (§14.5/§14.8)"
+            )
+        elif value in ladder and ladder.index(value) > ceiling_of(
+                evidence, nodes):
+            errors.append(
+                f"{path}: /state property #{position} asserts {dimension} "
+                "beyond what its cited evidence can reach (§14.5/§14.8)"
             )
     # §14.7/§20.1: last_seen is a fold input, never later than the as-of it
     # is measured against, and freshness is recomputed from the two. The
@@ -1141,6 +1161,7 @@ def validate_instance(root: Path):
                 # the same file — a dangling endpoint never leaves the build.
                 node_ids: set = set()
                 node_types: dict[str, str] = {}
+                nodes_by_id: dict[str, dict] = {}
                 zone_ids: set = set()
                 for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
@@ -1153,6 +1174,8 @@ def validate_instance(root: Path):
                             f"{path}: duplicate node id {node_id} (§10.1)"
                         )
                     node_ids.add(node_id)
+                    # §14.5 evidence resolution reads the emitted record.
+                    nodes_by_id.setdefault(node_id, node)
                     if isinstance(node.get("type"), str):
                         node_types[node_id] = node["type"]
                     if node.get("type") == "zone":
@@ -1223,7 +1246,8 @@ def validate_instance(root: Path):
                         )
                     if isinstance(state_entry, dict):
                         errors.extend(_review_gate_errors(
-                            state_entry, path, position, graph_as_of))
+                            state_entry, path, position, graph_as_of,
+                            nodes_by_id))
                 # §14.6/§9.8 make every gated value review-gated, and §20
                 # step 9 makes the fold total over the kinds that carry a
                 # default: a concept is at worst `unseen`/no-knowledge and a
@@ -1876,6 +1900,11 @@ def check_constants():
         ("AGENT_ROLES", set(builder.AGENT_ROLES),
          "run-manifest schema properties.role",
          set(schemas["run-manifest"]["properties"]["role"]["enum"])),
+        # The journal schema carries the same roster plus the user, so the
+        # boundary preflight predicts whether the builder accepts the row.
+        ("PROPOSERS", set(builder.PROPOSERS),
+         "journal-decision schema $defs.proposer",
+         set(schemas["journal-decision"]["$defs"]["proposer"]["enum"])),
     )
     for code_name, code_value, schema_name, schema_value in checks:
         if code_value != schema_value:

@@ -1900,6 +1900,41 @@ class SchemaValidatorTests(unittest.TestCase):
             self.assertEqual(1, code, stderr)
             self.assertIn(expected, stderr)
 
+    def test_exposure_may_not_exceed_what_its_evidence_can_reach(self):
+        # §14.5/§31.3: citing a record is not enough — the cited records
+        # have to be able to produce the asserted rung. An encounter caps
+        # at `read`, so `applied` on encounter evidence is imported.
+        nodes = (
+            '{"id": "concept:example", "type": "concept", "title": "E",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "encounter:2026-07-16-001", "type": "encounter",'
+            ' "title": "", "fields": [], "date": "2026-07-16",'
+            ' "target": "material:m", "depth": "read", "mode": "background"},'
+            ' {"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"}'
+        )
+        for exposure, expected_code in (("read", 0), ("applied", 1)):
+            entry = (f'{{"exposure": "{exposure}", "confidence": "unknown",'
+                     ' "clarity": "vague", "coverage": "none",'
+                     ' "evidence": ["encounter:2026-07-16-001"],'
+                     ' "decisions": []}')
+            graph = VALID_EMPTY_GRAPH.replace(
+                '"nodes": [],', f'"nodes": [{nodes}],'
+            ).replace(
+                '"edges": [],',
+                '"edges": [{"source": "encounter:2026-07-16-001",'
+                ' "target": "material:m", "type": "visited",'
+                ' "provenance": ["encounter:2026-07-16-001"]}],'
+            ).replace(
+                '"state": {},', f'"state": {{"concept:example": {entry}}},')
+            with self.subTest(exposure=exposure), tempfile.TemporaryDirectory() as directory:
+                materialize({"graph/atlas-graph.json": graph}, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn("beyond what its cited evidence can reach",
+                              stderr)
+
     def test_dated_state_is_bounded_by_a_usable_as_of(self):
         # §20.1: the as-of bounds every dated input. A missing or unparsable
         # stamp leaves freshness unchecked rather than half-checked, and an

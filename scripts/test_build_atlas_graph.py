@@ -2886,6 +2886,44 @@ class StateFoldTests(unittest.TestCase):
                         for error in errors), errors)
                 self.assertEqual("open", status)
 
+    def test_stale_status_must_cite_the_users_own_note(self):
+        # §9.8/§31.5: nothing declines automatically. Staleness is the
+        # owner's judgment, so an encounter or someone else's artifact
+        # cannot carry it — only their own note.
+        question = json.loads(_QUESTION_ROW)
+        encounter = {
+            "id": "encounter:2026-07-16-001", "date": "2026-07-16",
+            "target": "material:m", "depth": "skim", "mode": "background",
+        }
+        cases = {
+            "encounter": (["encounter:2026-07-16-001"], "note", "open"),
+            "non-note-artifact": (["artifact:2026-07-16-001"], "script",
+                                  "open"),
+            "own-note": (["artifact:2026-07-16-001"], "note", "stale"),
+        }
+        for name, (evidence, kind, expected) in cases.items():
+            artifact = self._artifact(
+                "artifact:2026-07-16-001", "2026-07-16", "noticed")
+            artifact["type"] = kind
+            decision = self._decision(
+                "2026-08-01", "question:q", "status", "stale", evidence)
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "materials/m.md": _MATERIAL % ("m", "M"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/encounters.jsonl": self._jsonl([encounter]),
+                "state/questions.jsonl": self._jsonl([question]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertEqual(expected, graph["state"]["question:q"]["status"])
+            if expected == "stale":
+                self.assertEqual([], errors)
+            else:
+                self.assertTrue(
+                    any("note" in error for error in errors), errors)
+
     def test_direct_journal_is_the_newest_tail_of_the_rotation(self):
         # §8/§20.1: rotation moves old rows out, so the per-year files are
         # the older half and state/decisions.jsonl is the newest tail. A

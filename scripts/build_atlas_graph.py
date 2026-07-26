@@ -269,6 +269,57 @@ CONCEPT_DEFAULTS = {
 QUESTION_DEFAULT_STATUS = "open"
 
 
+# §14.5 — the artifact strength → concept exposure ladder, as ranks into
+# CONCEPT_EXPOSURE. Encounters enter the same ladder capped at `read`.
+ARTIFACT_EXPOSURE_RANK = {
+    "noticed": 1,
+    "read": 2,
+    "summarized": 3,
+    "explained": 3,
+    "applied": 4,
+    "reviewed": 4,
+    "performed": 4,
+    "drilled": 4,
+}
+MATERIAL_DEPTH = ("skim", "read", "summarized", "applied", "taught")
+
+
+def exposure_ceiling(evidence_ids, nodes) -> int:
+    """§14.5: the highest exposure rank the cited records could produce —
+    an upper bound, because the fold also depends on link kind and dates
+    the emission does not repeat. The boundary uses it to reject an
+    exposure no cited evidence can support (§31.3)."""
+    ceiling = 0
+    strengths = set()
+    for ref in evidence_ids:
+        node = nodes.get(ref)
+        if not isinstance(node, dict):
+            continue
+        if node.get("type") == "artifact":
+            strength = node.get("evidence_strength")
+            strengths.add(strength)
+            ceiling = max(ceiling, ARTIFACT_EXPOSURE_RANK.get(strength, 0))
+        elif node.get("type") == "encounter":
+            # A skim is contact; read or deeper is capped at read (§14.5).
+            ceiling = max(ceiling, 1 if node.get("depth") == "skim" else 2)
+    if {"explained", "reviewed"} <= strengths:
+        ceiling = len(CONCEPT_EXPOSURE) - 1
+    return ceiling
+
+
+def depth_ceiling(evidence_ids, nodes) -> int:
+    """§14.8: material state is the deepest cited encounter, as a rank into
+    MATERIAL_DEPTH."""
+    ceiling = 0
+    for ref in evidence_ids:
+        node = nodes.get(ref)
+        if isinstance(node, dict) and node.get("type") == "encounter":
+            depth = node.get("depth")
+            if depth in MATERIAL_DEPTH:
+                ceiling = max(ceiling, MATERIAL_DEPTH.index(depth))
+    return ceiling
+
+
 def freshness_of(last_seen: str, as_of: str) -> str:
     """§14.7: freshness is a derivation, not a stored judgement — the age of
     the last contact against the fold's as-of, in inclusive 30/90-day
@@ -328,6 +379,9 @@ EVIDENCE_PREFIXES = {"artifact", "encounter", "question"}
 # §9.8: question status cites the record that made the transition true, so
 # the question's own creation record is not evidence for its own outcome.
 STATUS_EVIDENCE_PREFIXES = {"artifact", "encounter"}
+# §9.8/§31.5: staleness is the user's own judgment, recorded as a note.
+STALE_EVIDENCE_PREFIXES = {"artifact"}
+STALE_EVIDENCE_KIND = "note"
 # §17.1 — the four core roles, pinned against run-manifest.schema.json by
 # check-constants. §9.13 admits one of these or the user as a proposer.
 AGENT_ROLES = {
@@ -1276,15 +1330,26 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         # or encounter that clarified or resolved it, a note artifact for
         # `stale`. The question's own creation record establishes nothing,
         # so the generic §9.12 set narrows for this one dimension.
-        evidence_prefixes = (STATUS_EVIDENCE_PREFIXES if dimension == "status"
-                             else EVIDENCE_PREFIXES)
+        # §9.8/§31.5: nothing declines automatically, so `stale` is the
+        # user's own note — never an encounter, never someone else's work.
+        if dimension == "status" and row.get("to") == "stale":
+            evidence_prefixes = STALE_EVIDENCE_PREFIXES
+        elif dimension == "status":
+            evidence_prefixes = STATUS_EVIDENCE_PREFIXES
+        else:
+            evidence_prefixes = EVIDENCE_PREFIXES
         if (not isinstance(evidence, list) or not evidence
                 or any(not valid_node_ref(ref, evidence_prefixes)
                        for ref in evidence)):
-            errors.append(
-                f"{origin}: /evidence must be a non-empty list of "
-                + ("§9.8 resolution evidence — artifact or encounter ids"
-                   if dimension == "status" else "§9.12 evidence ids"))
+            if dimension == "status" and row.get("to") == "stale":
+                expectation = "§9.8 staleness evidence — the user's own note"
+            elif dimension == "status":
+                expectation = ("§9.8 resolution evidence — artifact or "
+                               "encounter ids")
+            else:
+                expectation = "§9.12 evidence ids"
+            errors.append(f"{origin}: /evidence must be a non-empty list of "
+                          + expectation)
             valid = False
         proposed_by = row.get("proposed_by")
         # §9.13: the audit record names who proposed it — a §17 agent role
@@ -1710,16 +1775,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             artifact_links.setdefault(edge["source"], {
                 "influences": set(), "updates_state": set(),
             })[edge["type"]].add(edge["target"])
-    artifact_rank = {
-        "noticed": 1,
-        "read": 2,
-        "summarized": 3,
-        "explained": 3,
-        "applied": 4,
-        "reviewed": 4,
-        "performed": 4,
-        "drilled": 4,
-    }
+    artifact_rank = ARTIFACT_EXPOSURE_RANK
     for artifact_id in sorted(artifact_links):
         artifact = nodes.get(artifact_id, {})
         date = artifact.get("observed_at")
@@ -1770,7 +1826,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         edge["source"]: edge["target"]
         for edge in edges if edge["type"] == "visited"
     }
-    material_depth = ("skim", "read", "summarized", "applied", "taught")
+    material_depth = MATERIAL_DEPTH
     material_work: dict[str, dict] = {}
     for encounter_id in sorted(visited):
         encounter = nodes.get(encounter_id, {})
@@ -1830,6 +1886,19 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                     "dangling evidence ref (§20.1)")
         if row["decision"] != "confirmed":
             continue
+        # §9.8: the read pass held staleness to an artifact; the kind is
+        # knowable only here, where nodes exist. §20.1 lets a decision
+        # apply on evidence outside the cut, so this speaks only when the
+        # cited records resolve — and then one of them must be the note.
+        if dimension == "status" and row["to"] == "stale":
+            resolved = [nodes[ref] for ref in row["evidence"] if ref in nodes]
+            if resolved and not any(
+                    node.get("kind") == STALE_EVIDENCE_KIND
+                    for node in resolved):
+                errors.append(
+                    f"{origin}: /evidence for a stale status must cite the "
+                    "user's own note (§9.8/§31.5)")
+                continue
         # The same table the refusals above read: an accepted row is a
         # folded row, so nothing validates into a silently dropped decision.
         if (nodes.get(target, {}).get("type")
