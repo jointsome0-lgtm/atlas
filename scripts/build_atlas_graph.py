@@ -292,6 +292,8 @@ def exposure_ceiling(evidence_ids, nodes) -> int:
     ceiling = 0
     strengths = set()
     for ref in evidence_ids:
+        if not isinstance(ref, str):
+            continue
         node = nodes.get(ref)
         if not isinstance(node, dict):
             continue
@@ -318,6 +320,8 @@ def depth_ceiling(evidence_ids, nodes) -> int:
     encounter to its exact target; this helper does not partially refold."""
     ceiling = 0
     for ref in evidence_ids:
+        if not isinstance(ref, str):
+            continue
         node = nodes.get(ref)
         if isinstance(node, dict) and node.get("type") == "encounter":
             depth = node.get("depth")
@@ -1364,6 +1368,17 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             errors.append(f"{origin}: /proposed_by must be a §17 agent role "
                           "or user (§9.13)")
             valid = False
+        elif (proposed_by == "user"
+              and not (isinstance(evidence, list)
+                       and any(valid_node_ref(ref, {"artifact"})
+                               for ref in evidence))):
+            # §9.13: a manual edit is a self-proposal recorded through the
+            # same gate, citing the owner's note rather than an anonymous
+            # direct write. The kind is checked after refs resolve below.
+            errors.append(
+                f"{origin}: /evidence for a user self-proposal must include "
+                "a note artifact (§9.13)")
+            valid = False
         outcome = row.get("decision")
         if not isinstance(outcome, str) or outcome not in DECISION_OUTCOMES:
             errors.append(f"{origin}: /decision must be confirmed or "
@@ -1890,6 +1905,27 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                 warnings.append(
                     f"{origin}: {ref} missing — decision applies with a "
                     "dangling evidence ref (§20.1)")
+        # §9.13: user self-proposals cite the owner's note. The read pass
+        # established an artifact-shaped ref; its kind is knowable here.
+        # A decision record remains valid when that artifact lies outside the
+        # as-of cut or was deleted (§20.1), so reject only when every cited
+        # artifact resolves and none is a note.
+        if row["proposed_by"] == "user":
+            artifact_refs = [
+                ref for ref in row["evidence"]
+                if ref.startswith("artifact:")
+            ]
+            resolved_artifacts = [
+                nodes[ref] for ref in artifact_refs if ref in nodes
+            ]
+            if (len(resolved_artifacts) == len(artifact_refs)
+                    and not any(
+                        node.get("kind") == STALE_EVIDENCE_KIND
+                        for node in resolved_artifacts)):
+                errors.append(
+                    f"{origin}: /evidence for a user self-proposal must cite "
+                    "the user's own note (§9.13)")
+                continue
         if row["decision"] != "confirmed":
             continue
         # §9.8: the read pass held staleness to an artifact; the kind is

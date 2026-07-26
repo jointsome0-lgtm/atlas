@@ -763,6 +763,33 @@ def _as_dict(value):
 def _as_list(value):
     return value if isinstance(value, list) else []
 
+
+def _user_self_proposal_errors(row, path, artifact_kinds) -> list[str]:
+    """Keep §9.13 user-note semantics aligned with the builder."""
+    if not isinstance(row, dict) or row.get("proposed_by") != "user":
+        return []
+    artifact_refs = [
+        ref for ref in _as_list(row.get("evidence"))
+        if isinstance(ref, str) and ref.startswith("artifact:")
+    ]
+    if not artifact_refs:
+        return [
+            f"{path}: /evidence for a user self-proposal must include "
+            "a note artifact (§9.13)"
+        ]
+    resolved_kinds = [
+        artifact_kinds[ref] for ref in artifact_refs
+        if ref in artifact_kinds
+    ]
+    if (len(resolved_kinds) == len(artifact_refs)
+            and _builder.STALE_EVIDENCE_KIND not in resolved_kinds):
+        return [
+            f"{path}: /evidence for a user self-proposal must cite "
+            "the user's own note (§9.13)"
+        ]
+    return []
+
+
 def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     """§33.4: every §9.12 evidence id in an evidence-bearing field resolves
     in the top-level evidence_refs table; curated node ids `via` may carry
@@ -1111,6 +1138,7 @@ def validate_instance(root: Path):
         errors.append(str(exc))
         has_state = False
     if has_state:
+        artifact_kinds: dict[str, str] = {}
         for stem, schema_name in JOURNALS.items():
             try:
                 paths = list(_journal_paths(reader, stem))
@@ -1121,9 +1149,19 @@ def validate_instance(root: Path):
                 path = source_file.path
                 try:
                     for number, row in _read_jsonl(source_file):
+                        row_path = f"{path}:{number}"
                         errors.extend(
-                            _schema_errors(row, schemas[schema_name], f"{path}:{number}")
+                            _schema_errors(row, schemas[schema_name], row_path)
                         )
+                        if stem == "artifacts" and isinstance(row, dict):
+                            artifact_id = row.get("id")
+                            artifact_kind = row.get("type")
+                            if (isinstance(artifact_id, str)
+                                    and isinstance(artifact_kind, str)):
+                                artifact_kinds[artifact_id] = artifact_kind
+                        elif stem == "decisions":
+                            errors.extend(_user_self_proposal_errors(
+                                row, row_path, artifact_kinds))
                         counts["rows"] += 1
                 except JsonInputError as exc:
                     errors.append(str(exc))

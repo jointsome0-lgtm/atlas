@@ -1983,6 +1983,53 @@ class SchemaValidatorTests(unittest.TestCase):
                 all(line.startswith("ERROR:")
                     for line in stderr.splitlines()), stderr)
 
+    def test_malformed_state_evidence_ids_report_without_a_traceback(self):
+        # The same untrusted-value genus applies before node lookup in both
+        # ladder ceilings: malformed object/array refs are schema errors,
+        # never unhashable dict-key tracebacks in the semantic pass.
+        for node_type, malformed in (
+                ("concept", {}), ("concept", []),
+                ("material", {}), ("material", [])):
+            node = {
+                "id": f"{node_type}:example",
+                "type": node_type,
+                "title": "Example (Vera Example)",
+                "fields": ["knowledge"] if node_type == "concept" else [],
+            }
+            if node_type == "concept":
+                node["aliases"] = []
+                entry = {
+                    "exposure": "applied",
+                    "confidence": "unknown",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "evidence": [malformed],
+                    "decisions": [],
+                }
+            else:
+                node.update({"kind": "docs", "url": "", "status": "active"})
+                entry = {
+                    "depth_reached": "read",
+                    "last_seen": "2026-07-16",
+                    "evidence": [malformed],
+                }
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [node]
+            graph["state"] = {node["id"]: entry}
+            with self.subTest(node_type=node_type,
+                              value_type=type(malformed).__name__), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertTrue(stderr)
+            self.assertTrue(
+                all(line.startswith("ERROR:")
+                    for line in stderr.splitlines()), stderr)
+
     def test_dated_state_is_bounded_by_a_usable_as_of(self):
         # §20.1: the as-of bounds every dated input. A missing or unparsable
         # stamp leaves freshness unchecked rather than half-checked, and an
@@ -2056,6 +2103,53 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertEqual(1, code, stderr)
         self.assertIn("not a real calendar date", stderr)
         self.assertNotIn("2026-02-30", stderr)
+
+    def test_user_self_proposal_note_preflight_matches_the_builder(self):
+        # §9.13: validate_atlas predicts the builder's user-note gate. A
+        # missing artifact may be outside the cut or deleted (§20.1), but a
+        # resolved non-note or an evidence list with no artifact is invalid.
+        base_decision = {
+            "date": "2026-07-16",
+            "target": "concept:example",
+            "dimension": "confidence",
+            "to": "high",
+            "evidence": ["artifact:2026-07-16-001"],
+            "proposed_by": "user",
+            "decision": "confirmed",
+        }
+        cases = {
+            "own-note": (VALID_ARTIFACT_ROW, base_decision, 0),
+            "non-note": (
+                VALID_ARTIFACT_ROW.replace('"type":"note"',
+                                           '"type":"script"'),
+                base_decision,
+                1,
+            ),
+            "wrong-kind": (
+                None,
+                {**base_decision,
+                 "evidence": ["encounter:2026-07-16-001"]},
+                1,
+            ),
+            "dangling-note": (
+                None,
+                {**base_decision, "evidence": ["artifact:missing"]},
+                0,
+            ),
+        }
+        for name, (artifact_row, decision, expected_code) in cases.items():
+            tree = {
+                "state/decisions.jsonl": json.dumps(decision) + "\n",
+            }
+            if artifact_row is not None:
+                tree["state/artifacts.jsonl"] = artifact_row
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize(tree, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn("user self-proposal", stderr)
 
     def test_each_negative_instance_emits_error(self):
         for name, tree in sorted(INVALID_INSTANCES.items()):

@@ -2857,6 +2857,49 @@ class StateFoldTests(unittest.TestCase):
                 self.assertEqual(
                     "unknown", graph["state"]["concept:c"]["confidence"])
 
+    def test_user_self_proposal_must_cite_a_note_artifact(self):
+        # §9.13: a manual state edit is a user self-proposal through the
+        # ordinary decision gate, and its durable rationale is the owner's
+        # note. A deleted/out-of-cut note may dangle per §20.1.
+        cases = {
+            "own-note": ("note", ["artifact:2026-01-01-001"], True),
+            "non-note": ("script", ["artifact:2026-01-01-001"], False),
+            "wrong-kind": (None, ["encounter:2026-01-01-001"], False),
+            "dangling-note": (None, ["artifact:missing"], True),
+        }
+        for name, (artifact_kind, evidence, folds) in cases.items():
+            tree = {"concepts/c.md": _CONCEPT % ("c", "C")}
+            if artifact_kind is not None:
+                artifact = self._artifact(
+                    "artifact:2026-01-01-001", "2026-01-01", "noticed")
+                artifact["type"] = artifact_kind
+                tree["state/artifacts.jsonl"] = self._jsonl([artifact])
+            if name == "wrong-kind":
+                tree["materials/m.md"] = _MATERIAL % ("m", "M")
+                tree["state/encounters.jsonl"] = _encounter_row()
+            decision = self._decision(
+                "2026-02-01", "concept:c", "confidence", "high", evidence)
+            tree["state/decisions.jsonl"] = self._jsonl([decision])
+            with self.subTest(case=name), _materialize(tree) as directory:
+                graph, errors, warnings = build_atlas_graph.build(
+                    Path(directory))
+
+            self.assertEqual(
+                "high" if folds else "unknown",
+                graph["state"]["concept:c"]["confidence"],
+            )
+            if folds:
+                self.assertEqual([], errors)
+                if name == "dangling-note":
+                    self.assertTrue(
+                        any("dangling evidence ref" in warning
+                            for warning in warnings), warnings)
+            else:
+                self.assertTrue(
+                    any("user self-proposal" in error for error in errors),
+                    errors,
+                )
+
     def test_question_status_needs_resolution_evidence(self):
         # §9.8: the transition cites what made it true — the artifact or
         # encounter that clarified or resolved it. The question's own
