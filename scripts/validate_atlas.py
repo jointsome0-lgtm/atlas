@@ -819,6 +819,34 @@ def _user_self_proposal_errors(row, path, artifact_kinds) -> list[str]:
     return []
 
 
+def _status_evidence_errors(row, path) -> list[str]:
+    """Keep §9.8 outcome-specific evidence kinds aligned with the builder.
+
+    The stale artifact's note kind remains a fold-time check only when the
+    cited row resolves; §20.1 deliberately permits a dangling citation.
+    """
+    if not isinstance(row, dict) or row.get("dimension") != "status":
+        return []
+    evidence = row.get("evidence")
+    if row.get("to") == "stale":
+        prefixes = _builder.STALE_EVIDENCE_PREFIXES
+        expectation = "the user's own note artifact"
+    else:
+        prefixes = _builder.STATUS_EVIDENCE_PREFIXES
+        expectation = "artifact or encounter ids"
+    if (not isinstance(evidence, list) or not evidence
+            or any(
+                not isinstance(ref, str)
+                or ref.split(":", 1)[0] not in prefixes
+                for ref in evidence
+            )):
+        return [
+            f"{path}: /evidence for a status decision must contain "
+            f"{expectation} (§9.8)"
+        ]
+    return []
+
+
 def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     """§33.4: every §9.12 evidence id in an evidence-bearing field resolves
     in the top-level evidence_refs table; curated node ids `via` may carry
@@ -1189,6 +1217,8 @@ def validate_instance(root: Path):
                                     and isinstance(artifact_kind, str)):
                                 artifact_kinds[artifact_id] = artifact_kind
                         elif stem == "decisions":
+                            errors.extend(_status_evidence_errors(
+                                row, row_path))
                             errors.extend(_user_self_proposal_errors(
                                 row, row_path, artifact_kinds))
                         counts["rows"] += 1
@@ -1295,6 +1325,37 @@ def validate_instance(root: Path):
                 graph_as_of = (generated_at[:10]
                                if isinstance(generated_at, str)
                                and _is_calendar_date(generated_at) else None)
+                dated_node_fields = {
+                    "artifact": "observed_at",
+                    "encounter": "date",
+                    "question": "created_at",
+                    "trail_segment": "date",
+                }
+                dated_nodes = [
+                    (position, node, dated_node_fields.get(node.get("type")))
+                    for position, node in enumerate(
+                        _as_list(instance.get("nodes")))
+                    if isinstance(node, dict)
+                    and isinstance(node.get("type"), str)
+                    and node.get("type") in dated_node_fields
+                ]
+                if graph_as_of is None and any(
+                        field in node
+                        for _, node, field in dated_nodes):
+                    errors.append(
+                        f"{path}: /nodes carries dated entries with no valid "
+                        "generated_at as-of (§20.1)"
+                    )
+                elif graph_as_of is not None:
+                    for position, node, field in dated_nodes:
+                        node_date = node.get(field)
+                        if (isinstance(node_date, str)
+                                and _is_calendar_date(node_date)
+                                and node_date > graph_as_of):
+                            errors.append(
+                                f"{path}: nodes[{position}] is dated after "
+                                "the graph as-of (§20.1)"
+                            )
                 # Any dated state implies a dated fold, and §20.1 gives that
                 # fold an as-of stamp. Without one, freshness and every
                 # future-date bound go unchecked and arbitrary values become

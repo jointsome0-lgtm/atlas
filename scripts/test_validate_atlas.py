@@ -1839,6 +1839,10 @@ class SchemaValidatorTests(unittest.TestCase):
             ' "type": "visited", "provenance": ["encounter:e"]}],',
         )
         graph = graph.replace('"state": {},', graph_state("concept:a"))
+        graph = graph.replace(
+            '"version": 1,',
+            '"version": 1, "generated_at": "2026-07-16T00:00:00Z",',
+        )
         with tempfile.TemporaryDirectory() as directory:
             materialize({"graph/atlas-graph.json": graph}, Path(directory))
             code, stdout, stderr = self.run_cli("validate", directory)
@@ -1934,6 +1938,9 @@ class SchemaValidatorTests(unittest.TestCase):
                      ' "evidence": ["encounter:2026-07-16-001"],'
                      ' "decisions": []}')
             graph = VALID_EMPTY_GRAPH.replace(
+                '"version": 1,',
+                '"version": 1, "generated_at": "2026-07-16T00:00:00Z",',
+            ).replace(
                 '"nodes": [],', f'"nodes": [{nodes}],'
             ).replace(
                 '"edges": [],',
@@ -2225,6 +2232,88 @@ class SchemaValidatorTests(unittest.TestCase):
             self.assertEqual(expected_code, code, stderr)
             if expected_code:
                 self.assertIn("user self-proposal", stderr)
+
+    def test_status_evidence_preflight_matches_the_builder(self):
+        # §9.8 narrows generic §9.12 evidence by outcome: ordinary status
+        # changes cite artifacts/encounters and stale cites a note artifact.
+        base = {
+            "date": "2026-07-16",
+            "target": "question:example",
+            "dimension": "status",
+            "to": "resolved",
+            "evidence": ["artifact:missing"],
+            "proposed_by": "state-auditor",
+            "decision": "confirmed",
+        }
+        cases = {
+            "resolved-artifact": (base, 0),
+            "resolved-encounter": (
+                {**base, "evidence": ["encounter:missing"]}, 0),
+            "resolved-question": (
+                {**base, "evidence": ["question:example"]}, 1),
+            "stale-artifact": (
+                {**base, "to": "stale",
+                 "evidence": ["artifact:missing"]}, 0),
+            "stale-encounter": (
+                {**base, "to": "stale",
+                 "evidence": ["encounter:missing"]}, 1),
+        }
+        for name, (decision, expected_code) in cases.items():
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "state/decisions.jsonl": json.dumps(decision) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "/evidence for a status decision", stderr
+                )
+
+    def test_emitted_journal_nodes_are_bounded_by_graph_as_of(self):
+        # Keep exposure_ceiling an upper bound: the independent §20.1 graph
+        # invariant rejects a future evidence node before its strength can
+        # be used to justify any state rung.
+        graph = json.loads(VALID_EMPTY_GRAPH)
+        graph["generated_at"] = "2026-07-10T00:00:00Z"
+        graph["nodes"] = [
+            {
+                "id": "concept:example",
+                "type": "concept",
+                "title": "Example (Vera Example)",
+                "fields": ["knowledge"],
+                "aliases": [],
+            },
+            {
+                "id": "artifact:future",
+                "type": "artifact",
+                "title": "",
+                "fields": [],
+                "kind": "note",
+                "path": "vera-example.txt",
+                "observed_at": "2099-01-01",
+                "summary": "Synthetic Vera Example evidence.",
+                "evidence_strength": "applied",
+            },
+        ]
+        graph["state"] = {
+            "concept:example": {
+                "exposure": "applied",
+                "confidence": "unknown",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": ["artifact:future"],
+                "decisions": [],
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "graph/atlas-graph.json": json.dumps(graph) + "\n",
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code, stderr)
+        self.assertIn("nodes[1] is dated after the graph as-of", stderr)
 
     def test_each_negative_instance_emits_error(self):
         for name, tree in sorted(INVALID_INSTANCES.items()):
