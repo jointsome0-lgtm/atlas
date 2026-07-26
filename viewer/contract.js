@@ -449,6 +449,15 @@ export function validateGraph(value) {
     const failure = validateStateEntry(entry, node.type);
     if (failure) return failure;
   }
+  // §14.6/§9.8/§20 step 9: the full fold is total over the two kinds with
+  // no-knowledge defaults. This viewer path rejects withheld-bearing files,
+  // so every concept/question node must carry its default-or-moved entry.
+  for (const node of value.nodes) {
+    if ((node.type === "concept" || node.type === "question")
+        && !Object.prototype.hasOwnProperty.call(value.state, node.id)) {
+      return diagnostic("/state", "missingDefault");
+    }
+  }
   // §20 step 12/§32.1: every emitted zone carries its curated figure_region —
   // a zone the silhouette cannot place never leaves the build, so a missing
   // entry is a malformed file, rejected whole (§16.5).

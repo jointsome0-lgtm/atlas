@@ -51,6 +51,7 @@ EXPECTED_REJECTED_FIXTURES = {
     "state-entry-unknown-property.json",
     "state-entry-wrong-node-kind.json",
     "state-key-without-node.json",
+    "state-missing-default-entry.json",
     "step-on-non-route-material-role.json",
     "unsorted-provenance.json",
     "zone-without-projection.json",
@@ -119,13 +120,31 @@ class ViewerBrowserTests(unittest.TestCase):
             json.dumps(value, ensure_ascii=False), encoding="utf-8")
 
     def graph_envelope(self, *, nodes=None, edges=None, version=1):
+        emitted_nodes = [] if nodes is None else nodes
+        state = {}
+        for node in emitted_nodes:
+            if node.get("type") == "concept":
+                state[node["id"]] = {
+                    "exposure": "unseen",
+                    "confidence": "unknown",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "evidence": [],
+                    "decisions": [],
+                }
+            elif node.get("type") == "question":
+                state[node["id"]] = {
+                    "status": "open",
+                    "evidence": [],
+                    "decisions": [],
+                }
         return {
             "format": "atlas-graph",
             "version": version,
-            "nodes": [] if nodes is None else nodes,
+            "nodes": emitted_nodes,
             "edges": [] if edges is None else edges,
             "trails": [],
-            "state": {},
+            "state": state,
             "influence": {},
             "frontier": [],
             "projections": {},

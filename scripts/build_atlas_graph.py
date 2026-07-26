@@ -313,8 +313,9 @@ def exposure_ceiling(evidence_ids, nodes) -> int:
 
 
 def depth_ceiling(evidence_ids, nodes) -> int:
-    """§14.8: material state is the deepest cited encounter, as a rank into
-    MATERIAL_DEPTH."""
+    """§14.8: the deepest rank the cited encounter records could produce —
+    the boundary's upper bound. The producer fold additionally joins each
+    encounter to its exact target; this helper does not partially refold."""
     ceiling = 0
     for ref in evidence_ids:
         node = nodes.get(ref)
