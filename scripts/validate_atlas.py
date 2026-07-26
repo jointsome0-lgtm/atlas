@@ -545,13 +545,15 @@ JOURNALS = {
 
 
 def _journal_paths(reader: AtlasReader, stem: str):
+    # §20.1: rotated files are the older prefix and the direct journal is
+    # the newest tail — match the builder for every order-sensitive check.
+    yield from reader.scan(Path("state") / stem, suffix=".jsonl")
     direct = reader.optional_file(Path("state") / f"{stem}.jsonl")
     if direct is not None:
         yield direct
-    yield from reader.scan(Path("state") / stem, suffix=".jsonl")
 
 
-def _read_jsonl(path: Path):
+def _read_jsonl(path: Path, *, include_raw=False):
     for number, raw, oversized in _journal_lines(path):
         if oversized:
             raise JsonInputError(
@@ -566,7 +568,8 @@ def _read_jsonl(path: Path):
             )
         try:
             text = raw.decode("utf-8", errors="strict")
-            yield number, _json_loads(text)
+            row = _json_loads(text)
+            yield (number, row, raw) if include_raw else (number, row)
         except UnicodeDecodeError:
             raise JsonInputError(f"{path}:{number}: input is not strict UTF-8") from None
         except (json.JSONDecodeError, JsonInputError) as exc:
@@ -857,7 +860,7 @@ def _status_evidence_errors(row, path, artifact_kinds) -> list[str]:
             f"{path}: /evidence for a status decision must contain "
             f"{expectation} (§9.8)"
         ]
-    if row.get("to") == "stale":
+    if row.get("to") == "stale" and row.get("decision") == "confirmed":
         resolved_kinds = [
             artifact_kinds[ref] for ref in evidence
             if ref in artifact_kinds
@@ -868,6 +871,49 @@ def _status_evidence_errors(row, path, artifact_kinds) -> list[str]:
                 f"{path}: /evidence for a stale status must cite "
                 "the user's own note (§9.8/§31.5)"
             ]
+    return []
+
+
+def _reproposal_errors(row, path, rejected, known_targets, retired) -> list[str]:
+    """§14.6: retain rejected proposal identities across the journal."""
+    if not isinstance(row, dict):
+        return []
+    target = row.get("target")
+    dimension = row.get("dimension")
+    proposed = row.get("to")
+    evidence = row.get("evidence")
+    outcome = row.get("decision")
+    if not (
+        isinstance(target, str)
+        and isinstance(dimension, str)
+        and isinstance(proposed, str)
+        and isinstance(evidence, list)
+        and evidence
+        and all(isinstance(ref, str) for ref in evidence)
+        and isinstance(outcome, str)
+        and outcome in _builder.DECISION_OUTCOMES
+    ):
+        return []
+    target = retired.get(target, (target,))[0]
+    # The builder skips a missing target before proposal-memory handling.
+    if (target not in known_targets
+            or _builder.id_type(target)
+            not in _builder.FOLDED_DECISION_TARGETS.get(
+                dimension, frozenset())):
+        return []
+    identity = (
+        target,
+        dimension,
+        proposed,
+        tuple(sorted(set(evidence))),
+    )
+    if identity in rejected:
+        return [
+            f"{path}: a rejected proposal cannot be re-proposed without "
+            "new evidence (§14.6/§9.13)"
+        ]
+    if outcome == "rejected":
+        rejected.add(identity)
     return []
 
 
@@ -1220,7 +1266,10 @@ def validate_instance(root: Path):
         has_state = False
     if has_state:
         artifact_kinds: dict[str, str] = {}
+        known_decision_targets = set(living)
+        rejected_proposals: set[tuple] = set()
         for stem, schema_name in JOURNALS.items():
+            seen_rows: set[bytes] = set()
             try:
                 paths = list(_journal_paths(reader, stem))
             except ReaderError as exc:
@@ -1229,22 +1278,47 @@ def validate_instance(root: Path):
             for source_file in paths:
                 path = source_file.path
                 try:
-                    for number, row in _read_jsonl(source_file):
+                    for number, row, raw in _read_jsonl(
+                            source_file, include_raw=True):
                         row_path = f"{path}:{number}"
-                        errors.extend(
-                            _schema_errors(row, schemas[schema_name], row_path)
-                        )
+                        # §20.1: the builder folds a byte-identical duplicate
+                        # once across the rotated prefix and direct tail.
+                        if raw in seen_rows:
+                            warnings.append(
+                                f"{row_path}: byte-identical duplicate row "
+                                "folded once (§20.1)"
+                            )
+                            continue
+                        seen_rows.add(raw)
+                        schema_errors = _schema_errors(
+                            row, schemas[schema_name], row_path)
+                        errors.extend(schema_errors)
                         if stem == "artifacts" and isinstance(row, dict):
                             artifact_id = row.get("id")
                             artifact_kind = row.get("type")
                             if (isinstance(artifact_id, str)
                                     and isinstance(artifact_kind, str)):
                                 artifact_kinds[artifact_id] = artifact_kind
+                        elif stem == "questions" and isinstance(row, dict):
+                            question_id = row.get("id")
+                            if isinstance(question_id, str):
+                                known_decision_targets.add(question_id)
                         elif stem == "decisions":
-                            errors.extend(_status_evidence_errors(
-                                row, row_path, artifact_kinds))
-                            errors.extend(_user_self_proposal_errors(
-                                row, row_path, artifact_kinds))
+                            semantic_errors = (
+                                _status_evidence_errors(
+                                    row, row_path, artifact_kinds)
+                                + _user_self_proposal_errors(
+                                    row, row_path, artifact_kinds)
+                            )
+                            errors.extend(semantic_errors)
+                            if not schema_errors and not semantic_errors:
+                                errors.extend(_reproposal_errors(
+                                    row,
+                                    row_path,
+                                    rejected_proposals,
+                                    known_decision_targets,
+                                    retired,
+                                ))
                         counts["rows"] += 1
                 except JsonInputError as exc:
                     errors.append(str(exc))

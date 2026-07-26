@@ -38,6 +38,7 @@ EXPECTED_REJECTED_FIXTURES = {
     "duplicate-provenance.json",
     "formerly-on-journal-backed-kind.json",
     "impossible-generated-at-date.json",
+    "impossible-edge-date.json",
     "impossible-node-date.json",
     "impossible-state-decision-date.json",
     "impossible-state-last-seen-date.json",

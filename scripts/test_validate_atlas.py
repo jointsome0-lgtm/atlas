@@ -2282,19 +2282,29 @@ class SchemaValidatorTests(unittest.TestCase):
             "decision": "confirmed",
         }
         cases = {
-            "own-note": (VALID_ARTIFACT_ROW, 0),
+            "own-note": (VALID_ARTIFACT_ROW, "confirmed", 0),
             "non-note": (
                 VALID_ARTIFACT_ROW.replace(
                     '"type":"note"', '"type":"script"'
                 ),
+                "confirmed",
                 1,
             ),
+            "rejected-non-note": (
+                VALID_ARTIFACT_ROW.replace(
+                    '"type":"note"', '"type":"script"'
+                ),
+                "rejected",
+                0,
+            ),
             # §20.1: outside-cut or deleted evidence may remain dangling.
-            "dangling-note": (None, 0),
+            "dangling-note": (None, "confirmed", 0),
         }
-        for name, (artifact_row, expected_code) in cases.items():
+        for name, (artifact_row, outcome, expected_code) in cases.items():
             tree = {
-                "state/decisions.jsonl": json.dumps(decision) + "\n",
+                "state/decisions.jsonl": json.dumps({
+                    **decision, "decision": outcome,
+                }) + "\n",
             }
             if artifact_row is not None:
                 tree["state/artifacts.jsonl"] = artifact_row
@@ -2307,6 +2317,54 @@ class SchemaValidatorTests(unittest.TestCase):
                 self.assertIn(
                     "/evidence for a stale status must cite", stderr
                 )
+
+    def test_rejected_proposal_preflight_requires_new_evidence(self):
+        def decision(date, evidence, outcome):
+            return {
+                "date": date,
+                "target": "concept:example",
+                "dimension": "confidence",
+                "to": "high",
+                "evidence": evidence,
+                "proposed_by": "state-auditor",
+                "decision": outcome,
+            }
+
+        first = decision(
+            "2026-07-15", ["artifact:first-note"], "rejected")
+        for name, later_evidence, expected_code in (
+                ("same-evidence", ["artifact:first-note"], 1),
+                ("new-evidence", ["artifact:second-note"], 0)):
+            rows = [
+                first,
+                decision("2026-07-16", later_evidence, "confirmed"),
+            ]
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "atlas/concepts/example.md": VALID_CONCEPT,
+                    "state/decisions.jsonl": "".join(
+                        json.dumps(row) + "\n" for row in rows
+                    ),
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "cannot be re-proposed without new evidence", stderr
+                )
+        # A storage duplicate is folded once with a warning by §20.1; it is
+        # not a second user interaction and must not become a re-proposal.
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "atlas/concepts/example.md": VALID_CONCEPT,
+                "state/decisions.jsonl": (
+                    json.dumps(first) + "\n" + json.dumps(first) + "\n"
+                ),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("duplicate row folded once", stderr)
 
     def test_material_state_requires_emitted_encounter_evidence(self):
         graph = json.loads(VALID_EMPTY_GRAPH)

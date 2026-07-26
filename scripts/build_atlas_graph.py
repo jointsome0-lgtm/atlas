@@ -1899,6 +1899,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     # same-day ties resolve by physical journal position. Rejections do not
     # move state and therefore never replace a confirmed winner.
     decision_winners: dict[tuple[str, str], tuple] = {}
+    rejected_proposals: set[tuple] = set()
     for position, origin, row, row_date in decision_records:
         dimension = row["dimension"]
         target = row["target"]
@@ -1943,7 +1944,23 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                     f"{origin}: /evidence for a user self-proposal must cite "
                     "the user's own note (§9.13)")
                 continue
-        if row["decision"] != "confirmed":
+        # §14.6/§9.13: a rejection is durable memory. Proposal identity is
+        # semantic — resolved target, dimension, proposed value, evidence
+        # set — so reordering the same citations cannot manufacture novelty.
+        proposal = (
+            target,
+            dimension,
+            row["to"],
+            tuple(sorted(set(row["evidence"]))),
+        )
+        if proposal in rejected_proposals:
+            errors.append(
+                f"{origin}: a rejected proposal cannot be re-proposed "
+                "without new evidence (§14.6/§9.13)"
+            )
+            continue
+        if row["decision"] == "rejected":
+            rejected_proposals.add(proposal)
             continue
         # §9.8: the read pass held staleness to an artifact; the kind is
         # knowable only here, where nodes exist. §20.1 lets a decision

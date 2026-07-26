@@ -243,7 +243,7 @@ function validateEdge(edge, index) {
   if (Object.prototype.hasOwnProperty.call(edge, "step") && (typeof edge.step !== "string" || !NODE_ID_RE.test(edge.step))) return diagnostic(path + "/step", "nodeId");
   if (Object.prototype.hasOwnProperty.call(edge, "confidence") && !CONFIDENCE_VALUES.includes(edge.confidence)) return diagnostic(path + "/confidence", "enum");
   if (Object.prototype.hasOwnProperty.call(edge, "created_by") && typeof edge.created_by !== "string") return diagnostic(path + "/created_by", "type");
-  if (Object.prototype.hasOwnProperty.call(edge, "created_at") && (typeof edge.created_at !== "string" || !DATE_RE.test(edge.created_at))) return diagnostic(path + "/created_at", "date");
+  if (Object.prototype.hasOwnProperty.call(edge, "created_at") && !isCalendarDate(edge.created_at)) return diagnostic(path + "/created_at", "date");
   if (Object.prototype.hasOwnProperty.call(edge, "note") && typeof edge.note !== "string") return diagnostic(path + "/note", "type");
   // §10.2/§10.3: the meta discriminants belong to their matrix rows only —
   // order on step_of_route, context on suggested_next, step on the
