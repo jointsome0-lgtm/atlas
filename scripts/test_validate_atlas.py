@@ -168,6 +168,33 @@ material_roles:
 ---
 """
 
+VALID_INSTANCE_GRAPH = (GRAPH_WITH_NODE % "concept").replace(
+    '"title": "Example", "fields": ["knowledge"], "aliases": []}],',
+    '"title": "Example", "fields": ["knowledge"], "aliases": []},'
+    ' {"id": "concept:other", "type": "concept", "title": "Other",'
+    ' "fields": ["knowledge"], "aliases": []}],',
+).replace(
+    '"edges": [],',
+    '"edges": [{"source": "concept:example", "target": "concept:other",'
+    ' "type": "related_to", "provenance": ["concept:example"],'
+    ' "weight": "low"}],',
+).replace(
+    '"state": {},', graph_state("concept:example", "concept:other"),
+)
+_VALID_INSTANCE_REDACTED = json.loads(VALID_INSTANCE_GRAPH)
+_VALID_INSTANCE_REDACTED["withheld"] = {
+    "nodes": 0,
+    "edges": 0,
+    "trails": 0,
+    "state": 0,
+    "influence": 0,
+    "frontier": 0,
+    "projections": 0,
+}
+VALID_INSTANCE_REDACTED_GRAPH = (
+    json.dumps(_VALID_INSTANCE_REDACTED, indent=2) + "\n"
+)
+
 VALID_INSTANCE = {
     "atlas/concepts/example.md": VALID_CONCEPT,
     "atlas/suggested-routes/example-default.md": VALID_ROUTE,
@@ -188,20 +215,8 @@ VALID_INSTANCE = {
     "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
         "\n", "\r\n"
     ).replace('"2026-07-16-001"', '"2026-07-16-002"'),
-    "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
-        '"title": "Example", "fields": ["knowledge"], "aliases": []}],',
-        '"title": "Example", "fields": ["knowledge"], "aliases": []},'
-        ' {"id": "concept:other", "type": "concept", "title": "Other",'
-        ' "fields": ["knowledge"], "aliases": []}],',
-    ).replace(
-        '"edges": [],',
-        '"edges": [{"source": "concept:example", "target": "concept:other",'
-        ' "type": "related_to", "provenance": ["concept:example"],'
-        ' "weight": "low"}],',
-    ).replace(
-        '"state": {},', graph_state("concept:example", "concept:other"),
-    ),
-    "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH,
+    "graph/atlas-graph.json": VALID_INSTANCE_GRAPH,
+    "graph/atlas-graph.redacted.json": VALID_INSTANCE_REDACTED_GRAPH,
     "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH,
 }
 
@@ -2073,24 +2088,80 @@ class SchemaValidatorTests(unittest.TestCase):
     def test_redacted_variant_may_omit_state_it_accounts_for(self):
         # §32.6: the agent-facing variant keeps a public node whose fold
         # rested on classed evidence and drops the value, disclosing the
-        # count. Totality holds up to that count and no further.
+        # count. The full sibling proves that the omission is classed; a
+        # caller cannot spend an inflated or removed-node count on another
+        # surviving concept's public default.
+        classed_state = (
+            NO_KNOWLEDGE_CONCEPT[:-1] + ', "sensitivity": "medical"}'
+        )
         for withheld_state, expected_code in ((1, 0), (0, 1)):
             graph = VALID_REDACTED_GRAPH.replace(
                 '"nodes": [],',
                 '"nodes": [{"id": "concept:example", "type": "concept",'
                 ' "title": "Example", "fields": ["knowledge"],'
                 ' "aliases": []}],',
+            ).replace(
+                '"nodes": 1,', '"nodes": 0,'
             ).replace('"state": 0,', f'"state": {withheld_state},')
             with self.subTest(withheld_state=withheld_state), \
                     tempfile.TemporaryDirectory() as directory:
                 materialize({
                     "graph/atlas-graph.json": (
                         GRAPH_WITH_NODE % "concept").replace(
-                            '"state": {},', graph_state("concept:example")),
+                            '"state": {},',
+                            f'"state": {{"concept:example": {classed_state}}},'),
                     "graph/atlas-graph.redacted.json": graph,
                 }, Path(directory))
                 code, _, stderr = self.run_cli("validate", directory)
             self.assertEqual(expected_code, code, stderr)
+
+    def test_removed_state_cannot_fund_an_unrelated_surviving_gap(self):
+        full = json.loads(VALID_EMPTY_GRAPH)
+        full["nodes"] = [
+            {
+                "id": "concept:public",
+                "type": "concept",
+                "title": "Public (Vera Example)",
+                "fields": ["knowledge"],
+                "aliases": [],
+            },
+            {
+                "id": "concept:classed",
+                "type": "concept",
+                "title": "Classed (Vera Example)",
+                "fields": ["knowledge"],
+                "aliases": [],
+                "sensitivity": "medical",
+            },
+        ]
+        full["state"] = {
+            "concept:public": json.loads(NO_KNOWLEDGE_CONCEPT),
+            "concept:classed": {
+                **json.loads(NO_KNOWLEDGE_CONCEPT),
+                "sensitivity": "medical",
+            },
+        }
+        redacted = json.loads(VALID_REDACTED_GRAPH)
+        redacted["nodes"] = [full["nodes"][0]]
+        # One legitimate state omission belongs to the removed node. The
+        # second count is inflated to hide the surviving public default.
+        redacted["withheld"]["nodes"] = 1
+        redacted["withheld"]["state"] = 2
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "graph/atlas-graph.json": json.dumps(full) + "\n",
+                "graph/atlas-graph.redacted.json": (
+                    json.dumps(redacted) + "\n"
+                ),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code, stderr)
+        self.assertIn(
+            "/withheld/state does not match the full sibling graph", stderr
+        )
+        self.assertIn(
+            "concept:public carries no /state entry", stderr
+        )
 
     def test_impossible_calendar_date_is_rejected_like_the_builder(self):
         # §9/§10: the boundary preflight has to predict the build, so the

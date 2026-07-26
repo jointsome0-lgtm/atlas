@@ -111,6 +111,18 @@ function diagnostic(path, rule) {
   return {path, rule};
 }
 
+function isCalendarDate(value) {
+  if (typeof value !== "string" || !DATE_RE.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  if (year < 1 || month < 1 || month > 12) return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30,
+    31, 31, 30, 31, 30, 31];
+  return day >= 1 && day <= days[month - 1];
+}
+
 function validateOptionalNodeProperty(node, key, path) {
   const value = node[key];
   const ref = (prefix) => typeof value === "string" && value.startsWith(prefix) && NODE_ID_RE.test(value);
@@ -127,7 +139,7 @@ function validateOptionalNodeProperty(node, key, path) {
       return typeof value === "string" && safeUrlPattern.test(value);
     }
     case "source_plan": return ref("plan:");
-    case "created_at": case "observed_at": case "date": return typeof value === "string" && DATE_RE.test(value);
+    case "created_at": case "observed_at": case "date": return isCalendarDate(value);
     case "source":
       return isPlainObject(value) && hasOnlyKeys(value, ["artifact", "encounter"]) && Object.keys(value).length >= 1
         && (!Object.prototype.hasOwnProperty.call(value, "artifact") || (typeof value.artifact === "string" && value.artifact.startsWith("artifact:") && NODE_ID_RE.test(value.artifact)))
@@ -279,7 +291,7 @@ function validateDecisionReferences(value, dimensions, path) {
     if (!hasOnlyKeys(reference, DECISION_REFERENCE_KEYS)) return diagnostic(path, "additionalProperties");
     if (!hasKeys(reference, DECISION_REFERENCE_KEYS)) return diagnostic(path, "required");
     if (!dimensions.includes(reference.dimension)) return diagnostic(path, "dimension");
-    if (typeof reference.date !== "string" || !DATE_RE.test(reference.date)) return diagnostic(path, "date");
+    if (!isCalendarDate(reference.date)) return diagnostic(path, "date");
     if (!isEvidenceArray(reference.evidence, ["artifact", "encounter", "question"], 1)) return diagnostic(path, "evidence");
     identities.push(JSON.stringify([
       reference.dimension, reference.date, reference.evidence,
@@ -307,13 +319,13 @@ function validateStateEntry(entry, nodeType) {
     const hasLastSeen = Object.prototype.hasOwnProperty.call(entry, "last_seen");
     const hasFreshness = Object.prototype.hasOwnProperty.call(entry, "freshness");
     if (hasLastSeen !== hasFreshness) return diagnostic(path, "freshnessPair");
-    if (hasLastSeen && (typeof entry.last_seen !== "string" || !DATE_RE.test(entry.last_seen))) return diagnostic(path, "lastSeen");
+    if (hasLastSeen && !isCalendarDate(entry.last_seen)) return diagnostic(path, "lastSeen");
     if (hasFreshness && !FRESHNESS_VALUES.includes(entry.freshness)) return diagnostic(path, "freshness");
   } else if (nodeType === "material" || nodeType === "material_part") {
     if (!hasOnlyKeys(entry, MATERIAL_STATE_KEYS)) return diagnostic(path, "additionalProperties");
     if (!hasKeys(entry, ["depth_reached", "last_seen", "evidence"])) return diagnostic(path, "required");
     if (!ENCOUNTER_DEPTHS.includes(entry.depth_reached)) return diagnostic(path, "depth");
-    if (typeof entry.last_seen !== "string" || !DATE_RE.test(entry.last_seen)) return diagnostic(path, "lastSeen");
+    if (!isCalendarDate(entry.last_seen)) return diagnostic(path, "lastSeen");
     if (!isEvidenceArray(entry.evidence, ["encounter"], 1)) return diagnostic(path, "evidence");
   } else if (nodeType === "question") {
     if (!hasOnlyKeys(entry, QUESTION_STATE_KEYS)) return diagnostic(path, "additionalProperties");
@@ -405,7 +417,12 @@ export function validateGraph(value) {
   if (value.format !== "atlas-graph" || value.version !== 1) return diagnostic("", "envelope");
   if (!hasOnlyKeys(value, ENVELOPE_KEYS)) return diagnostic("", "additionalProperties");
   if (!hasKeys(value, ["format", "version", "nodes", "edges", "trails", "state", "influence", "frontier", "projections"])) return diagnostic("", "required");
-  if (Object.prototype.hasOwnProperty.call(value, "generated_at") && (typeof value.generated_at !== "string" || !GENERATED_AT_RE.test(value.generated_at))) return diagnostic("/generated_at", "shape");
+  if (Object.prototype.hasOwnProperty.call(value, "generated_at")
+      && (typeof value.generated_at !== "string"
+          || !GENERATED_AT_RE.test(value.generated_at)
+          || !isCalendarDate(value.generated_at.slice(0, 10)))) {
+    return diagnostic("/generated_at", "shape");
+  }
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return diagnostic("", "arrayShape");
   if (!Array.isArray(value.trails) || value.trails.length !== 0) return diagnostic("/trails", "producerClosed");
   // §20 step 9 is implemented, so state is no longer producer-closed. The

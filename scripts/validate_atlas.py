@@ -764,6 +764,20 @@ def _as_list(value):
     return value if isinstance(value, list) else []
 
 
+def _contains_withheld_id(value, withheld_ids: set[str]) -> bool:
+    """Mirror §32.6's whole-value citation taint without exposing content."""
+    if isinstance(value, str):
+        return any(node_id in value for node_id in withheld_ids)
+    if isinstance(value, list):
+        return any(_contains_withheld_id(item, withheld_ids) for item in value)
+    if isinstance(value, dict):
+        return any(
+            _contains_withheld_id(item, withheld_ids)
+            for item in value.values()
+        )
+    return False
+
+
 def _user_self_proposal_errors(row, path, artifact_kinds) -> list[str]:
     """Keep §9.13 user-note semantics aligned with the builder."""
     if not isinstance(row, dict) or row.get("proposed_by") != "user":
@@ -1187,6 +1201,7 @@ def validate_instance(root: Path):
         except JsonInputError as exc:
             errors.append(str(exc))
 
+    full_graph: dict | None = None
     for filename, schema_name in (
         ("atlas-graph.json", "atlas-graph"),
         ("atlas-graph.redacted.json", "atlas-graph"),
@@ -1199,6 +1214,8 @@ def validate_instance(root: Path):
         try:
             instance = _read_json(source_file)
             errors.extend(_schema_errors(instance, schemas[schema_name], path))
+            if filename == "atlas-graph.json" and isinstance(instance, dict):
+                full_graph = instance
             # §20/§25.7: one schema id covers both graph variants, so the
             # variant-only withheld rule is checked here by file name —
             # required on the redacted emission, forbidden on the full one.
@@ -1307,21 +1324,61 @@ def validate_instance(root: Path):
                 # fixture can erase "no evidence yet" vs "never folded".
                 # §32.6 is the one licensed gap: the redacted variant keeps a
                 # public node whose fold rested on classed evidence and drops
-                # the value, disclosing a count. Totality then holds up to
-                # that count — never in the full graph, which carries no
-                # `withheld` key at all.
+                # the value whole. The full sibling proves exactly which
+                # values the builder was licensed to omit; a positional
+                # withheld-count budget could otherwise be spent on an
+                # unrelated public default, or inflated outright.
                 state_keys = set(_as_dict(instance.get("state")))
-                withheld_state = _as_dict(instance.get("withheld")).get("state")
-                budget = (withheld_state
-                          if isinstance(withheld_state, int)
-                          and not isinstance(withheld_state, bool) else 0)
+                licensed_missing: set[str] = set()
+                redacted = filename.endswith(".redacted.json")
+                if redacted and full_graph is not None:
+                    full_state = _as_dict(full_graph.get("state"))
+                    redacted_state = _as_dict(instance.get("state"))
+                    full_node_ids = {
+                        node.get("id")
+                        for node in _as_list(full_graph.get("nodes"))
+                        if isinstance(node, dict)
+                        and isinstance(node.get("id"), str)
+                    }
+                    withheld_ids = full_node_ids - node_ids
+                    expected_state = {
+                        state_id: entry
+                        for state_id, entry in full_state.items()
+                        if state_id not in withheld_ids
+                        and not (
+                            isinstance(entry, dict)
+                            and "sensitivity" in entry
+                        )
+                        and not _contains_withheld_id(entry, withheld_ids)
+                    }
+                    licensed_missing = (
+                        set(full_state) - set(expected_state)
+                    ) & node_ids
+                    if redacted_state != expected_state:
+                        errors.append(
+                            f"{path}: /state is not the whole-value §32.6 "
+                            "redaction of the full sibling graph"
+                        )
+                    withheld_state = _as_dict(
+                        instance.get("withheld")
+                    ).get("state")
+                    expected_count = len(full_state) - len(expected_state)
+                    if (isinstance(withheld_state, int)
+                            and not isinstance(withheld_state, bool)
+                            and withheld_state != expected_count):
+                        errors.append(
+                            f"{path}: /withheld/state does not match the "
+                            "full sibling graph (§20/§32.6)"
+                        )
                 missing = [
                     state_id
                     for state_id, node_type in sorted(node_types.items())
                     if node_type in ("concept", "question")
                     and state_id not in state_keys
                 ]
-                for state_id in missing[budget:]:
+                for state_id in missing:
+                    if state_id in licensed_missing:
+                        continue
                     errors.append(
                         f"{path}: {state_id} carries no /state entry — the "
                         "step-9 fold is total over concepts and questions "

@@ -1,0 +1,19 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "generated_at": "2026-02-30T00:00:00Z",
+  "nodes": [
+    {
+      "id": "plan:example",
+      "type": "plan",
+      "title": "Synthetic Vera Example plan",
+      "fields": []
+    }
+  ],
+  "edges": [],
+  "trails": [],
+  "state": {},
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}
