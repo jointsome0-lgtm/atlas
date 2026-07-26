@@ -686,6 +686,19 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
                 f"{path}: /state property #{position} moves {dimension} off "
                 "its first value with no evidence (§14.5/§14.8)"
             )
+        elif (dimension == "depth_reached"
+              and not any(
+                  isinstance(ref, str)
+                  and nodes.get(ref, {}).get("type") == "encounter"
+                  for ref in evidence
+              )):
+            # Material state is sparse and exists only because an emitted
+            # encounter created it. Unlike decisions, its provenance never
+            # survives a deleted/out-of-cut evidence row (§14.8/§20.1).
+            errors.append(
+                f"{path}: /state property #{position} carries material "
+                "state with no emitted encounter evidence (§14.8)"
+            )
         elif value in ladder and ladder.index(value) > ceiling_of(
                 evidence, nodes):
             errors.append(
@@ -819,11 +832,11 @@ def _user_self_proposal_errors(row, path, artifact_kinds) -> list[str]:
     return []
 
 
-def _status_evidence_errors(row, path) -> list[str]:
+def _status_evidence_errors(row, path, artifact_kinds) -> list[str]:
     """Keep §9.8 outcome-specific evidence kinds aligned with the builder.
 
-    The stale artifact's note kind remains a fold-time check only when the
-    cited row resolves; §20.1 deliberately permits a dangling citation.
+    The stale artifact's note kind is checked only when every cited row
+    resolves, matching the fold; §20.1 permits a dangling citation.
     """
     if not isinstance(row, dict) or row.get("dimension") != "status":
         return []
@@ -844,6 +857,17 @@ def _status_evidence_errors(row, path) -> list[str]:
             f"{path}: /evidence for a status decision must contain "
             f"{expectation} (§9.8)"
         ]
+    if row.get("to") == "stale":
+        resolved_kinds = [
+            artifact_kinds[ref] for ref in evidence
+            if ref in artifact_kinds
+        ]
+        if (len(resolved_kinds) == len(evidence)
+                and _builder.STALE_EVIDENCE_KIND not in resolved_kinds):
+            return [
+                f"{path}: /evidence for a stale status must cite "
+                "the user's own note (§9.8/§31.5)"
+            ]
     return []
 
 
@@ -1218,7 +1242,7 @@ def validate_instance(root: Path):
                                 artifact_kinds[artifact_id] = artifact_kind
                         elif stem == "decisions":
                             errors.extend(_status_evidence_errors(
-                                row, row_path))
+                                row, row_path, artifact_kinds))
                             errors.extend(_user_self_proposal_errors(
                                 row, row_path, artifact_kinds))
                         counts["rows"] += 1

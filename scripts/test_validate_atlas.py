@@ -2271,6 +2271,72 @@ class SchemaValidatorTests(unittest.TestCase):
                     "/evidence for a status decision", stderr
                 )
 
+    def test_resolved_stale_evidence_kind_preflight_matches_builder(self):
+        decision = {
+            "date": "2026-07-16",
+            "target": "question:example",
+            "dimension": "status",
+            "to": "stale",
+            "evidence": ["artifact:2026-07-16-001"],
+            "proposed_by": "state-auditor",
+            "decision": "confirmed",
+        }
+        cases = {
+            "own-note": (VALID_ARTIFACT_ROW, 0),
+            "non-note": (
+                VALID_ARTIFACT_ROW.replace(
+                    '"type":"note"', '"type":"script"'
+                ),
+                1,
+            ),
+            # §20.1: outside-cut or deleted evidence may remain dangling.
+            "dangling-note": (None, 0),
+        }
+        for name, (artifact_row, expected_code) in cases.items():
+            tree = {
+                "state/decisions.jsonl": json.dumps(decision) + "\n",
+            }
+            if artifact_row is not None:
+                tree["state/artifacts.jsonl"] = artifact_row
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize(tree, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "/evidence for a stale status must cite", stderr
+                )
+
+    def test_material_state_requires_emitted_encounter_evidence(self):
+        graph = json.loads(VALID_EMPTY_GRAPH)
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["nodes"] = [{
+            "id": "material:example",
+            "type": "material",
+            "title": "Example (Vera Example)",
+            "fields": [],
+            "kind": "docs",
+            "url": "",
+            "status": "active",
+        }]
+        graph["state"] = {
+            "material:example": {
+                "depth_reached": "skim",
+                "last_seen": "2026-07-16",
+                "evidence": ["encounter:missing"],
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "graph/atlas-graph.json": json.dumps(graph) + "\n",
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code, stderr)
+        self.assertIn(
+            "material state with no emitted encounter evidence", stderr
+        )
+
     def test_emitted_journal_nodes_are_bounded_by_graph_as_of(self):
         # Keep exposure_ceiling an upper bound: the independent §20.1 graph
         # invariant rejects a future evidence node before its strength can
