@@ -650,7 +650,9 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
                 "its first value with no evidence (§14.5/§14.8)"
             )
     # §14.7/§20.1: last_seen is a fold input, never later than the as-of it
-    # is measured against, and freshness is recomputed from the two.
+    # is measured against, and freshness is recomputed from the two. The
+    # caller only passes a calendar-valid as-of — an unparsable stamp is
+    # already an error and must not become a traceback here.
     last_seen = entry.get("last_seen")
     if isinstance(last_seen, str) and as_of is not None:
         if last_seen > as_of:
@@ -679,6 +681,15 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
                 f"references for {dimension} (§9.13)"
             )
         seen.add(dimension)
+        # §20.1: the as-of bounds every dated input, decisions included —
+        # a graph cannot rest on a decision it was folded before.
+        reference_date = reference.get("date")
+        if (isinstance(reference_date, str) and as_of is not None
+                and reference_date > as_of):
+            errors.append(
+                f"{path}: /state property #{position} cites a {dimension} "
+                "decision dated after the graph as-of (§20.1)"
+            )
     for dimension, default in sorted(_builder.GATED_DEFAULTS.items()):
         value = entry.get(dimension)
         if value is None or value == default or dimension in seen:
@@ -1172,10 +1183,24 @@ def validate_instance(root: Path):
                     "question": "status",
                 }
                 # §20.1: generated_at stamps the as-of the fold measured
-                # against — the anchor §14.7 freshness is derived from.
+                # against — the anchor §14.7 freshness is derived from. An
+                # unparsable stamp is already an error above; it yields no
+                # as-of rather than a half-checked one.
                 generated_at = instance.get("generated_at")
                 graph_as_of = (generated_at[:10]
-                               if isinstance(generated_at, str) else None)
+                               if isinstance(generated_at, str)
+                               and _is_calendar_date(generated_at) else None)
+                # Any dated state implies a dated fold, and §20.1 gives that
+                # fold an as-of stamp. Without one, freshness and every
+                # future-date bound go unchecked and arbitrary values become
+                # contract-valid — so dated state without it is rejected.
+                if graph_as_of is None and any(
+                        isinstance(entry, dict) and "last_seen" in entry
+                        for entry in _as_dict(instance.get("state")).values()):
+                    errors.append(
+                        f"{path}: /state carries dated entries with no valid "
+                        "generated_at as-of (§20.1)"
+                    )
                 for position, (state_id, state_entry) in enumerate(
                         _as_dict(instance.get("state")).items(), 1):
                     if state_id not in node_ids:
@@ -1846,6 +1871,11 @@ def check_constants():
         ("MATERIAL_KINDS", set(builder.MATERIAL_KINDS), "schema $defs.materialKind", set(defs["materialKind"]["enum"])),
         ("ROUTE_STATUSES", set(builder.ROUTE_STATUSES), "schema $defs.routeStatus", set(defs["routeStatus"]["enum"])),
         ("ID_PREFIXES", builder.ID_PREFIXES, "schema $defs.idPrefixes", schema_prefixes),
+        # §17.1/§9.13: the proposer set is the run manifest's role enum plus
+        # the user — one roster, drift caught here like every other constant.
+        ("AGENT_ROLES", set(builder.AGENT_ROLES),
+         "run-manifest schema properties.role",
+         set(schemas["run-manifest"]["properties"]["role"]["enum"])),
     )
     for code_name, code_value, schema_name, schema_value in checks:
         if code_value != schema_value:

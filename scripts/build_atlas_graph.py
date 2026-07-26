@@ -325,6 +325,16 @@ DECISION_TARGET_PREFIXES = {
 }
 DECISION_OUTCOMES = {"confirmed", "rejected"}
 EVIDENCE_PREFIXES = {"artifact", "encounter", "question"}
+# §9.8: question status cites the record that made the transition true, so
+# the question's own creation record is not evidence for its own outcome.
+STATUS_EVIDENCE_PREFIXES = {"artifact", "encounter"}
+# §17.1 — the four core roles, pinned against run-manifest.schema.json by
+# check-constants. §9.13 admits one of these or the user as a proposer.
+AGENT_ROLES = {
+    "plan-importer", "artifact-observer", "field-cartographer",
+    "state-auditor",
+}
+PROPOSERS = AGENT_ROLES | {"user"}
 
 # §9.4 — route lifecycle vocabulary; task-state words are §4 leakage.
 ROUTE_STATUSES = {"available", "hidden", "partially_followed", "ignored", "archived"}
@@ -1262,14 +1272,26 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                               "scale (§9.13)")
                 valid = False
         evidence = row.get("evidence")
+        # §9.8: a status transition cites what made it true — the artifact
+        # or encounter that clarified or resolved it, a note artifact for
+        # `stale`. The question's own creation record establishes nothing,
+        # so the generic §9.12 set narrows for this one dimension.
+        evidence_prefixes = (STATUS_EVIDENCE_PREFIXES if dimension == "status"
+                             else EVIDENCE_PREFIXES)
         if (not isinstance(evidence, list) or not evidence
-                or any(not valid_node_ref(ref, EVIDENCE_PREFIXES)
+                or any(not valid_node_ref(ref, evidence_prefixes)
                        for ref in evidence)):
-            errors.append(f"{origin}: /evidence must be a non-empty list "
-                          "of §9.12 evidence ids")
+            errors.append(
+                f"{origin}: /evidence must be a non-empty list of "
+                + ("§9.8 resolution evidence — artifact or encounter ids"
+                   if dimension == "status" else "§9.12 evidence ids"))
             valid = False
-        if not isinstance(row.get("proposed_by"), str):
-            errors.append(f"{origin}: /proposed_by must be a string (§9.13)")
+        proposed_by = row.get("proposed_by")
+        # §9.13: the audit record names who proposed it — a §17 agent role
+        # or the user, never an anonymous or invented actor.
+        if not isinstance(proposed_by, str) or proposed_by not in PROPOSERS:
+            errors.append(f"{origin}: /proposed_by must be a §17 agent role "
+                          "or user (§9.13)")
             valid = False
         outcome = row.get("decision")
         if not isinstance(outcome, str) or outcome not in DECISION_OUTCOMES:

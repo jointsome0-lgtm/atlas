@@ -1900,6 +1900,43 @@ class SchemaValidatorTests(unittest.TestCase):
             self.assertEqual(1, code, stderr)
             self.assertIn(expected, stderr)
 
+    def test_dated_state_is_bounded_by_a_usable_as_of(self):
+        # §20.1: the as-of bounds every dated input. A missing or unparsable
+        # stamp leaves freshness unchecked rather than half-checked, and an
+        # impossible one is a diagnostic, never a traceback.
+        dated = ('{"exposure": "unseen", "confidence": "unknown",'
+                 ' "clarity": "vague", "coverage": "none", "evidence": [],'
+                 ' "decisions": [], "last_seen": "2026-07-01",'
+                 ' "freshness": "fresh"}')
+        future_decision = (
+            '{"exposure": "unseen", "confidence": "high",'
+            ' "clarity": "vague", "coverage": "none", "evidence": [],'
+            ' "decisions": [{"dimension": "confidence",'
+            ' "date": "2099-01-01", "evidence": []}]}')
+        cases = {
+            "no-as-of": (None, dated, "no valid generated_at as-of"),
+            "impossible-as-of": (
+                "2026-13-30T00:00:00Z", dated, "not a real calendar date"),
+            "decision-after-as-of": (
+                "2026-07-10T00:00:00Z", future_decision,
+                "decision dated after the graph as-of"),
+        }
+        for name, (generated_at, entry, expected) in cases.items():
+            graph = (GRAPH_WITH_NODE % "concept").replace(
+                '"state": {},', f'"state": {{"concept:example": {entry}}},')
+            if generated_at is not None:
+                graph = graph.replace(
+                    '"version": 1,',
+                    f'"version": 1, "generated_at": "{generated_at}",')
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                materialize({"graph/atlas-graph.json": graph}, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(expected, stderr)
+            self.assertTrue(
+                all(line.startswith("ERROR:")
+                    for line in stderr.splitlines()), stderr)
+
     def test_redacted_variant_may_omit_state_it_accounts_for(self):
         # §32.6: the agent-facing variant keeps a public node whose fold
         # rested on classed evidence and drops the value, disclosing the

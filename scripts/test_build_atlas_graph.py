@@ -2828,6 +2828,64 @@ class StateFoldTests(unittest.TestCase):
                     for error in errors), errors)
             self.assertNotIn("zone:shoulder", graph["state"])
 
+    def test_decision_proposer_must_be_a_registered_actor(self):
+        # §9.13: the audit record names who proposed the change — a §17 role
+        # or the user. An anonymous or invented actor cannot move state.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        for proposer, folds in (("", False), ("ghost-agent", False),
+                                ("user", True), ("state-auditor", True)):
+            decision = self._decision(
+                "2026-02-01", "concept:c", "confidence", "high",
+                ["artifact:2026-01-01-001"])
+            decision["proposed_by"] = proposer
+            with self.subTest(proposed_by=proposer), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            if folds:
+                self.assertEqual([], errors)
+                self.assertEqual(
+                    "high", graph["state"]["concept:c"]["confidence"])
+            else:
+                self.assertTrue(
+                    any("/proposed_by must be a §17 agent role" in error
+                        for error in errors), errors)
+                self.assertEqual(
+                    "unknown", graph["state"]["concept:c"]["confidence"])
+
+    def test_question_status_needs_resolution_evidence(self):
+        # §9.8: the transition cites what made it true — the artifact or
+        # encounter that clarified or resolved it. The question's own
+        # creation record establishes nothing about its outcome.
+        artifact = self._artifact(
+            "artifact:2026-07-16-001", "2026-07-16", "noticed")
+        question = json.loads(_QUESTION_ROW)
+        for evidence, folds in ((["question:q"], False),
+                                (["artifact:2026-07-16-001"], True)):
+            decision = self._decision(
+                "2026-08-01", question["id"], "status", "resolved", evidence)
+            with self.subTest(evidence=evidence), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/questions.jsonl": self._jsonl([question]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            status = graph["state"][question["id"]]["status"]
+            if folds:
+                self.assertEqual([], errors)
+                self.assertEqual("resolved", status)
+            else:
+                self.assertTrue(
+                    any("§9.8 resolution evidence" in error
+                        for error in errors), errors)
+                self.assertEqual("open", status)
+
     def test_direct_journal_is_the_newest_tail_of_the_rotation(self):
         # §8/§20.1: rotation moves old rows out, so the per-year files are
         # the older half and state/decisions.jsonl is the newest tail. A
