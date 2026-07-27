@@ -263,6 +263,13 @@ class ViewerBrowserTests(unittest.TestCase):
             "title": "Alone (Vera Example)",
             "fields": ["knowledge"], "aliases": [],
         }
+        artifact = {
+            "id": "artifact:notice", "type": "artifact", "title": "",
+            "fields": [], "kind": "note", "path": "notes/example.md",
+            "observed_at": "2026-07-16",
+            "summary": "Synthetic viewer fixture (Vera Example).",
+            "evidence_strength": "noticed",
+        }
         question = {
             "id": "question:alone", "type": "question", "title": "",
             "fields": ["knowledge"],
@@ -297,10 +304,10 @@ class ViewerBrowserTests(unittest.TestCase):
         ]
         cases["duplicate-decision-dimension"] = graph
 
-        graph = self.graph_envelope(nodes=[concept])
+        graph = self.graph_envelope(nodes=[concept, artifact])
         graph["state"][concept["id"]].update({
             "exposure": "touched",
-            "evidence": ["artifact:missing"],
+            "evidence": [artifact["id"]],
         })
         cases["contact-without-dates"] = graph
 
@@ -311,22 +318,22 @@ class ViewerBrowserTests(unittest.TestCase):
         })
         cases["unseen-with-dates"] = graph
 
-        graph = self.graph_envelope(nodes=[concept])
+        graph = self.graph_envelope(nodes=[concept, artifact])
         graph["state"][concept["id"]].update({
             "exposure": "touched",
             "last_seen": "2026-07-16",
             "freshness": "fresh",
-            "evidence": ["artifact:missing"],
+            "evidence": [artifact["id"]],
         })
         cases["dated-state-without-as-of"] = graph
 
-        graph = self.graph_envelope(nodes=[concept])
+        graph = self.graph_envelope(nodes=[concept, artifact])
         graph["generated_at"] = "2026-07-16T00:00:00Z"
         graph["state"][concept["id"]].update({
             "exposure": "touched",
             "last_seen": "2099-01-01",
             "freshness": "fresh",
-            "evidence": ["artifact:missing"],
+            "evidence": [artifact["id"]],
         })
         cases["last-seen-after-as-of"] = graph
 
@@ -364,6 +371,65 @@ class ViewerBrowserTests(unittest.TestCase):
         }
         cases["stale-cites-resolved-script"] = graph
 
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "taught",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+        })
+        cases["taught-cites-noticed-artifact"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, question])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "taught",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [question["id"]],
+        })
+        cases["taught-cites-question"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["generated_at"] = "2026-07-27T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-01-01",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+        })
+        cases["freshness-not-derived"] = graph
+
+        material = {
+            "id": "material:example", "type": "material",
+            "title": "Example material (Vera Example)", "fields": [],
+            "kind": "docs", "url": "", "status": "active",
+        }
+        encounter = {
+            "id": "encounter:example", "type": "encounter", "title": "",
+            "fields": [], "date": "2026-07-16",
+            "target": material["id"], "depth": "applied",
+            "mode": "background",
+        }
+        graph = self.graph_envelope(nodes=[material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "taught",
+            "last_seen": "2026-07-16",
+            "evidence": [encounter["id"]],
+        }
+        cases["depth-exceeds-encounter"] = graph
+
+        graph = self.graph_envelope(nodes=[material])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "skim",
+            "last_seen": "2026-07-16",
+            "evidence": ["encounter:missing"],
+        }
+        cases["material-cites-no-emitted-encounter"] = graph
+
         for name, impossible in cases.items():
             with self.subTest(case=name):
                 self.write_graph(impossible)
@@ -381,6 +447,31 @@ class ViewerBrowserTests(unittest.TestCase):
                 "date": "2026-07-10",
                 "evidence": ["artifact:missing-note"],
             }],
+        }
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+
+        # The viewer copies the Python boundary's upper bounds, not a partial
+        # re-fold: a strong emitted record may justify the rung without
+        # re-deriving its target/link relation from omitted journal context.
+        applied_artifact = {
+            **artifact,
+            "id": "artifact:applied",
+            "evidence_strength": "applied",
+        }
+        graph = self.graph_envelope(
+            nodes=[concept, applied_artifact, material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "applied",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [applied_artifact["id"]],
+        })
+        graph["state"][material["id"]] = {
+            "depth_reached": "applied",
+            "last_seen": "2026-07-16",
+            "evidence": [encounter["id"]],
         }
         self.write_graph(graph)
         self.open_state("#mode=field", "FIELD")

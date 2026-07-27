@@ -280,6 +280,18 @@ const CONCEPT_GATED_DEFAULTS = {
   "coverage": COVERAGE_VALUES[0],
 };
 const QUESTION_GATED_DEFAULTS = {"status": QUESTION_STATUSES[0]};
+// §14.5 upper bound only: the producer fold additionally weighs link kind
+// and journal order/dates that the emitted state does not repeat.
+const ARTIFACT_EXPOSURE_RANK = {
+  "noticed": 1,
+  "read": 2,
+  "summarized": 3,
+  "explained": 3,
+  "applied": 4,
+  "reviewed": 4,
+  "performed": 4,
+  "drilled": 4,
+};
 
 function isEvidenceArray(value, prefixes, minimum = 0) {
   return isStringArray(
@@ -354,6 +366,54 @@ function validateStateAsOf(entry, asOf, path) {
   return null;
 }
 
+function exposureCeiling(evidence, nodesById) {
+  let ceiling = 0;
+  const strengths = new Set();
+  for (const ref of evidence) {
+    const node = nodesById.get(ref);
+    if (!node) continue;
+    if (node.type === "artifact") {
+      strengths.add(node.evidence_strength);
+      ceiling = Math.max(
+        ceiling, ARTIFACT_EXPOSURE_RANK[node.evidence_strength] ?? 0,
+      );
+    } else if (node.type === "encounter") {
+      ceiling = Math.max(ceiling, node.depth === "skim" ? 1 : 2);
+    }
+  }
+  if (strengths.has("explained") && strengths.has("reviewed")) {
+    ceiling = CONCEPT_EXPOSURES.length - 1;
+  }
+  return ceiling;
+}
+
+function depthCeiling(evidence, nodesById) {
+  let ceiling = 0;
+  for (const ref of evidence) {
+    const node = nodesById.get(ref);
+    if (node && node.type === "encounter") {
+      ceiling = Math.max(ceiling, ENCOUNTER_DEPTHS.indexOf(node.depth));
+    }
+  }
+  return ceiling;
+}
+
+function calendarDay(value) {
+  const stamp = new Date(0);
+  stamp.setUTCHours(0, 0, 0, 0);
+  stamp.setUTCFullYear(
+    Number(value.slice(0, 4)),
+    Number(value.slice(5, 7)) - 1,
+    Number(value.slice(8, 10)),
+  );
+  return Math.trunc(stamp.getTime() / 86400000);
+}
+
+function freshnessOf(lastSeen, asOf) {
+  const age = calendarDay(asOf) - calendarDay(lastSeen);
+  return age <= 30 ? "fresh" : age <= 90 ? "aging" : "stale";
+}
+
 function validateStateEntry(entry, nodeType, nodesById, asOf) {
   const path = "/state";
   if (!isPlainObject(entry)) return diagnostic(path, "entryShape");
@@ -365,6 +425,10 @@ function validateStateEntry(entry, nodeType, nodesById, asOf) {
     if (!CLARITY_VALUES.includes(entry.clarity)) return diagnostic(path, "clarity");
     if (!COVERAGE_VALUES.includes(entry.coverage)) return diagnostic(path, "coverage");
     if (!isEvidenceArray(entry.evidence, ["artifact", "encounter", "question"])) return diagnostic(path, "evidence");
+    if (CONCEPT_EXPOSURES.indexOf(entry.exposure)
+        > exposureCeiling(entry.evidence, nodesById)) {
+      return diagnostic(path + "/evidence", "exposureCeiling");
+    }
     const decisionFailure = validateDecisionReferences(
       entry.decisions, ["confidence", "clarity", "coverage"], path,
     );
@@ -384,6 +448,14 @@ function validateStateEntry(entry, nodeType, nodesById, asOf) {
     if (!ENCOUNTER_DEPTHS.includes(entry.depth_reached)) return diagnostic(path, "depth");
     if (!isCalendarDate(entry.last_seen)) return diagnostic(path, "lastSeen");
     if (!isEvidenceArray(entry.evidence, ["encounter"], 1)) return diagnostic(path, "evidence");
+    const hasEncounter = entry.evidence.some(
+      (ref) => nodesById.get(ref)?.type === "encounter",
+    );
+    if (!hasEncounter) return diagnostic(path + "/evidence", "emittedEncounter");
+    if (ENCOUNTER_DEPTHS.indexOf(entry.depth_reached)
+        > depthCeiling(entry.evidence, nodesById)) {
+      return diagnostic(path + "/evidence", "depthCeiling");
+    }
   } else if (nodeType === "question") {
     if (!hasOnlyKeys(entry, QUESTION_STATE_KEYS)) return diagnostic(path, "additionalProperties");
     if (!hasKeys(entry, ["status", "evidence", "decisions"])) return diagnostic(path, "required");
@@ -404,6 +476,11 @@ function validateStateEntry(entry, nodeType, nodesById, asOf) {
   }
   const asOfFailure = validateStateAsOf(entry, asOf, path);
   if (asOfFailure) return asOfFailure;
+  if (nodeType === "concept"
+      && Object.prototype.hasOwnProperty.call(entry, "freshness")
+      && entry.freshness !== freshnessOf(entry.last_seen, asOf)) {
+    return diagnostic(path + "/freshness", "derivedFreshness");
+  }
   return null;
 }
 
