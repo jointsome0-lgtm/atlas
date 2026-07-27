@@ -2366,6 +2366,34 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertEqual(0, code, stderr)
         self.assertIn("duplicate row folded once", stderr)
 
+    def test_reproposal_preflight_uses_date_before_journal_position(self):
+        def decision(date, outcome):
+            return json.dumps({
+                "date": date,
+                "target": "concept:example",
+                "dimension": "confidence",
+                "to": "high",
+                "evidence": ["artifact:first-note"],
+                "proposed_by": "state-auditor",
+                "decision": outcome,
+            }) + "\n"
+
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "atlas/concepts/example.md": VALID_CONCEPT,
+                # Physical journal order is rotated prefix, then direct tail.
+                "state/decisions/2026.jsonl": decision(
+                    "2026-07-16", "confirmed"),
+                "state/decisions.jsonl": decision(
+                    "2026-07-15", "rejected"),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+
+        self.assertEqual(1, code)
+        self.assertIn(
+            "cannot be re-proposed without new evidence", stderr
+        )
+
     def test_material_state_requires_emitted_encounter_evidence(self):
         graph = json.loads(VALID_EMPTY_GRAPH)
         graph["generated_at"] = "2026-07-16T00:00:00Z"

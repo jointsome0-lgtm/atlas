@@ -1268,6 +1268,8 @@ def validate_instance(root: Path):
         artifact_kinds: dict[str, str] = {}
         known_decision_targets = set(living)
         rejected_proposals: set[tuple] = set()
+        decision_records: list[tuple[str, int, dict, str]] = []
+        decision_position = 0
         for stem, schema_name in JOURNALS.items():
             seen_rows: set[bytes] = set()
             try:
@@ -1290,6 +1292,11 @@ def validate_instance(root: Path):
                             )
                             continue
                         seen_rows.add(raw)
+                        if stem == "decisions":
+                            # §20.1 position counts through the rotated-prefix
+                            # plus direct-tail concatenation. Schema-invalid
+                            # rows still occupy their physical position.
+                            decision_position += 1
                         schema_errors = _schema_errors(
                             row, schemas[schema_name], row_path)
                         errors.extend(schema_errors)
@@ -1312,16 +1319,28 @@ def validate_instance(root: Path):
                             )
                             errors.extend(semantic_errors)
                             if not schema_errors and not semantic_errors:
-                                errors.extend(_reproposal_errors(
+                                decision_records.append((
+                                    row["date"],
+                                    decision_position,
                                     row,
                                     row_path,
-                                    rejected_proposals,
-                                    known_decision_targets,
-                                    retired,
                                 ))
                         counts["rows"] += 1
                 except JsonInputError as exc:
                     errors.append(str(exc))
+        # Rejection memory is an order-sensitive decisions-journal fold, so
+        # backfill follows activity date before physical journal position.
+        for _, _, row, row_path in sorted(
+                decision_records,
+                key=lambda record: _builder.fold_order_key(
+                    record[0], record[1])):
+            errors.extend(_reproposal_errors(
+                row,
+                row_path,
+                rejected_proposals,
+                known_decision_targets,
+                retired,
+            ))
 
     for source_file in scan("runs", suffix=".json"):
         path = source_file.path

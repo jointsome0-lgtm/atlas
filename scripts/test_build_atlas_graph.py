@@ -2707,6 +2707,32 @@ class StateFoldTests(unittest.TestCase):
             else:
                 self.assertEqual([], errors)
 
+    def test_rejection_memory_uses_date_before_journal_position(self):
+        evidence = self._artifact(
+            "artifact:first-note", "2026-01-01", "noticed")
+        confirmation = self._decision(
+            "2026-02-02", "concept:c", "confidence", "high",
+            [evidence["id"]])
+        backfilled_rejection = self._decision(
+            "2026-02-01", "concept:c", "confidence", "high",
+            [evidence["id"]], decision="rejected")
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([evidence]),
+            # Physical journal order is rotated prefix, then direct tail.
+            "state/decisions/2026.jsonl": self._jsonl([confirmation]),
+            "state/decisions.jsonl": self._jsonl([backfilled_rejection]),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual(
+            "unknown", graph["state"]["concept:c"]["confidence"])
+        self.assertTrue(
+            any("cannot be re-proposed without new evidence" in error
+                for error in errors),
+            errors,
+        )
+
     def test_explicit_as_of_bounds_the_fold_but_keeps_in_cut_decision(self):
         early = self._artifact(
             "artifact:2026-01-01-001", "2026-01-01", "noticed",

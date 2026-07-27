@@ -425,6 +425,11 @@ def id_type(node_id: str) -> str | None:
     return ID_PREFIXES.get(prefix)
 
 
+def fold_order_key(date: str, position: int) -> tuple[str, int]:
+    """§20.1 total order inside one journal."""
+    return date, position
+
+
 def build(curated: Path, as_of: str | None = None) -> tuple[
         dict, list[str], list[str]]:
     errors: list[str] = []
@@ -1900,7 +1905,9 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     # move state and therefore never replace a confirmed winner.
     decision_winners: dict[tuple[str, str], tuple] = {}
     rejected_proposals: set[tuple] = set()
-    for position, origin, row, row_date in decision_records:
+    for position, origin, row, row_date in sorted(
+            decision_records,
+            key=lambda record: fold_order_key(record[3], record[0])):
         dimension = row["dimension"]
         target = row["target"]
         # Every accepted dimension targets a node id: the one dimension that
