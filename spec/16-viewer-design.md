@@ -28,9 +28,8 @@ Layout is a property of the geometry, never of the mode: where
 authored order carries the meaning (route steps, trail
 chronology) it is deterministic by construction; where only
 adjacency carries it (concept neighbourhoods, material
-supports) a free layout is allowed, bounded by §27.8's seeded
-rule — same graph, same picture, derived from the graph file
-and the URL alone.
+supports) a free layout is allowed, bounded by §27.8's
+determinism requirement.
 ```
 
 Suggested routes:
@@ -69,11 +68,10 @@ read as an assertion. Whether it renders as absence or as its
 own mark is a design choice, not a canon one.
 Freshness joins this block as its §14.7 classes, never as
 continuous decay: the picture asserts no more than the data,
-and a stale node is an invitation, never an obligation (§14.7,
-§25.4). It follows §32.2's severity
-precedent — recessive, never an alarm — and §27.8's rule that
-state is distinguishable without colour alone, so opacity alone
-is not the encoding. Aging against the viewer's own as-of
+and §14.7's invitation reading survives the render (§25.4). Its
+severity treatment is §32.2's, and its channel obeys §27.8's
+colour-independence requirement, so opacity alone is not the
+encoding. Aging against the viewer's own as-of
 (§14.7) stays out: acceptance pins freshness to the build's
 as-of, and changing that is its own decision.
 No route- or field-level aggregate: per-node state only — no
@@ -86,9 +84,8 @@ Support:
 
 ```text
 A supports edge (§9.14) renders joined with its endpoints' own
-§14.8 state and the concepts the facet maps to, and with no
-sufficiency verdict — sufficiency is the user's judgment, never
-a gate.
+§14.8 state and the concepts the facet maps to, and never with
+a sufficiency verdict (§9.14).
 ```
 
 Questions:
