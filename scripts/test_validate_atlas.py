@@ -87,6 +87,19 @@ GRAPH_WITH_NODE = VALID_EMPTY_GRAPH.replace(
     ' "fields": ["knowledge"], "aliases": []}],',
 )
 
+# §20 step 9 is total over concepts and questions: the no-knowledge values
+# every one carries until evidence or a decision moves it (§14, §27.1).
+NO_KNOWLEDGE_CONCEPT = ('{"exposure": "unseen", "confidence": "unknown",'
+                        ' "clarity": "vague", "coverage": "none",'
+                        ' "evidence": [], "decisions": []}')
+
+
+def graph_state(*concept_ids):
+    entries = ", ".join(f'"{concept_id}": {NO_KNOWLEDGE_CONCEPT}'
+                        for concept_id in concept_ids)
+    return f'"state": {{{entries}}},'
+
+
 GRAPH_WITH_EDGE = VALID_EMPTY_GRAPH.replace(
     '"edges": [],',
     '"edges": [{"source": "concept:a", "target": "concept:b", "type": "loads",'
@@ -155,6 +168,33 @@ material_roles:
 ---
 """
 
+VALID_INSTANCE_GRAPH = (GRAPH_WITH_NODE % "concept").replace(
+    '"title": "Example", "fields": ["knowledge"], "aliases": []}],',
+    '"title": "Example", "fields": ["knowledge"], "aliases": []},'
+    ' {"id": "concept:other", "type": "concept", "title": "Other",'
+    ' "fields": ["knowledge"], "aliases": []}],',
+).replace(
+    '"edges": [],',
+    '"edges": [{"source": "concept:example", "target": "concept:other",'
+    ' "type": "related_to", "provenance": ["concept:example"],'
+    ' "weight": "low"}],',
+).replace(
+    '"state": {},', graph_state("concept:example", "concept:other"),
+)
+_VALID_INSTANCE_REDACTED = json.loads(VALID_INSTANCE_GRAPH)
+_VALID_INSTANCE_REDACTED["withheld"] = {
+    "nodes": 0,
+    "edges": 0,
+    "trails": 0,
+    "state": 0,
+    "influence": 0,
+    "frontier": 0,
+    "projections": 0,
+}
+VALID_INSTANCE_REDACTED_GRAPH = (
+    json.dumps(_VALID_INSTANCE_REDACTED, indent=2) + "\n"
+)
+
 VALID_INSTANCE = {
     "atlas/concepts/example.md": VALID_CONCEPT,
     "atlas/suggested-routes/example-default.md": VALID_ROUTE,
@@ -175,18 +215,8 @@ VALID_INSTANCE = {
     "intake/watch-sync/2026-07-16-002.json": VALID_INTAKE_BATCH.replace(
         "\n", "\r\n"
     ).replace('"2026-07-16-001"', '"2026-07-16-002"'),
-    "graph/atlas-graph.json": (GRAPH_WITH_NODE % "concept").replace(
-        '"title": "Example", "fields": ["knowledge"], "aliases": []}],',
-        '"title": "Example", "fields": ["knowledge"], "aliases": []},'
-        ' {"id": "concept:other", "type": "concept", "title": "Other",'
-        ' "fields": ["knowledge"], "aliases": []}],',
-    ).replace(
-        '"edges": [],',
-        '"edges": [{"source": "concept:example", "target": "concept:other",'
-        ' "type": "related_to", "provenance": ["concept:example"],'
-        ' "weight": "low"}],',
-    ),
-    "graph/atlas-graph.redacted.json": VALID_REDACTED_GRAPH,
+    "graph/atlas-graph.json": VALID_INSTANCE_GRAPH,
+    "graph/atlas-graph.redacted.json": VALID_INSTANCE_REDACTED_GRAPH,
     "intake/watch-sync/2026-07-16-001.json": VALID_INTAKE_BATCH,
 }
 
@@ -1808,6 +1838,11 @@ class SchemaValidatorTests(unittest.TestCase):
             ' {"source": "encounter:e", "target": "material:m",'
             ' "type": "visited", "provenance": ["encounter:e"]}],',
         )
+        graph = graph.replace('"state": {},', graph_state("concept:a"))
+        graph = graph.replace(
+            '"version": 1,',
+            '"version": 1, "generated_at": "2026-07-16T00:00:00Z",',
+        )
         with tempfile.TemporaryDirectory() as directory:
             materialize({"graph/atlas-graph.json": graph}, Path(directory))
             code, stdout, stderr = self.run_cli("validate", directory)
@@ -1818,6 +1853,1148 @@ class SchemaValidatorTests(unittest.TestCase):
         code, stdout, stderr = self.run_cli("validate", str(root))
         self.assertEqual(0, code, stderr)
         self.assertIn("11 frontmatter documents", stdout)
+
+    def test_graph_boundary_holds_the_step_9_state_contract(self):
+        # Three producer guarantees the schema cannot express on its own:
+        # the fold is total over concepts and questions (§20 step 9, §27.1),
+        # a review-gated value moves only with its decision reference
+        # (§14.6/§9.8/§31.3), and one dimension never carries two.
+        gated = ('{"exposure": "unseen", "confidence": "high",'
+                 ' "clarity": "vague", "coverage": "none",'
+                 ' "evidence": [], "decisions": []}')
+        twice = ('{"exposure": "unseen", "confidence": "high",'
+                 ' "clarity": "vague", "coverage": "none", "evidence": [],'
+                 ' "decisions": [{"dimension": "confidence",'
+                 ' "date": "2026-07-16", "evidence": []},'
+                 ' {"dimension": "confidence", "date": "2026-07-17",'
+                 ' "evidence": []}]}')
+        cases = {
+            "sparse": ('"state": {},', "carries no /state entry"),
+            "gated-without-decision": (
+                f'"state": {{"concept:example": {gated}}},',
+                "with no decision reference",
+            ),
+            "two-references-for-one-dimension": (
+                f'"state": {{"concept:example": {twice}}},',
+                "two decision references for confidence",
+            ),
+        }
+        for name, (state, expected) in cases.items():
+            graph = (GRAPH_WITH_NODE % "concept").replace('"state": {},', state)
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                materialize({"graph/atlas-graph.json": graph}, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(expected, stderr)
+
+    def test_emitted_status_evidence_matches_the_builder(self):
+        question_id = "question:demo-when-is-retry-safe"
+        script_id = "artifact:demo-retry-script"
+        cases = {
+            "resolved-artifact": (
+                "resolved", [script_id], [script_id], 0, None),
+            "resolved-divergent-provenance": (
+                "resolved", [], [script_id], 1,
+                "evidence that differs from its status decision"),
+            "resolved-question-record": (
+                "resolved", [question_id], [question_id], 1,
+                "outside the §9.8 outcome restriction"),
+            "stale-resolved-script": (
+                "stale", [script_id], [script_id], 1,
+                "without the user's own note"),
+            # §20.1: the decision survives evidence outside the graph cut.
+            "stale-dangling-artifact": (
+                "stale", ["artifact:missing-note"],
+                ["artifact:missing-note"], 0, None),
+            "open-with-evidence-but-no-decision": (
+                "open", [script_id], None, 1,
+                "evidence that differs from its status decision"),
+        }
+        for name, (status, evidence, decision_evidence, expected_code,
+                   expected) in cases.items():
+            graph = json.loads(
+                (ROOT / "fixtures/demo-graph/atlas-graph.json").read_text(
+                    encoding="utf-8"))
+            graph["state"][question_id] = {
+                "status": status,
+                "evidence": evidence,
+                "decisions": [] if decision_evidence is None else [{
+                    "dimension": "status",
+                    "date": "2026-07-10",
+                    "evidence": decision_evidence,
+                }],
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected is not None:
+                self.assertIn(expected, stderr)
+
+    def test_concept_state_includes_every_decision_evidence(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:decision-note",
+            "type": "artifact",
+            "title": "",
+            "fields": [],
+            "kind": "note",
+            "path": "notes/example.md",
+            "observed_at": "2026-07-16",
+            "summary": "Synthetic decision note (Vera Example).",
+            "evidence_strength": "noticed",
+        }
+        for name, evidence, expected_code in (
+                ("omitted", [], 1),
+                ("included", [artifact["id"]], 0)):
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [concept, artifact]
+            graph["state"] = {
+                concept["id"]: {
+                    "exposure": "unseen",
+                    "confidence": "high",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "evidence": evidence,
+                    "decisions": [{
+                        "dimension": "confidence",
+                        "date": "2026-07-16",
+                        "evidence": [artifact["id"]],
+                    }],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "omits concept decision evidence", stderr
+                )
+
+    def test_concept_last_seen_matches_a_cited_contact_date(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:contact",
+            "type": "artifact",
+            "title": "",
+            "fields": [],
+            "kind": "note",
+            "path": "notes/example.md",
+            "observed_at": "2026-07-10",
+            "summary": "Synthetic contact note (Vera Example).",
+            "evidence_strength": "noticed",
+        }
+        for name, last_seen, expected_code in (
+                ("invented-date", "2026-07-16", 1),
+                ("recorded-date", "2026-07-10", 0)):
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [concept, artifact]
+            graph["state"] = {
+                concept["id"]: {
+                    "exposure": "touched",
+                    "confidence": "unknown",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "last_seen": last_seen,
+                    "freshness": "fresh",
+                    "evidence": [artifact["id"]],
+                    "decisions": [],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "last_seen absent from its cited contact evidence", stderr
+                )
+
+    def test_graph_boundary_holds_the_derived_state_joins(self):
+        # §14.5/§14.8 move a ladder only on recorded evidence, and §14.7
+        # freshness is a derivation against the as-of, not a stored opinion.
+        moved = ('{"exposure": "applied", "confidence": "unknown",'
+                 ' "clarity": "vague", "coverage": "none",'
+                 ' "evidence": [], "decisions": []}')
+        contradicted = ('{"exposure": "unseen", "confidence": "unknown",'
+                        ' "clarity": "vague", "coverage": "none",'
+                        ' "evidence": [], "decisions": [],'
+                        ' "last_seen": "2026-07-16", "freshness": "stale"}')
+        ahead = ('{"exposure": "unseen", "confidence": "unknown",'
+                 ' "clarity": "vague", "coverage": "none",'
+                 ' "evidence": [], "decisions": [],'
+                 ' "last_seen": "2027-01-01", "freshness": "fresh"}')
+        cases = {
+            "exposure-without-evidence": (moved, "with no evidence"),
+            "freshness-not-derived": (
+                contradicted, "the §14.7 derivation does not produce"),
+            "last-seen-after-as-of": (ahead, "last seen after the graph"),
+        }
+        for name, (entry, expected) in cases.items():
+            graph = (GRAPH_WITH_NODE % "concept").replace(
+                '"version": 1,',
+                '"version": 1, "generated_at": "2026-07-16T00:00:00Z",',
+            ).replace(
+                '"state": {},', f'"state": {{"concept:example": {entry}}},')
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                materialize({"graph/atlas-graph.json": graph}, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(expected, stderr)
+
+    def test_concept_contact_exactly_matches_freshness_dates(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:example-note",
+            "type": "artifact",
+            "title": "",
+            "fields": [],
+            "kind": "note",
+            "path": "notes/example.md",
+            "observed_at": "2026-07-16",
+            "summary": "Synthetic boundary fixture (Vera Example).",
+            "evidence_strength": "noticed",
+        }
+        default = {
+            "exposure": "unseen",
+            "confidence": "unknown",
+            "clarity": "vague",
+            "coverage": "none",
+            "evidence": [],
+            "decisions": [],
+        }
+        contacted = {
+            **default,
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+        }
+        cases = {
+            "unseen-without-dates": (default, 0),
+            "contact-with-dates": (contacted, 0),
+            "unseen-with-dates": ({
+                **default,
+                "last_seen": "2026-07-16",
+                "freshness": "fresh",
+            }, 1),
+            "contact-without-dates": ({
+                key: value for key, value in contacted.items()
+                if key not in ("last_seen", "freshness")
+            }, 1),
+        }
+        for name, (entry, expected_code) in cases.items():
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [concept, artifact]
+            graph["state"] = {concept["id"]: entry}
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "exactly when exposure records contact", stderr
+                )
+
+    def test_exposure_may_not_exceed_what_its_evidence_can_reach(self):
+        # §14.5/§31.3: citing a record is not enough — the cited records
+        # have to be able to produce the asserted rung. An encounter caps
+        # at `read`, so `applied` on encounter evidence is imported.
+        nodes = (
+            '{"id": "concept:example", "type": "concept", "title": "E",'
+            ' "fields": ["knowledge"], "aliases": []},'
+            ' {"id": "encounter:2026-07-16-001", "type": "encounter",'
+            ' "title": "", "fields": [], "date": "2026-07-16",'
+            ' "target": "material:m", "depth": "read", "mode": "background"},'
+            ' {"id": "material:m", "type": "material", "title": "M",'
+            ' "fields": [], "kind": "docs", "url": "", "status": "active"}'
+        )
+        for exposure, expected_code in (("read", 0), ("applied", 1)):
+            entry = (f'{{"exposure": "{exposure}", "confidence": "unknown",'
+                     ' "clarity": "vague", "coverage": "none",'
+                     ' "evidence": ["encounter:2026-07-16-001"],'
+                     ' "decisions": [], "last_seen": "2026-07-16",'
+                     ' "freshness": "fresh"}')
+            graph = VALID_EMPTY_GRAPH.replace(
+                '"version": 1,',
+                '"version": 1, "generated_at": "2026-07-16T00:00:00Z",',
+            ).replace(
+                '"nodes": [],', f'"nodes": [{nodes}],'
+            ).replace(
+                '"edges": [],',
+                '"edges": [{"source": "encounter:2026-07-16-001",'
+                ' "target": "material:m", "type": "visited",'
+                ' "provenance": ["encounter:2026-07-16-001"]}],'
+            ).replace(
+                '"state": {},', f'"state": {{"concept:example": {entry}}},')
+            with self.subTest(exposure=exposure), tempfile.TemporaryDirectory() as directory:
+                materialize({"graph/atlas-graph.json": graph}, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn("beyond what its cited evidence can reach",
+                              stderr)
+
+    def test_taught_ceiling_uses_observable_review_chronology(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+
+        def artifact(node_id, date, strength):
+            return {
+                "id": node_id,
+                "type": "artifact",
+                "title": "",
+                "fields": [],
+                "kind": "note",
+                "path": "notes/example.md",
+                "observed_at": date,
+                "summary": "Synthetic chronology fixture (Vera Example).",
+                "evidence_strength": strength,
+            }
+
+        for name, explained_on, reviewed_on, expected_code in (
+                ("review-before", "2026-07-16", "2026-07-15", 1),
+                # Same-day journal position is absent from the graph, so the
+                # boundary deliberately keeps this as an upper-bound case.
+                ("same-day", "2026-07-16", "2026-07-16", 0),
+                ("review-after", "2026-07-15", "2026-07-16", 0)):
+            explained = artifact(
+                "artifact:explained", explained_on, "explained")
+            reviewed = artifact(
+                "artifact:reviewed", reviewed_on, "reviewed")
+            last_seen = max(explained_on, reviewed_on)
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = f"{last_seen}T00:00:00Z"
+            graph["nodes"] = [concept, explained, reviewed]
+            graph["state"] = {
+                concept["id"]: {
+                    "exposure": "taught",
+                    "confidence": "unknown",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "last_seen": last_seen,
+                    "freshness": "fresh",
+                    "evidence": [explained["id"], reviewed["id"]],
+                    "decisions": [],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "beyond what its cited evidence can reach", stderr
+                )
+
+    def test_malformed_exposure_strength_reports_without_a_traceback(self):
+        # §24.4: schema-invalid graph values still reach the semantic joins,
+        # which must preserve the ordinary prefixed report. Lists and
+        # objects are unhashable and must never escape through set/dict use.
+        for malformed in ([], {"applied": True}):
+            nodes = [
+                {
+                    "id": "concept:example",
+                    "type": "concept",
+                    "title": "Example (Vera Example)",
+                    "fields": ["knowledge"],
+                    "aliases": [],
+                },
+                {
+                    "id": "artifact:2026-07-16-001",
+                    "type": "artifact",
+                    "title": "",
+                    "fields": [],
+                    "kind": "note",
+                    "path": "notes/example.md",
+                    "observed_at": "2026-07-16",
+                    "summary": "Synthetic boundary fixture (Vera Example).",
+                    "evidence_strength": malformed,
+                },
+            ]
+            entry = {
+                "exposure": "applied",
+                "confidence": "unknown",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": ["artifact:2026-07-16-001"],
+                "decisions": [],
+            }
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["nodes"] = nodes
+            graph["state"] = {"concept:example": entry}
+            with self.subTest(value_type=type(malformed).__name__), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertTrue(stderr)
+            self.assertTrue(
+                all(line.startswith("ERROR:")
+                    for line in stderr.splitlines()), stderr)
+
+    def test_malformed_state_evidence_ids_report_without_a_traceback(self):
+        # The same untrusted-value genus applies before node lookup in both
+        # ladder ceilings: malformed object/array refs are schema errors,
+        # never unhashable dict-key tracebacks in the semantic pass.
+        for node_type, malformed in (
+                ("concept", {}), ("concept", []),
+                ("material", {}), ("material", [])):
+            node = {
+                "id": f"{node_type}:example",
+                "type": node_type,
+                "title": "Example (Vera Example)",
+                "fields": ["knowledge"] if node_type == "concept" else [],
+            }
+            if node_type == "concept":
+                node["aliases"] = []
+                entry = {
+                    "exposure": "applied",
+                    "confidence": "unknown",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "evidence": [malformed],
+                    "decisions": [],
+                }
+            else:
+                node.update({"kind": "docs", "url": "", "status": "active"})
+                entry = {
+                    "depth_reached": "read",
+                    "last_seen": "2026-07-16",
+                    "evidence": [malformed],
+                }
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [node]
+            graph["state"] = {node["id"]: entry}
+            with self.subTest(node_type=node_type,
+                              value_type=type(malformed).__name__), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertTrue(stderr)
+            self.assertTrue(
+                all(line.startswith("ERROR:")
+                    for line in stderr.splitlines()), stderr)
+
+    def test_dated_state_is_bounded_by_a_usable_as_of(self):
+        # §20.1: the as-of bounds every dated input. A missing or unparsable
+        # stamp leaves freshness unchecked rather than half-checked, and an
+        # impossible one is a diagnostic, never a traceback.
+        dated = ('{"exposure": "unseen", "confidence": "unknown",'
+                 ' "clarity": "vague", "coverage": "none", "evidence": [],'
+                 ' "decisions": [], "last_seen": "2026-07-01",'
+                 ' "freshness": "fresh"}')
+        future_decision = (
+            '{"exposure": "unseen", "confidence": "high",'
+            ' "clarity": "vague", "coverage": "none", "evidence": [],'
+            ' "decisions": [{"dimension": "confidence",'
+            ' "date": "2099-01-01",'
+            ' "evidence": ["artifact:missing"]}]}')
+        cases = {
+            "no-as-of": (None, dated, "no valid generated_at as-of"),
+            "decision-no-as-of": (
+                None, future_decision, "no valid generated_at as-of"),
+            "impossible-as-of": (
+                "2026-13-30T00:00:00Z", dated, "not a real calendar date"),
+            "decision-after-as-of": (
+                "2026-07-10T00:00:00Z", future_decision,
+                "decision dated after the graph as-of"),
+            "suffixed-last-seen": (
+                "2026-07-10T00:00:00Z",
+                dated.replace("2026-07-01", "2026-07-01junk"),
+                "expected exactly one oneOf match"),
+        }
+        for name, (generated_at, entry, expected) in cases.items():
+            graph = (GRAPH_WITH_NODE % "concept").replace(
+                '"state": {},', f'"state": {{"concept:example": {entry}}},')
+            if generated_at is not None:
+                graph = graph.replace(
+                    '"version": 1,',
+                    f'"version": 1, "generated_at": "{generated_at}",')
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                materialize({"graph/atlas-graph.json": graph}, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(expected, stderr)
+            self.assertTrue(
+                all(line.startswith("ERROR:")
+                    for line in stderr.splitlines()), stderr)
+
+    def test_redacted_variant_may_omit_state_it_accounts_for(self):
+        # §32.6: the agent-facing variant keeps a public node whose fold
+        # rested on classed evidence and drops the value, disclosing the
+        # count. The full sibling proves that the omission is classed; a
+        # caller cannot spend an inflated or removed-node count on another
+        # surviving concept's public default.
+        classed_state = (
+            NO_KNOWLEDGE_CONCEPT[:-1] + ', "sensitivity": "medical"}'
+        )
+        for withheld_state, expected_code in ((1, 0), (0, 1)):
+            graph = VALID_REDACTED_GRAPH.replace(
+                '"nodes": [],',
+                '"nodes": [{"id": "concept:example", "type": "concept",'
+                ' "title": "Example", "fields": ["knowledge"],'
+                ' "aliases": []}],',
+            ).replace(
+                '"nodes": 1,', '"nodes": 0,'
+            ).replace('"state": 0,', f'"state": {withheld_state},')
+            with self.subTest(withheld_state=withheld_state), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": (
+                        GRAPH_WITH_NODE % "concept").replace(
+                            '"state": {},',
+                            f'"state": {{"concept:example": {classed_state}}},'),
+                    "graph/atlas-graph.redacted.json": graph,
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+
+    def test_removed_state_cannot_fund_an_unrelated_surviving_gap(self):
+        full = json.loads(VALID_EMPTY_GRAPH)
+        full["nodes"] = [
+            {
+                "id": "concept:public",
+                "type": "concept",
+                "title": "Public (Vera Example)",
+                "fields": ["knowledge"],
+                "aliases": [],
+            },
+            {
+                "id": "concept:classed",
+                "type": "concept",
+                "title": "Classed (Vera Example)",
+                "fields": ["knowledge"],
+                "aliases": [],
+                "sensitivity": "medical",
+            },
+        ]
+        full["state"] = {
+            "concept:public": json.loads(NO_KNOWLEDGE_CONCEPT),
+            "concept:classed": {
+                **json.loads(NO_KNOWLEDGE_CONCEPT),
+                "sensitivity": "medical",
+            },
+        }
+        redacted = json.loads(VALID_REDACTED_GRAPH)
+        redacted["nodes"] = [full["nodes"][0]]
+        # One legitimate state omission belongs to the removed node. The
+        # second count is inflated to hide the surviving public default.
+        redacted["withheld"]["nodes"] = 1
+        redacted["withheld"]["state"] = 2
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "graph/atlas-graph.json": json.dumps(full) + "\n",
+                "graph/atlas-graph.redacted.json": (
+                    json.dumps(redacted) + "\n"
+                ),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code, stderr)
+        self.assertIn(
+            "/withheld/state does not match the full sibling graph", stderr
+        )
+        self.assertIn(
+            "concept:public carries no /state entry", stderr
+        )
+
+    def test_impossible_calendar_date_is_rejected_like_the_builder(self):
+        # §9/§10: the boundary preflight has to predict the build, so the
+        # reader that enforces the declared date shape enforces the calendar
+        # the builder parses — without echoing the rejected value (§24.4).
+        row = VALID_ARTIFACT_ROW.replace('"2026-07-16"', '"2026-02-30"')
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({"state/artifacts.jsonl": row}, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code, stderr)
+        self.assertIn("not a real calendar date", stderr)
+        self.assertNotIn("2026-02-30", stderr)
+
+    def test_user_self_proposal_note_preflight_matches_the_builder(self):
+        # §9.13: validate_atlas predicts the builder's user-note gate. A
+        # missing artifact may be outside the cut or deleted (§20.1), but a
+        # resolved non-note or an evidence list with no artifact is invalid.
+        base_decision = {
+            "date": "2026-07-16",
+            "target": "concept:example",
+            "dimension": "confidence",
+            "to": "high",
+            "evidence": ["artifact:2026-07-16-001"],
+            "proposed_by": "user",
+            "decision": "confirmed",
+        }
+        cases = {
+            "own-note": (VALID_ARTIFACT_ROW, base_decision, 0),
+            "non-note": (
+                VALID_ARTIFACT_ROW.replace('"type":"note"',
+                                           '"type":"script"'),
+                base_decision,
+                1,
+            ),
+            "wrong-kind": (
+                None,
+                {**base_decision,
+                 "evidence": ["encounter:2026-07-16-001"]},
+                1,
+            ),
+            "dangling-note": (
+                None,
+                {**base_decision, "evidence": ["artifact:missing"]},
+                0,
+            ),
+        }
+        for name, (artifact_row, decision, expected_code) in cases.items():
+            tree = {
+                "state/decisions.jsonl": json.dumps(decision) + "\n",
+            }
+            if artifact_row is not None:
+                tree["state/artifacts.jsonl"] = artifact_row
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize(tree, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn("user self-proposal", stderr)
+
+    def test_status_evidence_preflight_matches_the_builder(self):
+        # §9.8 narrows generic §9.12 evidence by outcome: ordinary status
+        # changes cite artifacts/encounters and stale cites a note artifact.
+        base = {
+            "date": "2026-07-16",
+            "target": "question:example",
+            "dimension": "status",
+            "to": "resolved",
+            "evidence": ["artifact:missing"],
+            "proposed_by": "state-auditor",
+            "decision": "confirmed",
+        }
+        cases = {
+            "resolved-artifact": (base, 0),
+            "resolved-encounter": (
+                {**base, "evidence": ["encounter:missing"]}, 0),
+            "resolved-question": (
+                {**base, "evidence": ["question:example"]}, 1),
+            "stale-artifact": (
+                {**base, "to": "stale",
+                 "evidence": ["artifact:missing"]}, 0),
+            "stale-encounter": (
+                {**base, "to": "stale",
+                 "evidence": ["encounter:missing"]}, 1),
+        }
+        for name, (decision, expected_code) in cases.items():
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "state/decisions.jsonl": json.dumps(decision) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "/evidence for a status decision", stderr
+                )
+
+    def test_resolved_stale_evidence_kind_preflight_matches_builder(self):
+        decision = {
+            "date": "2026-07-16",
+            "target": "question:example",
+            "dimension": "status",
+            "to": "stale",
+            "evidence": ["artifact:2026-07-16-001"],
+            "proposed_by": "state-auditor",
+            "decision": "confirmed",
+        }
+        cases = {
+            "own-note": (VALID_ARTIFACT_ROW, "confirmed", 0),
+            "non-note": (
+                VALID_ARTIFACT_ROW.replace(
+                    '"type":"note"', '"type":"script"'
+                ),
+                "confirmed",
+                1,
+            ),
+            "rejected-non-note": (
+                VALID_ARTIFACT_ROW.replace(
+                    '"type":"note"', '"type":"script"'
+                ),
+                "rejected",
+                0,
+            ),
+            # §20.1: outside-cut or deleted evidence may remain dangling.
+            "dangling-note": (None, "confirmed", 0),
+        }
+        for name, (artifact_row, outcome, expected_code) in cases.items():
+            tree = {
+                "state/decisions.jsonl": json.dumps({
+                    **decision, "decision": outcome,
+                }) + "\n",
+            }
+            if artifact_row is not None:
+                tree["state/artifacts.jsonl"] = artifact_row
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize(tree, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "/evidence for a stale status must cite", stderr
+                )
+
+    def test_rejected_proposal_preflight_requires_new_evidence(self):
+        def decision(date, evidence, outcome):
+            return {
+                "date": date,
+                "target": "concept:example",
+                "dimension": "confidence",
+                "to": "high",
+                "evidence": evidence,
+                "proposed_by": "state-auditor",
+                "decision": outcome,
+            }
+
+        first = decision(
+            "2026-07-15", ["artifact:first-note"], "rejected")
+        for name, later_evidence, expected_code in (
+                ("same-evidence", ["artifact:first-note"], 1),
+                ("new-evidence", ["artifact:second-note"], 0)):
+            rows = [
+                first,
+                decision("2026-07-16", later_evidence, "confirmed"),
+            ]
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "atlas/concepts/example.md": VALID_CONCEPT,
+                    "state/decisions.jsonl": "".join(
+                        json.dumps(row) + "\n" for row in rows
+                    ),
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "cannot be re-proposed without new evidence", stderr
+                )
+        # A storage duplicate is folded once with a warning by §20.1; it is
+        # not a second user interaction and must not become a re-proposal.
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "atlas/concepts/example.md": VALID_CONCEPT,
+                "state/decisions.jsonl": (
+                    json.dumps(first) + "\n" + json.dumps(first) + "\n"
+                ),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(0, code, stderr)
+        self.assertIn("duplicate row folded once", stderr)
+
+    def test_reproposal_preflight_uses_date_before_journal_position(self):
+        def decision(date, outcome):
+            return json.dumps({
+                "date": date,
+                "target": "concept:example",
+                "dimension": "confidence",
+                "to": "high",
+                "evidence": ["artifact:first-note"],
+                "proposed_by": "state-auditor",
+                "decision": outcome,
+            }) + "\n"
+
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "atlas/concepts/example.md": VALID_CONCEPT,
+                # Physical journal order is rotated prefix, then direct tail.
+                "state/decisions/2026.jsonl": decision(
+                    "2026-07-16", "confirmed"),
+                "state/decisions.jsonl": decision(
+                    "2026-07-15", "rejected"),
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+
+        self.assertEqual(1, code)
+        self.assertIn(
+            "cannot be re-proposed without new evidence", stderr
+        )
+
+    def test_reproposal_preflight_requires_an_added_citation(self):
+        def decision(date, evidence, outcome):
+            return json.dumps({
+                "date": date,
+                "target": "concept:example",
+                "dimension": "confidence",
+                "to": "high",
+                "evidence": evidence,
+                "proposed_by": "state-auditor",
+                "decision": outcome,
+            }) + "\n"
+
+        first = ["artifact:first-note", "artifact:second-note"]
+        for name, later, expected_code in (
+                ("removed-only", ["artifact:first-note"], 1),
+                ("added-third",
+                 ["artifact:first-note", "artifact:third-note"], 0)):
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "atlas/concepts/example.md": VALID_CONCEPT,
+                    "state/decisions.jsonl": (
+                        decision("2026-07-15", first, "rejected")
+                        + decision("2026-07-16", later, "confirmed")
+                    ),
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "cannot be re-proposed without new evidence", stderr
+                )
+
+    def test_material_state_requires_emitted_encounter_evidence(self):
+        material = {
+            "id": "material:example",
+            "type": "material",
+            "title": "Example (Vera Example)",
+            "fields": [],
+            "kind": "docs",
+            "url": "",
+            "status": "active",
+        }
+        encounter = {
+            "id": "encounter:example",
+            "type": "encounter",
+            "title": "",
+            "fields": [],
+            "date": "2026-07-16",
+            "target": material["id"],
+            "depth": "skim",
+            "mode": "background",
+        }
+        for name, nodes, edges, evidence in (
+                ("missing-only", [material], [], ["encounter:missing"]),
+                (
+                    "partially-dangling",
+                    [material, encounter],
+                    [{
+                        "source": encounter["id"],
+                        "target": material["id"],
+                        "type": "visited",
+                        "provenance": [encounter["id"]],
+                    }],
+                    [encounter["id"], "encounter:missing"],
+                )):
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = nodes
+            graph["edges"] = edges
+            graph["state"] = {
+                material["id"]: {
+                    "depth_reached": "skim",
+                    "last_seen": "2026-07-16",
+                    "evidence": evidence,
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(
+                "material state without wholly emitted encounter evidence",
+                stderr,
+            )
+
+    def test_material_last_seen_is_latest_resolved_cited_encounter(self):
+        material = {
+            "id": "material:example",
+            "type": "material",
+            "title": "Example material (Vera Example)",
+            "fields": [],
+            "kind": "docs",
+            "url": "",
+            "status": "active",
+        }
+        encounters = [
+            {
+                "id": f"encounter:{name}",
+                "type": "encounter",
+                "title": "",
+                "fields": [],
+                "date": date,
+                "target": material["id"],
+                "depth": depth,
+                "mode": "background",
+            }
+            for name, date, depth in (
+                ("first", "2026-07-15", "read"),
+                ("second", "2026-07-16", "applied"),
+            )
+        ]
+        for name, last_seen, expected_code in (
+                ("older-contact", "2026-07-15", 1),
+                ("latest-contact", "2026-07-16", 0)):
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [material, *encounters]
+            graph["edges"] = [
+                {
+                    "source": item["id"],
+                    "target": material["id"],
+                    "type": "visited",
+                    "provenance": [item["id"]],
+                }
+                for item in encounters
+            ]
+            graph["state"] = {
+                material["id"]: {
+                    "depth_reached": "applied",
+                    "last_seen": last_seen,
+                    "evidence": [item["id"] for item in encounters],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "last_seen other than its latest cited encounter", stderr
+                )
+
+    def test_state_requires_observable_sensitivity_union(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:classed",
+            "type": "artifact",
+            "title": "",
+            "fields": [],
+            "kind": "note",
+            "path": "notes/example.md",
+            "observed_at": "2026-07-16",
+            "summary": "Synthetic classed note (Vera Example).",
+            "evidence_strength": "noticed",
+            "sensitivity": "medical",
+        }
+        concept_evidence = json.loads(VALID_EMPTY_GRAPH)
+        concept_evidence["generated_at"] = "2026-07-16T00:00:00Z"
+        concept_evidence["nodes"] = [concept, artifact]
+        concept_evidence["state"] = {
+            concept["id"]: {
+                "exposure": "unseen",
+                "confidence": "high",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": [artifact["id"]],
+                "decisions": [{
+                    "dimension": "confidence",
+                    "date": "2026-07-16",
+                    "evidence": [artifact["id"]],
+                }],
+            },
+        }
+
+        concept_target = json.loads(VALID_EMPTY_GRAPH)
+        concept_target["nodes"] = [{**concept, "sensitivity": "medical"}]
+        concept_target["state"] = {
+            concept["id"]: {
+                "exposure": "unseen",
+                "confidence": "unknown",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": [],
+                "decisions": [],
+            },
+        }
+
+        material = {
+            "id": "material:example",
+            "type": "material",
+            "title": "Example material (Vera Example)",
+            "fields": [],
+            "kind": "docs",
+            "url": "",
+            "status": "active",
+        }
+        encounter = {
+            "id": "encounter:classed",
+            "type": "encounter",
+            "title": "",
+            "fields": [],
+            "date": "2026-07-16",
+            "target": material["id"],
+            "depth": "applied",
+            "mode": "background",
+            "sensitivity": "medical",
+        }
+        material_evidence = json.loads(VALID_EMPTY_GRAPH)
+        material_evidence["generated_at"] = "2026-07-16T00:00:00Z"
+        material_evidence["nodes"] = [material, encounter]
+        material_evidence["edges"] = [{
+            "source": encounter["id"],
+            "target": material["id"],
+            "type": "visited",
+            "provenance": [encounter["id"]],
+            "sensitivity": "medical",
+        }]
+        material_evidence["state"] = {
+            material["id"]: {
+                "depth_reached": "applied",
+                "last_seen": "2026-07-16",
+                "evidence": [encounter["id"]],
+            },
+        }
+
+        question = {
+            "id": "question:example",
+            "type": "question",
+            "title": "",
+            "fields": [],
+            "text": "Synthetic classed question? (Vera Example)",
+            "created_at": "2026-07-16",
+            "source": {"artifact": artifact["id"]},
+        }
+        question_evidence = json.loads(VALID_EMPTY_GRAPH)
+        question_evidence["generated_at"] = "2026-07-16T00:00:00Z"
+        question_evidence["nodes"] = [artifact, question]
+        question_evidence["state"] = {
+            question["id"]: {
+                "status": "resolved",
+                "evidence": [artifact["id"]],
+                "decisions": [{
+                    "dimension": "status",
+                    "date": "2026-07-16",
+                    "evidence": [artifact["id"]],
+                }],
+            },
+        }
+
+        positive = json.loads(json.dumps(concept_evidence))
+        positive["state"][concept["id"]]["sensitivity"] = "medical"
+        malformed = json.loads(json.dumps(concept_evidence))
+        malformed["state"][concept["id"]]["sensitivity"] = []
+        for name, graph, expected_code in (
+                ("concept-evidence", concept_evidence, 1),
+                ("concept-target", concept_target, 1),
+                ("material-evidence", material_evidence, 1),
+                ("question-evidence", question_evidence, 1),
+                ("malformed-class", malformed, 1),
+                ("class-preserved", positive, 0)):
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "omits sensitivity carried by its target or resolved "
+                    "evidence", stderr
+                )
+
+    def test_emitted_journal_nodes_are_bounded_by_graph_as_of(self):
+        # Keep exposure_ceiling an upper bound: the independent §20.1 graph
+        # invariant rejects a future evidence node before its strength can
+        # be used to justify any state rung.
+        graph = json.loads(VALID_EMPTY_GRAPH)
+        graph["generated_at"] = "2026-07-10T00:00:00Z"
+        graph["nodes"] = [
+            {
+                "id": "concept:example",
+                "type": "concept",
+                "title": "Example (Vera Example)",
+                "fields": ["knowledge"],
+                "aliases": [],
+            },
+            {
+                "id": "artifact:future",
+                "type": "artifact",
+                "title": "",
+                "fields": [],
+                "kind": "note",
+                "path": "vera-example.txt",
+                "observed_at": "2099-01-01",
+                "summary": "Synthetic Vera Example evidence.",
+                "evidence_strength": "applied",
+            },
+        ]
+        graph["state"] = {
+            "concept:example": {
+                "exposure": "applied",
+                "confidence": "unknown",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": ["artifact:future"],
+                "decisions": [],
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            materialize({
+                "graph/atlas-graph.json": json.dumps(graph) + "\n",
+            }, Path(directory))
+            code, _, stderr = self.run_cli("validate", directory)
+        self.assertEqual(1, code, stderr)
+        self.assertIn("nodes[1] is dated after the graph as-of", stderr)
 
     def test_each_negative_instance_emits_error(self):
         for name, tree in sorted(INVALID_INSTANCES.items()):

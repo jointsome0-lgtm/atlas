@@ -37,6 +37,11 @@ EXPECTED_REJECTED_FIXTURES = {
     "duplicate-node-id.json",
     "duplicate-provenance.json",
     "formerly-on-journal-backed-kind.json",
+    "impossible-generated-at-date.json",
+    "impossible-edge-date.json",
+    "impossible-node-date.json",
+    "impossible-state-decision-date.json",
+    "impossible-state-last-seen-date.json",
     "kind-changing-formerly-redirect.json",
     "living-formerly-redirect.json",
     "material-part-parent-mismatch.json",
@@ -46,6 +51,12 @@ EXPECTED_REJECTED_FIXTURES = {
     "primary-supporting-role-conflict.json",
     "projection-key-not-zone-id.json",
     "reversed-related-to-pair.json",
+    "state-entry-missing-required.json",
+    "state-entry-not-an-object.json",
+    "state-entry-unknown-property.json",
+    "state-entry-wrong-node-kind.json",
+    "state-key-without-node.json",
+    "state-missing-default-entry.json",
     "step-on-non-route-material-role.json",
     "unsorted-provenance.json",
     "zone-without-projection.json",
@@ -114,13 +125,31 @@ class ViewerBrowserTests(unittest.TestCase):
             json.dumps(value, ensure_ascii=False), encoding="utf-8")
 
     def graph_envelope(self, *, nodes=None, edges=None, version=1):
+        emitted_nodes = [] if nodes is None else nodes
+        state = {}
+        for node in emitted_nodes:
+            if node.get("type") == "concept":
+                state[node["id"]] = {
+                    "exposure": "unseen",
+                    "confidence": "unknown",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "evidence": [],
+                    "decisions": [],
+                }
+            elif node.get("type") == "question":
+                state[node["id"]] = {
+                    "status": "open",
+                    "evidence": [],
+                    "decisions": [],
+                }
         return {
             "format": "atlas-graph",
             "version": version,
-            "nodes": [] if nodes is None else nodes,
+            "nodes": emitted_nodes,
             "edges": [] if edges is None else edges,
             "trails": [],
-            "state": {},
+            "state": state,
             "influence": {},
             "frontier": [],
             "projections": {},
@@ -227,6 +256,386 @@ class ViewerBrowserTests(unittest.TestCase):
             with self.subTest(fixture=name):
                 shutil.copyfile(REJECTED_ACCEPTANCE / name, self.graph_path)
                 self.open_state("#mode=field", "REJECTED")
+
+    def test_state_semantic_gates_reject_builder_impossible_graphs(self):
+        concept = {
+            "id": "concept:alone", "type": "concept",
+            "title": "Alone (Vera Example)",
+            "fields": ["knowledge"], "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:notice", "type": "artifact", "title": "",
+            "fields": [], "kind": "note", "path": "notes/example.md",
+            "observed_at": "2026-07-16",
+            "summary": "Synthetic viewer fixture (Vera Example).",
+            "evidence_strength": "noticed",
+        }
+        question = {
+            "id": "question:alone", "type": "question", "title": "",
+            "fields": ["knowledge"],
+            "text": "Is this resolved? (Vera Example)",
+            "created_at": "2026-07-16",
+            "source": {"artifact": "artifact:missing"},
+        }
+        reference = {
+            "dimension": "confidence",
+            "date": "2026-07-16",
+            "evidence": ["artifact:first"],
+        }
+        cases = {}
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]]["confidence"] = "high"
+        cases["concept-missing-decision"] = graph
+
+        graph = self.graph_envelope(nodes=[question])
+        graph["state"][question["id"]]["status"] = "resolved"
+        cases["question-missing-decision"] = graph
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]]["confidence"] = "high"
+        graph["state"][concept["id"]]["decisions"] = [
+            reference,
+            {
+                **reference,
+                "date": "2026-07-17",
+                "evidence": ["artifact:second"],
+            },
+        ]
+        cases["duplicate-decision-dimension"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "confidence": "high",
+            "evidence": [],
+            "decisions": [{
+                "dimension": "confidence",
+                "date": "2026-07-16",
+                "evidence": [artifact["id"]],
+            }],
+        })
+        cases["concept-omits-decision-evidence"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "evidence": [artifact["id"]],
+        })
+        cases["contact-without-dates"] = graph
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]].update({
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+        })
+        cases["unseen-with-dates"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+        })
+        cases["dated-state-without-as-of"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2099-01-01",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+        })
+        cases["last-seen-after-as-of"] = graph
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]]["confidence"] = "high"
+        graph["state"][concept["id"]]["decisions"] = [{
+            **reference,
+            "date": "2099-01-01",
+        }]
+        cases["decision-after-as-of"] = graph
+
+        graph = self.graph_envelope(nodes=[question])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][question["id"]].update({
+            "status": "resolved",
+            "evidence": [question["id"]],
+            "decisions": [{
+                "dimension": "status",
+                "date": "2026-07-16",
+                "evidence": [question["id"]],
+            }],
+        })
+        cases["status-cites-question-creation"] = graph
+
+        graph = self.graph_envelope(nodes=[question])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][question["id"]].update({
+            "status": "resolved",
+            "evidence": [],
+            "decisions": [{
+                "dimension": "status",
+                "date": "2026-07-16",
+                "evidence": [artifact["id"]],
+            }],
+        })
+        cases["status-evidence-diverges-from-decision"] = graph
+
+        graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        graph["state"]["question:demo-when-is-retry-safe"] = {
+            "status": "stale",
+            "evidence": ["artifact:demo-retry-script"],
+            "decisions": [{
+                "dimension": "status",
+                "date": "2026-07-10",
+                "evidence": ["artifact:demo-retry-script"],
+            }],
+        }
+        cases["stale-cites-resolved-script"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "taught",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+        })
+        cases["taught-cites-noticed-artifact"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, question])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "taught",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [question["id"]],
+        })
+        cases["taught-cites-question"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["generated_at"] = "2026-07-27T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-01-01",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+        })
+        cases["freshness-not-derived"] = graph
+
+        earlier_artifact = {
+            **artifact,
+            "id": "artifact:earlier-contact",
+            "observed_at": "2026-07-10",
+        }
+        graph = self.graph_envelope(nodes=[concept, earlier_artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [earlier_artifact["id"]],
+        })
+        cases["concept-last-seen-is-not-cited-date"] = graph
+
+        classed_artifact = {
+            **artifact,
+            "id": "artifact:classed",
+            "sensitivity": "medical",
+        }
+        graph = self.graph_envelope(nodes=[concept, classed_artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [classed_artifact["id"]],
+        })
+        cases["state-omits-evidence-sensitivity"] = graph
+
+        graph = self.graph_envelope(
+            nodes=[{**concept, "sensitivity": "medical"}])
+        graph["state"][concept["id"]].pop("sensitivity", None)
+        cases["state-omits-target-sensitivity"] = graph
+
+        material = {
+            "id": "material:example", "type": "material",
+            "title": "Example material (Vera Example)", "fields": [],
+            "kind": "docs", "url": "", "status": "active",
+        }
+        encounter = {
+            "id": "encounter:example", "type": "encounter", "title": "",
+            "fields": [], "date": "2026-07-16",
+            "target": material["id"], "depth": "applied",
+            "mode": "background",
+        }
+        graph = self.graph_envelope(nodes=[material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "taught",
+            "last_seen": "2026-07-16",
+            "evidence": [encounter["id"]],
+        }
+        cases["depth-exceeds-encounter"] = graph
+
+        graph = self.graph_envelope(nodes=[material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "applied",
+            "last_seen": "2026-07-15",
+            "evidence": [encounter["id"]],
+        }
+        cases["material-last-seen-predates-cited-encounter"] = graph
+
+        graph = self.graph_envelope(nodes=[material])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "skim",
+            "last_seen": "2026-07-16",
+            "evidence": ["encounter:missing"],
+        }
+        cases["material-cites-no-emitted-encounter"] = graph
+
+        graph = self.graph_envelope(nodes=[material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "applied",
+            "last_seen": "2026-07-16",
+            "evidence": [encounter["id"], "encounter:missing"],
+        }
+        cases["material-cites-partially-dangling-encounters"] = graph
+
+        explained = {
+            **artifact,
+            "id": "artifact:explained",
+            "observed_at": "2026-07-16",
+            "evidence_strength": "explained",
+        }
+        reviewed_before = {
+            **artifact,
+            "id": "artifact:reviewed",
+            "observed_at": "2026-07-15",
+            "evidence_strength": "reviewed",
+        }
+        graph = self.graph_envelope(
+            nodes=[concept, explained, reviewed_before])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "taught",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [explained["id"], reviewed_before["id"]],
+        })
+        cases["taught-review-predates-explanation"] = graph
+
+        for name, impossible in cases.items():
+            with self.subTest(case=name):
+                self.write_graph(impossible)
+                self.open_state("#mode=field", "REJECTED")
+
+        # §20.1 keeps a decision applicable when its cited artifact lies
+        # outside the cut or was deleted, so unresolved stale evidence stays
+        # acceptable until its non-note kind is actually knowable.
+        graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        graph["state"]["question:demo-when-is-retry-safe"] = {
+            "status": "stale",
+            "evidence": ["artifact:missing-note"],
+            "decisions": [{
+                "dimension": "status",
+                "date": "2026-07-10",
+                "evidence": ["artifact:missing-note"],
+            }],
+        }
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+
+        # The observable §32.6 union is accepted when the class is preserved;
+        # the same graph also proves that concept decision evidence may add
+        # provenance without being treated as direct contact.
+        graph = self.graph_envelope(nodes=[concept, classed_artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "confidence": "high",
+            "evidence": [classed_artifact["id"]],
+            "decisions": [{
+                "dimension": "confidence",
+                "date": "2026-07-16",
+                "evidence": [classed_artifact["id"]],
+            }],
+            "sensitivity": "medical",
+        })
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+
+        # Cross-day order is knowable from emitted nodes, but same-day
+        # journal position is not; keep the latter as an upper-bound case.
+        reviewed_same_day = {
+            **reviewed_before,
+            "observed_at": "2026-07-16",
+        }
+        graph = self.graph_envelope(
+            nodes=[concept, explained, reviewed_same_day])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "taught",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [explained["id"], reviewed_same_day["id"]],
+        })
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+
+        # The viewer copies the Python boundary's upper bounds, not a partial
+        # re-fold: a strong emitted record may justify the rung without
+        # re-deriving its target/link relation from omitted journal context.
+        applied_artifact = {
+            **artifact,
+            "id": "artifact:applied",
+            "evidence_strength": "applied",
+        }
+        graph = self.graph_envelope(
+            nodes=[concept, applied_artifact, material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "applied",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [applied_artifact["id"]],
+        })
+        graph["state"][material["id"]] = {
+            "depth_reached": "applied",
+            "last_seen": "2026-07-16",
+            "evidence": [encounter["id"]],
+        }
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+
+    def test_dated_nodes_require_and_obey_graph_as_of(self):
+        demo = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        dated_fields = {
+            "artifact": "observed_at",
+            "encounter": "date",
+            "question": "created_at",
+            "trail_segment": "date",
+        }
+        for node_type, field in dated_fields.items():
+            source = next(
+                node for node in demo["nodes"] if node["type"] == node_type)
+            for case, generated_at in (
+                    ("missing-as-of", None),
+                    ("after-as-of", "2026-07-08T00:00:00Z")):
+                node = json.loads(json.dumps(source))
+                graph = self.graph_envelope(nodes=[node])
+                if generated_at is not None:
+                    graph["generated_at"] = generated_at
+                with self.subTest(
+                        node_type=node_type, field=field, case=case):
+                    self.write_graph(graph)
+                    self.open_state("#mode=field", "REJECTED")
 
     def test_bom_crlf_and_withheld_reject_whole(self):
         clean = json.dumps(self.graph_envelope(), ensure_ascii=False)

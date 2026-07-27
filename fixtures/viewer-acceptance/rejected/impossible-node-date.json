@@ -1,0 +1,23 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "artifact:example",
+      "type": "artifact",
+      "title": "",
+      "fields": [],
+      "kind": "note",
+      "path": "",
+      "observed_at": "2026-02-30",
+      "summary": "Synthetic Vera Example artifact.",
+      "evidence_strength": "noticed"
+    }
+  ],
+  "edges": [],
+  "trails": [],
+  "state": {},
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}

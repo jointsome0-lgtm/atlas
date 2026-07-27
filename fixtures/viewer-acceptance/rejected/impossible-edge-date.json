@@ -1,0 +1,58 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "concept:a",
+      "type": "concept",
+      "title": "A (Vera Example)",
+      "fields": [
+        "knowledge"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "concept:b",
+      "type": "concept",
+      "title": "B (Vera Example)",
+      "fields": [
+        "knowledge"
+      ],
+      "aliases": []
+    }
+  ],
+  "edges": [
+    {
+      "source": "concept:a",
+      "target": "concept:b",
+      "type": "related_to",
+      "provenance": [
+        "concept:a"
+      ],
+      "weight": "unassessed",
+      "created_at": "2026-02-30"
+    }
+  ],
+  "trails": [],
+  "state": {
+    "concept:a": {
+      "exposure": "unseen",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [],
+      "decisions": []
+    },
+    "concept:b": {
+      "exposure": "unseen",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [],
+      "decisions": []
+    }
+  },
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}

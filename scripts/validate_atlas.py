@@ -7,6 +7,7 @@ schema keyword is a validation error, never an ignored annotation.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import sys
@@ -34,6 +35,35 @@ from frontmatter import (
 ROOT = Path(__file__).resolve().parents[1]
 JOURNAL_ROW_BYTES = _builder.JOURNAL_ROW_BYTES  # §25.8 — one source
 _JOURNAL_READ_BYTES = 8_192
+
+# §25.7 schemas declare a date by its shape, and JSON Schema cannot express
+# calendar validity. The reader that enforces the declared shape enforces the
+# calendar too: otherwise a clean preflight would still not predict the
+# build, which parses the same fields and refuses 2026-02-30 (§9/§10).
+_DATE_SHAPE_PATTERNS = frozenset({
+    "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+    "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$",
+    "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+})
+
+
+def _is_calendar_date(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        date_value = value
+    elif re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+            r"T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",
+            value):
+        date_value = value[:10]
+    else:
+        return False
+    try:
+        datetime.date.fromisoformat(date_value)
+    except ValueError:
+        return False
+    return True
 
 SCHEMA_NAMES = {
     "concept",
@@ -289,6 +319,11 @@ class SchemaValidator:
             if not _ecma_search(schema["pattern"], instance):
                 errors.append(f"{path}: string does not match pattern "
                               f"{schema['pattern']!r}")
+            elif (schema["pattern"] in _DATE_SHAPE_PATTERNS
+                    and not _is_calendar_date(instance)):
+                # §24.4: the rejected value stays out of the diagnostic.
+                errors.append(f"{path}: date shape is not a real calendar "
+                              "date (§9/§10)")
         if "minimum" in schema and isinstance(instance, int) and not isinstance(instance, bool):
             if instance < schema["minimum"]:
                 errors.append(f"{path}: value is below minimum "
@@ -510,13 +545,15 @@ JOURNALS = {
 
 
 def _journal_paths(reader: AtlasReader, stem: str):
+    # §20.1: rotated files are the older prefix and the direct journal is
+    # the newest tail — match the builder for every order-sensitive check.
+    yield from reader.scan(Path("state") / stem, suffix=".jsonl")
     direct = reader.optional_file(Path("state") / f"{stem}.jsonl")
     if direct is not None:
         yield direct
-    yield from reader.scan(Path("state") / stem, suffix=".jsonl")
 
 
-def _read_jsonl(path: Path):
+def _read_jsonl(path: Path, *, include_raw=False):
     for number, raw, oversized in _journal_lines(path):
         if oversized:
             raise JsonInputError(
@@ -531,7 +568,8 @@ def _read_jsonl(path: Path):
             )
         try:
             text = raw.decode("utf-8", errors="strict")
-            yield number, _json_loads(text)
+            row = _json_loads(text)
+            yield (number, row, raw) if include_raw else (number, row)
         except UnicodeDecodeError:
             raise JsonInputError(f"{path}:{number}: input is not strict UTF-8") from None
         except (json.JSONDecodeError, JsonInputError) as exc:
@@ -605,6 +643,314 @@ _PROVENANCE_TARGET_OWNED = {
 # and trail targets — checked against the payload-backing sets.
 
 
+def _state_entry_has_dated_input(entry) -> bool:
+    """Whether a state entry rests on a §20.1 dated fold input."""
+    if not isinstance(entry, dict):
+        return False
+    if "last_seen" in entry:
+        return True
+    return any(
+        isinstance(reference, dict) and "date" in reference
+        for reference in _as_list(entry.get("decisions"))
+    )
+
+
+def _state_status_evidence_errors(
+        entry: dict, path: Path, position: int, nodes: dict) -> list[str]:
+    """§9.8: emitted status evidence keeps the journal outcome restriction.
+
+    The stale note kind is knowable only when every cited artifact resolves;
+    §20.1 deliberately permits a decision to retain dangling evidence.
+    """
+    status = entry.get("status")
+    if (not isinstance(status, str)
+            or status not in _builder.DECISION_VALUES["status"]):
+        return []
+    reference = next((
+        item for item in _as_list(entry.get("decisions"))
+        if isinstance(item, dict) and item.get("dimension") == "status"
+    ), None)
+    if reference is None:
+        return []
+    evidence = reference.get("evidence")
+    prefixes = (
+        _builder.STALE_EVIDENCE_PREFIXES
+        if status == "stale" else _builder.STATUS_EVIDENCE_PREFIXES
+    )
+    if (not isinstance(evidence, list) or not evidence
+            or any(
+                not isinstance(ref, str)
+                or ref.split(":", 1)[0] not in prefixes
+                for ref in evidence
+            )):
+        return [
+            f"{path}: /state property #{position} carries status decision "
+            "evidence outside the §9.8 outcome restriction"
+        ]
+    if status == "stale":
+        resolved = [
+            nodes[ref] for ref in evidence
+            if ref in nodes and isinstance(nodes[ref], dict)
+        ]
+        if (len(resolved) == len(evidence)
+                and not any(
+                    node.get("type") == "artifact"
+                    and node.get("kind") == _builder.STALE_EVIDENCE_KIND
+                    for node in resolved
+                )):
+            return [
+                f"{path}: /state property #{position} carries stale status "
+                "without the user's own note (§9.8/§31.5)"
+            ]
+    return []
+
+
+def _state_provenance_errors(
+        entry: dict, path: Path, position: int, state_id: str,
+        node_type: str | None, nodes: dict) -> list[str]:
+    """Check emitted §9.8/§14/§32.6 joins without partially re-folding.
+
+    Target/link semantics and same-day journal position remain producer
+    concerns. The boundary uses only identities, dates, and classes that the
+    graph itself repeats.
+    """
+    errors = []
+    state_evidence = _as_list(entry.get("evidence"))
+
+    if node_type == "concept":
+        for reference in _as_list(entry.get("decisions")):
+            if not isinstance(reference, dict):
+                continue
+            if any(
+                    isinstance(ref, str) and ref not in state_evidence
+                    for ref in _as_list(reference.get("evidence"))):
+                errors.append(
+                    f"{path}: /state property #{position} omits concept "
+                    "decision evidence from its state provenance (§14.6)"
+                )
+                break
+
+        # State evidence also contains decision citations, so their dates
+        # cannot safely define the latest contact. The producer's last_seen
+        # must nevertheless equal one resolved artifact/encounter date in
+        # that union; an unrelated invented date is never possible.
+        contact_dates = []
+        for ref in state_evidence:
+            if not isinstance(ref, str):
+                continue
+            node = nodes.get(ref)
+            if not isinstance(node, dict):
+                continue
+            if node.get("type") == "artifact":
+                date = node.get("observed_at")
+            elif node.get("type") == "encounter":
+                date = node.get("date")
+            else:
+                date = None
+            if isinstance(date, str) and _is_calendar_date(date):
+                contact_dates.append(date)
+        last_seen = entry.get("last_seen")
+        if (isinstance(last_seen, str)
+                and last_seen not in contact_dates):
+            errors.append(
+                f"{path}: /state property #{position} carries concept "
+                "last_seen absent from its cited contact evidence (§14.5)"
+            )
+
+    elif node_type in {"material", "material_part"}:
+        encounter_dates = []
+        for ref in state_evidence:
+            if not isinstance(ref, str):
+                continue
+            node = nodes.get(ref)
+            if not isinstance(node, dict) or node.get("type") != "encounter":
+                continue
+            date = node.get("date")
+            if isinstance(date, str) and _is_calendar_date(date):
+                encounter_dates.append(date)
+        if (encounter_dates
+                and isinstance(entry.get("last_seen"), str)
+                and entry["last_seen"] != max(encounter_dates)):
+            errors.append(
+                f"{path}: /state property #{position} carries material "
+                "last_seen other than its latest cited encounter (§14.8)"
+            )
+
+    elif node_type == "question":
+        reference = next((
+            item for item in _as_list(entry.get("decisions"))
+            if isinstance(item, dict) and item.get("dimension") == "status"
+        ), None)
+        decision_evidence = (
+            [] if reference is None else reference.get("evidence")
+        )
+        if (isinstance(entry.get("evidence"), list)
+                and isinstance(decision_evidence, list)
+                and entry["evidence"] != decision_evidence):
+            errors.append(
+                f"{path}: /state property #{position} carries question "
+                "evidence that differs from its status decision (§9.8)"
+            )
+
+    provenance_refs = [
+        ref for ref in state_evidence if isinstance(ref, str)
+    ]
+    for reference in _as_list(entry.get("decisions")):
+        if not isinstance(reference, dict):
+            continue
+        provenance_refs.extend(
+            ref for ref in _as_list(reference.get("evidence"))
+            if isinstance(ref, str)
+        )
+    sources = []
+    target = nodes.get(state_id)
+    if isinstance(target, dict):
+        sources.append(target)
+    for ref in provenance_refs:
+        source = nodes.get(ref)
+        if isinstance(source, dict):
+            sources.append(source)
+    required_classes = {
+        sensitivity
+        for source in sources
+        if isinstance((sensitivity := source.get("sensitivity")), str)
+        and sensitivity in _builder.SENSITIVITY_CLASSES
+    }
+    entry_sensitivity = entry.get("sensitivity")
+    if (required_classes
+            and (not isinstance(entry_sensitivity, str)
+                 or entry_sensitivity not in required_classes)):
+        errors.append(
+            f"{path}: /state property #{position} omits sensitivity "
+            "carried by its target or resolved evidence (§32.6)"
+        )
+
+    return errors
+
+
+def _review_gate_errors(entry: dict, path: Path, position: int,
+                        as_of: str | None, nodes: dict,
+                        state_id: str, node_type: str | None) -> list[str]:
+    """§14.5–§14.7/§9.8: a gated value moves only by a reviewed decision and
+    never carries two competing references, a ladder moves only on recorded
+    evidence, and freshness is a derivation against the fold as-of. The
+    schema closes each value independently and cannot express those joins,
+    which would let a fixture or an alternate producer import understanding
+    past the gate (§31)."""
+    errors = _state_status_evidence_errors(
+        entry, path, position, nodes)
+    errors.extend(_state_provenance_errors(
+        entry, path, position, state_id, node_type, nodes))
+    # §14.5/§14.8: the ladders move on recorded artifact or encounter
+    # evidence, so only a first value can stand uncited — and the cited
+    # records must be able to reach the asserted rung. The ceiling is an
+    # upper bound (the fold also weighs link kind and same-day journal
+    # position the emission does not repeat), which is exactly what rejects
+    # imported understanding without second-guessing a real fold (§31.3).
+    ladders = (
+        # `unseen` is the one rung standing for no contact at all; material
+        # state exists only because an encounter created it, so its first
+        # rung is a reading, not an exemption.
+        ("exposure", _builder.CONCEPT_EXPOSURE, _builder.exposure_ceiling,
+         _builder.CONCEPT_EXPOSURE[0]),
+        ("depth_reached", _builder.MATERIAL_DEPTH, _builder.depth_ceiling,
+         None),
+    )
+    for dimension, ladder, ceiling_of, uncited in ladders:
+        value = entry.get(dimension)
+        if value is None or value == uncited:
+            continue
+        evidence = _as_list(entry.get("evidence"))
+        if not evidence:
+            errors.append(
+                f"{path}: /state property #{position} moves {dimension} off "
+                "its first value with no evidence (§14.5/§14.8)"
+            )
+        elif (dimension == "depth_reached"
+              and not all(
+                  isinstance(ref, str)
+                  and isinstance(nodes.get(ref), dict)
+                  and nodes[ref].get("type") == "encounter"
+                  for ref in evidence
+              )):
+            # Material state is sparse and exists only because an emitted
+            # encounter created it. Unlike decisions, its provenance never
+            # survives a deleted/out-of-cut evidence row (§14.8/§20.1).
+            errors.append(
+                f"{path}: /state property #{position} carries material "
+                "state without wholly emitted encounter evidence (§14.8)"
+            )
+        elif value in ladder and ladder.index(value) > ceiling_of(
+                evidence, nodes):
+            errors.append(
+                f"{path}: /state property #{position} asserts {dimension} "
+                "beyond what its cited evidence can reach (§14.5/§14.8)"
+            )
+    exposure = entry.get("exposure")
+    if (isinstance(exposure, str)
+            and exposure in _builder.CONCEPT_EXPOSURE):
+        has_contact = exposure != _builder.CONCEPT_EXPOSURE[0]
+        has_last_seen = "last_seen" in entry
+        has_freshness = "freshness" in entry
+        if ((has_contact and not (has_last_seen and has_freshness))
+                or (not has_contact and (has_last_seen or has_freshness))):
+            errors.append(
+                f"{path}: /state property #{position} must carry last_seen "
+                "and freshness exactly when exposure records contact "
+                "(§14.5/§14.7)"
+            )
+    # §14.7/§20.1: last_seen is a fold input, never later than the as-of it
+    # is measured against, and freshness is recomputed from the two. The
+    # caller only passes a calendar-valid as-of — an unparsable stamp is
+    # already an error and must not become a traceback here.
+    last_seen = entry.get("last_seen")
+    if isinstance(last_seen, str) and as_of is not None:
+        if last_seen > as_of:
+            errors.append(
+                f"{path}: /state property #{position} was last seen after "
+                "the graph as-of (§20.1)"
+            )
+        elif (isinstance(entry.get("freshness"), str)
+              and _is_calendar_date(last_seen)
+              and entry["freshness"] != _builder.freshness_of(
+                  last_seen, as_of)):
+            errors.append(
+                f"{path}: /state property #{position} carries a freshness "
+                "the §14.7 derivation does not produce"
+            )
+    seen: set[str] = set()
+    for reference in _as_list(entry.get("decisions")):
+        if not isinstance(reference, dict):
+            continue
+        dimension = reference.get("dimension")
+        if not isinstance(dimension, str):
+            continue
+        if dimension in seen:
+            errors.append(
+                f"{path}: /state property #{position} carries two decision "
+                f"references for {dimension} (§9.13)"
+            )
+        seen.add(dimension)
+        # §20.1: the as-of bounds every dated input, decisions included —
+        # a graph cannot rest on a decision it was folded before.
+        reference_date = reference.get("date")
+        if (isinstance(reference_date, str) and as_of is not None
+                and reference_date > as_of):
+            errors.append(
+                f"{path}: /state property #{position} cites a {dimension} "
+                "decision dated after the graph as-of (§20.1)"
+            )
+    for dimension, default in sorted(_builder.GATED_DEFAULTS.items()):
+        value = entry.get(dimension)
+        if value is None or value == default or dimension in seen:
+            continue
+        errors.append(
+            f"{path}: /state property #{position} moves {dimension} off its "
+            "default with no decision reference (§14.6/§9.8)"
+        )
+    return errors
+
+
 def _graph_field_errors(instance: dict, path: Path) -> list[str]:
     """§10.4: fields membership is derivable from the emitted edges —
     recompute it for the derived kinds (via the builder's shared
@@ -634,6 +980,135 @@ def _as_dict(value):
 
 def _as_list(value):
     return value if isinstance(value, list) else []
+
+
+def _state_cites_withheld_id(entry, withheld_ids: set[str]) -> bool:
+    """Mirror the builder's exact joins over structured state evidence."""
+    if not isinstance(entry, dict):
+        return False
+    refs = {
+        ref for ref in _as_list(entry.get("evidence"))
+        if isinstance(ref, str)
+    }
+    for decision in _as_list(entry.get("decisions")):
+        if not isinstance(decision, dict):
+            continue
+        refs.update(
+            ref for ref in _as_list(decision.get("evidence"))
+            if isinstance(ref, str)
+        )
+    return bool(refs & withheld_ids)
+
+
+def _user_self_proposal_errors(row, path, artifact_kinds) -> list[str]:
+    """Keep §9.13 user-note semantics aligned with the builder."""
+    if not isinstance(row, dict) or row.get("proposed_by") != "user":
+        return []
+    artifact_refs = [
+        ref for ref in _as_list(row.get("evidence"))
+        if isinstance(ref, str) and ref.startswith("artifact:")
+    ]
+    if not artifact_refs:
+        return [
+            f"{path}: /evidence for a user self-proposal must include "
+            "a note artifact (§9.13)"
+        ]
+    resolved_kinds = [
+        artifact_kinds[ref] for ref in artifact_refs
+        if ref in artifact_kinds
+    ]
+    if (len(resolved_kinds) == len(artifact_refs)
+            and _builder.STALE_EVIDENCE_KIND not in resolved_kinds):
+        return [
+            f"{path}: /evidence for a user self-proposal must cite "
+            "the user's own note (§9.13)"
+        ]
+    return []
+
+
+def _status_evidence_errors(row, path, artifact_kinds) -> list[str]:
+    """Keep §9.8 outcome-specific evidence kinds aligned with the builder.
+
+    The stale artifact's note kind is checked only when every cited row
+    resolves, matching the fold; §20.1 permits a dangling citation.
+    """
+    if not isinstance(row, dict) or row.get("dimension") != "status":
+        return []
+    evidence = row.get("evidence")
+    if row.get("to") == "stale":
+        prefixes = _builder.STALE_EVIDENCE_PREFIXES
+        expectation = "the user's own note artifact"
+    else:
+        prefixes = _builder.STATUS_EVIDENCE_PREFIXES
+        expectation = "artifact or encounter ids"
+    if (not isinstance(evidence, list) or not evidence
+            or any(
+                not isinstance(ref, str)
+                or ref.split(":", 1)[0] not in prefixes
+                for ref in evidence
+            )):
+        return [
+            f"{path}: /evidence for a status decision must contain "
+            f"{expectation} (§9.8)"
+        ]
+    if row.get("to") == "stale" and row.get("decision") == "confirmed":
+        resolved_kinds = [
+            artifact_kinds[ref] for ref in evidence
+            if ref in artifact_kinds
+        ]
+        if (len(resolved_kinds) == len(evidence)
+                and _builder.STALE_EVIDENCE_KIND not in resolved_kinds):
+            return [
+                f"{path}: /evidence for a stale status must cite "
+                "the user's own note (§9.8/§31.5)"
+            ]
+    return []
+
+
+def _reproposal_errors(row, path, rejected, known_targets, retired) -> list[str]:
+    """§14.6: retain rejected proposal identities across the journal."""
+    if not isinstance(row, dict):
+        return []
+    target = row.get("target")
+    dimension = row.get("dimension")
+    proposed = row.get("to")
+    evidence = row.get("evidence")
+    outcome = row.get("decision")
+    if not (
+        isinstance(target, str)
+        and isinstance(dimension, str)
+        and isinstance(proposed, str)
+        and isinstance(evidence, list)
+        and evidence
+        and all(isinstance(ref, str) for ref in evidence)
+        and isinstance(outcome, str)
+        and outcome in _builder.DECISION_OUTCOMES
+    ):
+        return []
+    target = retired.get(target, (target,))[0]
+    # The builder skips a missing target before proposal-memory handling.
+    if (target not in known_targets
+            or _builder.id_type(target)
+            not in _builder.FOLDED_DECISION_TARGETS.get(
+                dimension, frozenset())):
+        return []
+    identity = (
+        target,
+        dimension,
+        proposed,
+    )
+    evidence_set = frozenset(evidence)
+    if any(
+            evidence_set <= rejected_evidence
+            for rejected_evidence in rejected.get(identity, ())):
+        return [
+            f"{path}: a rejected proposal cannot be re-proposed without "
+            "new evidence (§14.6/§9.13)"
+        ]
+    if outcome == "rejected":
+        rejected.setdefault(identity, []).append(evidence_set)
+    return []
+
 
 def _snapshot_dangling_refs(snapshot: dict, path: Path) -> list[str]:
     """§33.4: every §9.12 evidence id in an evidence-bearing field resolves
@@ -983,7 +1458,15 @@ def validate_instance(root: Path):
         errors.append(str(exc))
         has_state = False
     if has_state:
+        artifact_kinds: dict[str, str] = {}
+        known_decision_targets = set(living)
+        rejected_proposals: dict[
+            tuple[str, str, str], list[frozenset[str]]
+        ] = {}
+        decision_records: list[tuple[str, int, dict, str]] = []
+        decision_position = 0
         for stem, schema_name in JOURNALS.items():
+            seen_rows: set[bytes] = set()
             try:
                 paths = list(_journal_paths(reader, stem))
             except ReaderError as exc:
@@ -992,13 +1475,67 @@ def validate_instance(root: Path):
             for source_file in paths:
                 path = source_file.path
                 try:
-                    for number, row in _read_jsonl(source_file):
-                        errors.extend(
-                            _schema_errors(row, schemas[schema_name], f"{path}:{number}")
-                        )
+                    for number, row, raw in _read_jsonl(
+                            source_file, include_raw=True):
+                        row_path = f"{path}:{number}"
+                        # §20.1: the builder folds a byte-identical duplicate
+                        # once across the rotated prefix and direct tail.
+                        if raw in seen_rows:
+                            warnings.append(
+                                f"{row_path}: byte-identical duplicate row "
+                                "folded once (§20.1)"
+                            )
+                            continue
+                        seen_rows.add(raw)
+                        if stem == "decisions":
+                            # §20.1 position counts through the rotated-prefix
+                            # plus direct-tail concatenation. Schema-invalid
+                            # rows still occupy their physical position.
+                            decision_position += 1
+                        schema_errors = _schema_errors(
+                            row, schemas[schema_name], row_path)
+                        errors.extend(schema_errors)
+                        if stem == "artifacts" and isinstance(row, dict):
+                            artifact_id = row.get("id")
+                            artifact_kind = row.get("type")
+                            if (isinstance(artifact_id, str)
+                                    and isinstance(artifact_kind, str)):
+                                artifact_kinds[artifact_id] = artifact_kind
+                        elif stem == "questions" and isinstance(row, dict):
+                            question_id = row.get("id")
+                            if isinstance(question_id, str):
+                                known_decision_targets.add(question_id)
+                        elif stem == "decisions":
+                            semantic_errors = (
+                                _status_evidence_errors(
+                                    row, row_path, artifact_kinds)
+                                + _user_self_proposal_errors(
+                                    row, row_path, artifact_kinds)
+                            )
+                            errors.extend(semantic_errors)
+                            if not schema_errors and not semantic_errors:
+                                decision_records.append((
+                                    row["date"],
+                                    decision_position,
+                                    row,
+                                    row_path,
+                                ))
                         counts["rows"] += 1
                 except JsonInputError as exc:
                     errors.append(str(exc))
+        # Rejection memory is an order-sensitive decisions-journal fold, so
+        # backfill follows activity date before physical journal position.
+        for _, _, row, row_path in sorted(
+                decision_records,
+                key=lambda record: _builder.fold_order_key(
+                    record[0], record[1])):
+            errors.extend(_reproposal_errors(
+                row,
+                row_path,
+                rejected_proposals,
+                known_decision_targets,
+                retired,
+            ))
 
     for source_file in scan("runs", suffix=".json"):
         path = source_file.path
@@ -1021,6 +1558,7 @@ def validate_instance(root: Path):
         except JsonInputError as exc:
             errors.append(str(exc))
 
+    full_graph: dict | None = None
     for filename, schema_name in (
         ("atlas-graph.json", "atlas-graph"),
         ("atlas-graph.redacted.json", "atlas-graph"),
@@ -1033,6 +1571,8 @@ def validate_instance(root: Path):
         try:
             instance = _read_json(source_file)
             errors.extend(_schema_errors(instance, schemas[schema_name], path))
+            if filename == "atlas-graph.json" and isinstance(instance, dict):
+                full_graph = instance
             # §20/§25.7: one schema id covers both graph variants, so the
             # variant-only withheld rule is checked here by file name —
             # required on the redacted emission, forbidden on the full one.
@@ -1044,6 +1584,8 @@ def validate_instance(root: Path):
                 # §10: edge endpoints are node ids consumers resolve inside
                 # the same file — a dangling endpoint never leaves the build.
                 node_ids: set = set()
+                node_types: dict[str, str] = {}
+                nodes_by_id: dict[str, dict] = {}
                 zone_ids: set = set()
                 for node in _as_list(instance.get("nodes")):
                     if not isinstance(node, dict):
@@ -1056,6 +1598,10 @@ def validate_instance(root: Path):
                             f"{path}: duplicate node id {node_id} (§10.1)"
                         )
                     node_ids.add(node_id)
+                    # §14.5 evidence resolution reads the emitted record.
+                    nodes_by_id.setdefault(node_id, node)
+                    if isinstance(node.get("type"), str):
+                        node_types[node_id] = node["type"]
                     if node.get("type") == "zone":
                         zone_ids.add(node_id)
                     # §10.1/§10.4: a part id carries its owning material's
@@ -1072,6 +1618,162 @@ def validate_instance(root: Path):
                                 f"{parent} — the id's owner is "
                                 f"material:{slug} (§10.1/§10.4)"
                             )
+                # §20 step 9: state is keyed by the living node whose
+                # separately-emitted derived value it carries (§10.4).
+                # The schema closes each entry; this cross-check closes the
+                # dynamic map key to the three value shapes/four node kinds
+                # in this slice.
+                state_shapes = {
+                    "concept": "exposure",
+                    "material": "depth_reached",
+                    "material_part": "depth_reached",
+                    "question": "status",
+                }
+                # §20.1: generated_at stamps the as-of the fold measured
+                # against — the anchor §14.7 freshness is derived from. An
+                # unparsable stamp is already an error above; it yields no
+                # as-of rather than a half-checked one.
+                generated_at = instance.get("generated_at")
+                graph_as_of = (generated_at[:10]
+                               if isinstance(generated_at, str)
+                               and _is_calendar_date(generated_at) else None)
+                dated_node_fields = {
+                    "artifact": "observed_at",
+                    "encounter": "date",
+                    "question": "created_at",
+                    "trail_segment": "date",
+                }
+                dated_nodes = [
+                    (position, node, dated_node_fields.get(node.get("type")))
+                    for position, node in enumerate(
+                        _as_list(instance.get("nodes")))
+                    if isinstance(node, dict)
+                    and isinstance(node.get("type"), str)
+                    and node.get("type") in dated_node_fields
+                ]
+                if graph_as_of is None and any(
+                        field in node
+                        for _, node, field in dated_nodes):
+                    errors.append(
+                        f"{path}: /nodes carries dated entries with no valid "
+                        "generated_at as-of (§20.1)"
+                    )
+                elif graph_as_of is not None:
+                    for position, node, field in dated_nodes:
+                        node_date = node.get(field)
+                        if (isinstance(node_date, str)
+                                and _is_calendar_date(node_date)
+                                and node_date > graph_as_of):
+                            errors.append(
+                                f"{path}: nodes[{position}] is dated after "
+                                "the graph as-of (§20.1)"
+                            )
+                # Any dated state implies a dated fold, and §20.1 gives that
+                # fold an as-of stamp. Without one, freshness and every
+                # future-date bound go unchecked and arbitrary values become
+                # contract-valid — so dated state without it is rejected.
+                if graph_as_of is None and any(
+                        _state_entry_has_dated_input(entry)
+                        for entry in _as_dict(instance.get("state")).values()):
+                    errors.append(
+                        f"{path}: /state carries dated entries with no valid "
+                        "generated_at as-of (§20.1)"
+                    )
+                for position, (state_id, state_entry) in enumerate(
+                        _as_dict(instance.get("state")).items(), 1):
+                    if state_id not in node_ids:
+                        errors.append(
+                            f"{path}: /state property #{position} is not "
+                            "keyed by an emitted node id (§20 step 9)"
+                        )
+                        continue
+                    node_type = node_types.get(state_id)
+                    if node_type not in state_shapes:
+                        errors.append(
+                            f"{path}: /state property #{position} targets a "
+                            "node kind outside the step-9 slice"
+                        )
+                    elif (isinstance(state_entry, dict)
+                          and state_shapes[node_type] not in state_entry):
+                        errors.append(
+                            f"{path}: /state property #{position} does not "
+                            f"carry the {node_type} fold shape (§20 step 9)"
+                        )
+                    if isinstance(state_entry, dict):
+                        errors.extend(_review_gate_errors(
+                            state_entry, path, position, graph_as_of,
+                            nodes_by_id, state_id, node_type))
+                # §14.6/§9.8 make every gated value review-gated, and §20
+                # step 9 makes the fold total over the kinds that carry a
+                # default: a concept is at worst `unseen`/no-knowledge and a
+                # question is at worst `open`. Material state stays sparse —
+                # contact is what creates it. Without this, `state: {}`
+                # satisfies the schema and a producer or hand-written
+                # fixture can erase "no evidence yet" vs "never folded".
+                # §32.6 is the one licensed gap: the redacted variant keeps a
+                # public node whose fold rested on classed evidence and drops
+                # the value whole. The full sibling proves exactly which
+                # values the builder was licensed to omit; a positional
+                # withheld-count budget could otherwise be spent on an
+                # unrelated public default, or inflated outright.
+                state_keys = set(_as_dict(instance.get("state")))
+                licensed_missing: set[str] = set()
+                redacted = filename.endswith(".redacted.json")
+                if redacted and full_graph is not None:
+                    full_state = _as_dict(full_graph.get("state"))
+                    redacted_state = _as_dict(instance.get("state"))
+                    full_node_ids = {
+                        node.get("id")
+                        for node in _as_list(full_graph.get("nodes"))
+                        if isinstance(node, dict)
+                        and isinstance(node.get("id"), str)
+                    }
+                    withheld_ids = full_node_ids - node_ids
+                    expected_state = {
+                        state_id: entry
+                        for state_id, entry in full_state.items()
+                        if state_id not in withheld_ids
+                        and not (
+                            isinstance(entry, dict)
+                            and "sensitivity" in entry
+                        )
+                        and not _state_cites_withheld_id(
+                            entry, withheld_ids
+                        )
+                    }
+                    licensed_missing = (
+                        set(full_state) - set(expected_state)
+                    ) & node_ids
+                    if redacted_state != expected_state:
+                        errors.append(
+                            f"{path}: /state is not the whole-value §32.6 "
+                            "redaction of the full sibling graph"
+                        )
+                    withheld_state = _as_dict(
+                        instance.get("withheld")
+                    ).get("state")
+                    expected_count = len(full_state) - len(expected_state)
+                    if (isinstance(withheld_state, int)
+                            and not isinstance(withheld_state, bool)
+                            and withheld_state != expected_count):
+                        errors.append(
+                            f"{path}: /withheld/state does not match the "
+                            "full sibling graph (§20/§32.6)"
+                        )
+                missing = [
+                    state_id
+                    for state_id, node_type in sorted(node_types.items())
+                    if node_type in ("concept", "question")
+                    and state_id not in state_keys
+                ]
+                for state_id in missing:
+                    if state_id in licensed_missing:
+                        continue
+                    errors.append(
+                        f"{path}: {state_id} carries no /state entry — the "
+                        "step-9 fold is total over concepts and questions "
+                        "(§20 step 9)"
+                    )
                 for index, edge in enumerate(_as_list(instance.get("edges"))):
                     if not isinstance(edge, dict):
                         continue
@@ -1634,9 +2336,11 @@ def validate_instance(root: Path):
                     # from the agent-facing variant — a surviving classed
                     # entry means the gate would certify classed content
                     # into agent context.
-                    for section in ("nodes", "edges"):
+                    for section in ("nodes", "edges", "state"):
                         for position, entry in enumerate(
-                                _as_list(instance.get(section))):
+                                (_as_dict(instance.get(section)).values()
+                                 if section == "state"
+                                 else _as_list(instance.get(section)))):
                             if (isinstance(entry, dict)
                                     and "sensitivity" in entry):
                                 errors.append(
@@ -1678,6 +2382,7 @@ def check_constants():
     schema_prefixes = {
         key: value["const"] for key, value in defs["idPrefixes"]["properties"].items()
     }
+    decision_defs = schemas["journal-decision"]["$defs"]
     checks = (
         ("NODE_TYPES", set(builder.NODE_TYPES), "schema $defs.nodeType", set(defs["nodeType"]["enum"])),
         ("EDGE_TYPES", set(builder.EDGE_TYPES), "schema $defs.edgeType", set(defs["edgeType"]["enum"])),
@@ -1688,6 +2393,42 @@ def check_constants():
         ("MATERIAL_KINDS", set(builder.MATERIAL_KINDS), "schema $defs.materialKind", set(defs["materialKind"]["enum"])),
         ("ROUTE_STATUSES", set(builder.ROUTE_STATUSES), "schema $defs.routeStatus", set(defs["routeStatus"]["enum"])),
         ("ID_PREFIXES", builder.ID_PREFIXES, "schema $defs.idPrefixes", schema_prefixes),
+        # §17.1/§9.13: the proposer set is the run manifest's role enum plus
+        # the user — one roster, drift caught here like every other constant.
+        ("AGENT_ROLES", set(builder.AGENT_ROLES),
+         "run-manifest schema properties.role",
+         set(schemas["run-manifest"]["properties"]["role"]["enum"])),
+        # The journal schema carries the same roster plus the user, so the
+        # boundary preflight predicts whether the builder accepts the row.
+        ("PROPOSERS", set(builder.PROPOSERS),
+         "journal-decision schema $defs.proposer",
+         set(decision_defs["proposer"]["enum"])),
+        # §9.13 is canon-complete while this slice defers named rows. Keep
+        # the active and deferred builder rosters exhaustive against that
+        # persisted contract so preflight/build drift fails in CI.
+        ("DECISION_DIMENSIONS",
+         set(builder.DECISION_VALUES) | set(builder.DEFERRED_DIMENSIONS),
+         "journal-decision schema $defs.dimension",
+         set(decision_defs["dimension"]["enum"])),
+        ("DECISION_OUTCOMES", set(builder.DECISION_OUTCOMES),
+         "journal-decision schema $defs.decision",
+         set(decision_defs["decision"]["enum"])),
+        ("DECISION_VALUES.confidence",
+         set(builder.DECISION_VALUES["confidence"]),
+         "journal-decision schema $defs.confidenceValue",
+         set(decision_defs["confidenceValue"]["enum"])),
+        ("DECISION_VALUES.clarity", set(builder.DECISION_VALUES["clarity"]),
+         "journal-decision schema $defs.clarityValue",
+         set(decision_defs["clarityValue"]["enum"])),
+        ("DECISION_VALUES.coverage", set(builder.DECISION_VALUES["coverage"]),
+         "journal-decision schema $defs.coverageValue",
+         set(decision_defs["coverageValue"]["enum"])),
+        ("DECISION_VALUES.weight", set(builder.DECISION_VALUES["weight"]),
+         "journal-decision schema $defs.weightValue",
+         set(decision_defs["weightValue"]["enum"])),
+        ("DECISION_VALUES.status", set(builder.DECISION_VALUES["status"]),
+         "journal-decision schema $defs.statusValue",
+         set(decision_defs["statusValue"]["enum"])),
     )
     for code_name, code_value, schema_name, schema_value in checks:
         if code_value != schema_value:

@@ -487,7 +487,61 @@
     }
   ],
   "trails": [],
-  "state": {},
+  "state": {
+    "concept:http-methods": {
+      "exposure": "read",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [
+        "encounter:demo-mdn-idempotency-read"
+      ],
+      "decisions": [],
+      "last_seen": "2026-07-09",
+      "freshness": "fresh"
+    },
+    "concept:idempotency": {
+      "exposure": "applied",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [
+        "artifact:demo-retry-script",
+        "encounter:demo-mdn-idempotency-read"
+      ],
+      "decisions": [],
+      "last_seen": "2026-07-10",
+      "freshness": "fresh"
+    },
+    "concept:redis": {
+      "exposure": "unseen",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [],
+      "decisions": []
+    },
+    "concept:rest-api": {
+      "exposure": "unseen",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [],
+      "decisions": []
+    },
+    "part:mdn-http-methods/idempotency": {
+      "depth_reached": "applied",
+      "last_seen": "2026-07-09",
+      "evidence": [
+        "encounter:demo-mdn-idempotency-read"
+      ]
+    },
+    "question:demo-when-is-retry-safe": {
+      "status": "open",
+      "evidence": [],
+      "decisions": []
+    }
+  },
   "influence": {},
   "frontier": [],
   "projections": {}

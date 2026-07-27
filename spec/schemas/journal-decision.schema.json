@@ -9,7 +9,7 @@
     "dimension": {"$ref": "#/$defs/dimension"},
     "to": {"$ref": "#/$defs/decisionValue"},
     "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidenceId"}},
-    "proposed_by": {"type": "string"},
+    "proposed_by": {"$ref": "#/$defs/proposer"},
     "decision": {"$ref": "#/$defs/decision"},
     "intake": {"$ref": "#/$defs/intakeKey"},
     "sensitivity": {"$ref": "#/$defs/sensitivity"}
@@ -96,6 +96,11 @@
       "type": "string",
       "enum": ["confirmed", "rejected"],
       "description": "Resolved proposal decisions transcribed verbatim from §9.13."
+    },
+    "proposer": {
+      "type": "string",
+      "enum": ["user", "plan-importer", "artifact-observer", "field-cartographer", "state-auditor"],
+      "description": "§9.13: an agent role (§17.1) or the user — the audit record names who proposed the change."
     },
     "sensitivity": {
       "type": "string",

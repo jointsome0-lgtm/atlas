@@ -1,0 +1,29 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "concept:alone",
+      "type": "concept",
+      "title": "Alone (Vera Example)",
+      "fields": [
+        "knowledge"
+      ],
+      "aliases": []
+    }
+  ],
+  "edges": [],
+  "trails": [],
+  "state": {
+    "concept:alone": {
+      "depth_reached": "read",
+      "last_seen": "2026-07-16",
+      "evidence": [
+        "encounter:2026-07-16-001"
+      ]
+    }
+  },
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}

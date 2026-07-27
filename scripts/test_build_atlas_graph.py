@@ -1536,8 +1536,7 @@ class LaneBTests(unittest.TestCase):
 
 class JournalProjectionTests(unittest.TestCase):
     # §20 step 8 (#31): the structural journal projection — rows become
-    # nodes plus their §10.2 derived edges and §11.2-§11.3 role edges;
-    # state folds stay §29 Phase 3/4.
+    # nodes plus their §10.2 derived edges and §11.2-§11.3 role edges.
 
     def _edges(self, graph, kind):
         return [e for e in graph["edges"] if e["type"] == kind]
@@ -1802,7 +1801,8 @@ class JournalProjectionTests(unittest.TestCase):
         }) as directory:
             _, errors, _ = build_atlas_graph.build(Path(directory))
         self.assertTrue(
-            any("is not a YYYY-MM-DD date" in e for e in errors), errors)
+            any("is not a valid YYYY-MM-DD date" in e for e in errors),
+            errors)
 
     def test_dangling_trail_direction_warns(self):
         # §34.2/§20 step 11: direction is payload-only — a deleted or
@@ -2337,6 +2337,994 @@ class JournalProjectionTests(unittest.TestCase):
         segment = next(n for n in graph["nodes"]
                        if n["type"] == "trail_segment")
         self.assertEqual("medical", segment["sensitivity"])
+
+
+class StateFoldTests(unittest.TestCase):
+    """§20 step 9: knowledge, material, and question state."""
+
+    @staticmethod
+    def _artifact(artifact_id, date, strength, *, touches=None,
+                  supports=None, sensitivity=None):
+        row = {
+            "id": artifact_id,
+            "type": "note",
+            "path": "vera-example.txt",
+            "observed_at": date,
+            "summary": "Fold evidence (Vera Example)",
+            "touches": touches or [],
+            "supports_state_updates": supports or [],
+            "evidence_strength": strength,
+        }
+        if sensitivity is not None:
+            row["sensitivity"] = sensitivity
+        return row
+
+    @staticmethod
+    def _decision(date, target, dimension, to, evidence,
+                  decision="confirmed"):
+        return {
+            "date": date,
+            "target": target,
+            "dimension": dimension,
+            "to": to,
+            "evidence": evidence,
+            "proposed_by": "user",
+            "decision": decision,
+        }
+
+    @staticmethod
+    def _jsonl(rows):
+        return "".join(json.dumps(row) + "\n" for row in rows)
+
+    def test_each_artifact_strength_maps_to_knowledge_exposure(self):
+        # §14.5's knowledge ladder is exhaustive. `reviewed`, `performed`,
+        # and `drilled` apply judgment/action but do not reach `taught`
+        # without the separate explained+reviewed compound.
+        expected = {
+            "noticed": "touched",
+            "read": "read",
+            "summarized": "summarized",
+            "explained": "summarized",
+            "applied": "applied",
+            "reviewed": "applied",
+            "performed": "applied",
+            "drilled": "applied",
+        }
+        tree = {}
+        rows = []
+        for position, (strength, exposure) in enumerate(expected.items(), 1):
+            concept = f"concept:{strength}"
+            tree[f"concepts/{strength}.md"] = _CONCEPT % (
+                strength, strength.title())
+            rows.append(self._artifact(
+                f"artifact:2026-01-01-{position:03d}",
+                "2026-01-01",
+                strength,
+                supports=[concept],
+            ))
+        tree["concepts/taught.md"] = _CONCEPT % ("taught", "Taught")
+        rows.extend([
+            self._artifact(
+                "artifact:2026-01-02-001", "2026-01-02", "explained",
+                supports=["concept:taught"]),
+            self._artifact(
+                "artifact:2026-01-03-001", "2026-01-03", "reviewed",
+                supports=["concept:taught"]),
+        ])
+        tree["state/artifacts.jsonl"] = self._jsonl(rows)
+
+        with _materialize(tree) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        for strength, exposure in expected.items():
+            with self.subTest(strength=strength):
+                self.assertEqual(exposure,
+                                 graph["state"][f"concept:{strength}"]
+                                 ["exposure"])
+        self.assertEqual("taught",
+                         graph["state"]["concept:taught"]["exposure"])
+        self.assertEqual(
+            ["artifact:2026-01-02-001", "artifact:2026-01-03-001"],
+            graph["state"]["concept:taught"]["evidence"],
+        )
+
+    def test_touches_is_capped_at_touched_while_supports_uses_strength(self):
+        # §14.5: the two artifact relation lists are deliberately unequal.
+        # A strong artifact cannot smuggle a touches-only concept upward.
+        row = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "applied",
+            touches=["concept:touched"],
+            supports=["concept:supported"],
+        )
+        with _materialize({
+            "concepts/touched.md": _CONCEPT % ("touched", "Touched"),
+            "concepts/supported.md": _CONCEPT % ("supported", "Supported"),
+            "state/artifacts.jsonl": self._jsonl([row]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertEqual("touched",
+                         graph["state"]["concept:touched"]["exposure"])
+        self.assertEqual("applied",
+                         graph["state"]["concept:supported"]["exposure"])
+
+    def test_encounters_cap_concepts_at_read_and_fold_exact_material_key(self):
+        # §14.5/§14.8: encounter depth is uncapped for the exact material
+        # or part key, but its mapped concept contact never exceeds read.
+        material = (
+            "---\nid: material:m\ntype: material\n"
+            "title: M (Vera Example)\nkind: docs\nurl: \"\"\n"
+            "status: active\noverall_concepts:\n"
+            "  - concept:whole\nparts:\n"
+            "  - id: part:m/p\n    title: P (Vera Example)\n"
+            "    concept_edges:\n"
+            "      - to: concept:part\n        role: explains\n---\n"
+        )
+        encounters = [
+            {
+                "id": "encounter:2026-01-01-001",
+                "date": "2026-01-01",
+                "target": "material:m",
+                "depth": "taught",
+                "mode": "background",
+            },
+            {
+                "id": "encounter:2026-01-10-001",
+                "date": "2026-01-10",
+                "target": "material:m",
+                "depth": "skim",
+                "mode": "background",
+            },
+            {
+                "id": "encounter:2026-01-05-001",
+                "date": "2026-01-05",
+                "target": "part:m/p",
+                "depth": "applied",
+                "mode": "background",
+            },
+        ]
+        with _materialize({
+            "concepts/whole.md": _CONCEPT % ("whole", "Whole"),
+            "concepts/part.md": _CONCEPT % ("part", "Part"),
+            "materials/m.md": material,
+            "state/encounters.jsonl": self._jsonl(encounters),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        state = graph["state"]
+        self.assertEqual("read", state["concept:whole"]["exposure"])
+        self.assertEqual("read", state["concept:part"]["exposure"])
+        self.assertEqual(
+            {
+                "depth_reached": "taught",
+                "last_seen": "2026-01-10",
+                "evidence": [
+                    "encounter:2026-01-01-001",
+                    "encounter:2026-01-10-001",
+                ],
+            },
+            state["material:m"],
+        )
+        self.assertEqual(
+            {
+                "depth_reached": "applied",
+                "last_seen": "2026-01-05",
+                "evidence": ["encounter:2026-01-05-001"],
+            },
+            state["part:m/p"],
+        )
+
+    def test_no_evidence_and_no_decision_emit_no_knowledge_first_values(self):
+        # §14.6's else branch is output, not an omitted ambiguity.
+        source = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        question = {
+            "id": "question:q",
+            "type": "question",
+            "text": "What is known? (Vera Example)",
+            "created_at": "2026-01-01",
+            "pulls": [],
+            "source": {"artifact": source["id"]},
+        }
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([source]),
+            "state/questions.jsonl": self._jsonl([question]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertEqual(
+            {
+                "exposure": "unseen",
+                "confidence": "unknown",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": [],
+                "decisions": [],
+            },
+            graph["state"]["concept:c"],
+        )
+        self.assertEqual(
+            {"status": "open", "evidence": [], "decisions": []},
+            graph["state"]["question:q"],
+        )
+
+    def test_freshness_uses_inclusive_30_and_90_day_boundaries(self):
+        cases = {
+            "thirty": ("2026-03-02", "fresh"),
+            "thirty-one": ("2026-03-01", "aging"),
+            "ninety": ("2026-01-01", "aging"),
+            "ninety-one": ("2025-12-31", "stale"),
+        }
+        tree = {}
+        rows = []
+        for position, (slug, (date, _)) in enumerate(cases.items(), 1):
+            tree[f"concepts/{slug}.md"] = _CONCEPT % (slug, slug.title())
+            rows.append(self._artifact(
+                f"artifact:2026-04-01-{position:03d}", date, "noticed",
+                supports=[f"concept:{slug}"],
+            ))
+        tree["state/artifacts.jsonl"] = self._jsonl(rows)
+
+        with _materialize(tree) as directory:
+            graph, errors, warnings = build_atlas_graph.build(
+                Path(directory), "2026-04-01")
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        for slug, (date, freshness) in cases.items():
+            with self.subTest(age=slug):
+                entry = graph["state"][f"concept:{slug}"]
+                self.assertEqual(date, entry["last_seen"])
+                self.assertEqual(freshness, entry["freshness"])
+
+    def test_confirmed_decisions_use_date_then_position_and_rejections_do_not_move(self):
+        evidence = [
+            self._artifact(
+                "artifact:2026-01-01-001", "2026-01-01", "noticed"),
+            self._artifact(
+                "artifact:2026-01-02-001", "2026-01-02", "noticed"),
+        ]
+        question = {
+            "id": "question:q",
+            "type": "question",
+            "text": "Can this reopen? (Vera Example)",
+            "created_at": "2026-01-02",
+            "pulls": ["concept:c"],
+            "source": {"artifact": evidence[0]["id"]},
+        }
+        decisions = [
+            self._decision(
+                "2026-02-10", "concept:c", "confidence", "medium",
+                [evidence[0]["id"]]),
+            # Appended later but backdated: it cannot beat 2026-02-10.
+            self._decision(
+                "2026-02-01", "concept:c", "confidence", "high",
+                [evidence[1]["id"]]),
+            self._decision(
+                "2026-03-01", "concept:c", "clarity", "rough",
+                [evidence[0]["id"]]),
+            # Same date: the later journal position wins.
+            self._decision(
+                "2026-03-01", "concept:c", "clarity", "stable",
+                [evidence[1]["id"]]),
+            # A later rejection is memory, not a state transition.
+            self._decision(
+                "2026-03-02", "concept:c", "clarity", "disputed",
+                [evidence[0]["id"]], decision="rejected"),
+            self._decision(
+                "2026-03-03", "concept:c", "coverage", "partial",
+                [evidence[0]["id"]]),
+            self._decision(
+                "2026-03-01", "question:q", "status", "clarified",
+                [evidence[0]["id"]]),
+            self._decision(
+                "2026-04-01", "question:q", "status", "resolved",
+                [evidence[0]["id"]]),
+            # §9.8 explicitly permits resolved -> open.
+            self._decision(
+                "2026-04-01", "question:q", "status", "open",
+                [evidence[1]["id"]]),
+        ]
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl(evidence),
+            "state/questions.jsonl": self._jsonl([question]),
+            "state/decisions.jsonl": self._jsonl(decisions),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        concept = graph["state"]["concept:c"]
+        self.assertEqual("medium", concept["confidence"])
+        self.assertEqual("stable", concept["clarity"])
+        self.assertEqual("partial", concept["coverage"])
+        self.assertEqual(
+            ["confidence", "clarity", "coverage"],
+            [decision["dimension"] for decision in concept["decisions"]],
+        )
+        self.assertEqual(
+            {
+                "dimension": "clarity",
+                "date": "2026-03-01",
+                "evidence": [evidence[1]["id"]],
+            },
+            concept["decisions"][1],
+        )
+        question_state = graph["state"]["question:q"]
+        self.assertEqual("open", question_state["status"])
+        self.assertEqual(
+            [{
+                "dimension": "status",
+                "date": "2026-04-01",
+                "evidence": [evidence[1]["id"]],
+            }],
+            question_state["decisions"],
+        )
+
+    def test_rejected_proposal_requires_new_evidence_before_reproposal(self):
+        evidence = [
+            self._artifact(
+                "artifact:first-note", "2026-01-01", "noticed"),
+            self._artifact(
+                "artifact:second-note", "2026-01-02", "noticed"),
+        ]
+        for name, later_evidence, expected in (
+                ("same-evidence", [evidence[0]["id"]], "unknown"),
+                ("new-evidence", [evidence[1]["id"]], "high")):
+            decisions = [
+                self._decision(
+                    "2026-02-01", "concept:c", "confidence", "high",
+                    [evidence[0]["id"]], decision="rejected"),
+                self._decision(
+                    "2026-02-02", "concept:c", "confidence", "high",
+                    later_evidence),
+            ]
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl(evidence),
+                "state/decisions.jsonl": self._jsonl(decisions),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertEqual(
+                expected, graph["state"]["concept:c"]["confidence"])
+            if name == "same-evidence":
+                self.assertTrue(
+                    any("cannot be re-proposed without new evidence" in error
+                        for error in errors),
+                    errors,
+                )
+            else:
+                self.assertEqual([], errors)
+
+    def test_rejection_memory_uses_date_before_journal_position(self):
+        evidence = self._artifact(
+            "artifact:first-note", "2026-01-01", "noticed")
+        confirmation = self._decision(
+            "2026-02-02", "concept:c", "confidence", "high",
+            [evidence["id"]])
+        backfilled_rejection = self._decision(
+            "2026-02-01", "concept:c", "confidence", "high",
+            [evidence["id"]], decision="rejected")
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([evidence]),
+            # Physical journal order is rotated prefix, then direct tail.
+            "state/decisions/2026.jsonl": self._jsonl([confirmation]),
+            "state/decisions.jsonl": self._jsonl([backfilled_rejection]),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual(
+            "unknown", graph["state"]["concept:c"]["confidence"])
+        self.assertTrue(
+            any("cannot be re-proposed without new evidence" in error
+                for error in errors),
+            errors,
+        )
+
+    def test_reproposal_requires_an_added_evidence_citation(self):
+        evidence = [
+            self._artifact("artifact:first-note", "2026-01-01", "noticed"),
+            self._artifact("artifact:second-note", "2026-01-02", "noticed"),
+            self._artifact("artifact:third-note", "2026-01-03", "noticed"),
+        ]
+        rejected_evidence = [evidence[0]["id"], evidence[1]["id"]]
+        for name, later_evidence, expected, has_error in (
+                ("removed-only", [evidence[0]["id"]], "unknown", True),
+                ("added-third", [evidence[0]["id"], evidence[2]["id"]],
+                 "high", False)):
+            decisions = [
+                self._decision(
+                    "2026-02-01", "concept:c", "confidence", "high",
+                    rejected_evidence, decision="rejected"),
+                self._decision(
+                    "2026-02-02", "concept:c", "confidence", "high",
+                    later_evidence),
+            ]
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl(evidence),
+                "state/decisions.jsonl": self._jsonl(decisions),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertEqual(
+                expected, graph["state"]["concept:c"]["confidence"])
+            self.assertEqual(
+                has_error,
+                any("cannot be re-proposed without new evidence" in error
+                    for error in errors),
+                errors,
+            )
+
+    def test_explicit_as_of_bounds_the_fold_but_keeps_in_cut_decision(self):
+        early = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed",
+            supports=["concept:c"])
+        late = self._artifact(
+            "artifact:2026-02-01-001", "2026-02-01", "applied",
+            supports=["concept:c"], sensitivity="medical")
+        decisions = [
+            # §20.1: the decision applies even though its cited evidence is
+            # beyond the cut and therefore dangling in this dated graph.
+            self._decision(
+                "2026-01-10", "concept:c", "confidence", "high",
+                [late["id"]]),
+            self._decision(
+                "2026-02-02", "concept:c", "confidence", "low",
+                [late["id"]]),
+        ]
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([early, late]),
+            "state/decisions.jsonl": self._jsonl(decisions),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(
+                Path(directory), "2026-01-15")
+
+        self.assertEqual([], errors)
+        state = graph["state"]["concept:c"]
+        self.assertEqual("touched", state["exposure"])
+        self.assertEqual("high", state["confidence"])
+        # The late artifact is not an emitted node, but the in-cut decision
+        # still cites it. Its §32.6 class therefore taints the derived value
+        # and the agent-facing graph omits that value whole.
+        self.assertEqual("medical", state["sensitivity"])
+        self.assertEqual(
+            [early["id"], late["id"]],
+            state["evidence"],
+        )
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertNotIn("concept:c", redacted["state"])
+        self.assertEqual(1, redacted["withheld"]["state"])
+        self.assertNotIn(late["id"], json.dumps(redacted))
+        self.assertEqual("2026-01-15T00:00:00Z", graph["generated_at"])
+        self.assertTrue(
+            any(late["id"] in warning and "dangling evidence ref" in warning
+                for warning in warnings),
+            warnings,
+        )
+        self.assertTrue(
+            any("skipped 2 dated input(s)" in warning for warning in warnings),
+            warnings,
+        )
+
+    def test_folded_output_is_byte_identical_across_emitted_runs(self):
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "summarized",
+            supports=["concept:c"])
+        decision = self._decision(
+            "2026-01-02", "concept:c", "confidence", "medium",
+            [artifact["id"]])
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([artifact]),
+            "state/decisions.jsonl": self._jsonl([decision]),
+        }) as directory:
+            root = Path(directory)
+            output = root / "graph" / "atlas-graph.json"
+            argv = ["build_atlas_graph.py", "--as-of", "2026-01-02",
+                    str(root), str(output)]
+            emissions = []
+            for _ in range(2):
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with (
+                    mock.patch.object(build_atlas_graph.sys, "argv", argv),
+                    contextlib.redirect_stdout(stdout),
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    code = build_atlas_graph.main()
+                self.assertEqual(0, code, stderr.getvalue())
+                emissions.append(output.read_bytes())
+
+        self.assertEqual(emissions[0], emissions[1])
+
+    def test_sensitivity_union_marks_and_redacts_a_folded_value(self):
+        # §32.6 is a generic provenance union here: no Body ladder or state
+        # branch is needed for a classed artifact to taint knowledge state.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "applied",
+            supports=["concept:c"], sensitivity="medical")
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([artifact]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertEqual("medical",
+                         graph["state"]["concept:c"]["sensitivity"])
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertNotIn("concept:c", redacted["state"])
+        self.assertEqual(1, redacted["withheld"]["state"])
+        self.assertIn("concept:c",
+                      {node["id"] for node in redacted["nodes"]})
+
+    def test_redaction_drops_state_citing_a_transitively_withheld_id(self):
+        # §32.6: an unclassed artifact withheld for citing a classed one
+        # taints the fold that rests on it. The concept itself is public and
+        # its own union is clean, so only the citation closure keeps the
+        # withheld id out of the agent-facing `evidence` list.
+        classed = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "applied",
+            sensitivity="medical")
+        citing = self._artifact(
+            "artifact:2026-01-02-001", "2026-01-02", "applied",
+            supports=["concept:c"])
+        citing["summary"] = "follow-up to artifact:2026-01-01-001 (Vera Example)"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([classed, citing]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertEqual(["artifact:2026-01-02-001"],
+                         graph["state"]["concept:c"]["evidence"])
+        self.assertNotIn("sensitivity", graph["state"]["concept:c"])
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertNotIn("concept:c", redacted["state"])
+        self.assertEqual(1, redacted["withheld"]["state"])
+        self.assertIn("concept:c",
+                      {node["id"] for node in redacted["nodes"]})
+        payload = json.dumps(redacted)
+        self.assertNotIn("artifact:2026-01-01-001", payload)
+        self.assertNotIn("artifact:2026-01-02-001", payload)
+
+    def test_redaction_matches_structured_state_evidence_ids_exactly(self):
+        # Node/edge prose uses substring taint by design, but state evidence
+        # is a closed id join: withholding artifact:a must not remove a value
+        # whose only provenance is the distinct public artifact:a-long.
+        classed = self._artifact(
+            "artifact:a", "2026-01-01", "noticed",
+            sensitivity="medical")
+        public = self._artifact(
+            "artifact:a-long", "2026-01-02", "noticed",
+            supports=["concept:c"])
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([classed, public]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        redacted = build_atlas_graph._redact_graph(graph)
+        self.assertEqual(
+            ["artifact:a-long"],
+            redacted["state"]["concept:c"]["evidence"],
+        )
+        self.assertEqual(0, redacted["withheld"]["state"])
+
+        # The boundary's full/redacted sibling check reads the same exact
+        # join, so a clean builder emission remains a clean preflight.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            graph_dir = root / "graph"
+            graph_dir.mkdir()
+            (graph_dir / "atlas-graph.json").write_text(
+                json.dumps(graph) + "\n", encoding="utf-8"
+            )
+            (graph_dir / "atlas-graph.redacted.json").write_text(
+                json.dumps(redacted) + "\n", encoding="utf-8"
+            )
+            validation_errors, _, _ = validate_atlas.validate_instance(root)
+        self.assertEqual([], validation_errors)
+
+    def test_body_decision_dimensions_are_refused_under_the_freeze(self):
+        # §29/#45/#58: §9.13's body ladders stay canon but unfolded during
+        # the freeze. Accepting one would report a successful build that
+        # silently dropped owner-authored state, so the row fails closed.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        for dimension, value in (("strength", "high"), ("endurance", "low"),
+                                 ("mobility", "medium"),
+                                 ("condition", "irritated")):
+            decision = self._decision(
+                "2026-01-02", "zone:shoulder", dimension, value,
+                ["artifact:2026-01-01-001"])
+            with self.subTest(dimension=dimension), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "zones/shoulder.md": (
+                    "---\nid: zone:shoulder\ntype: zone\n"
+                    "title: Shoulder (Vera Example)\n"
+                    "figure_region: shoulder\n---\n"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertTrue(
+                any(f"/dimension {dimension} is a §32 body ladder" in error
+                    for error in errors), errors)
+            self.assertNotIn("zone:shoulder", graph["state"])
+
+    def test_decision_proposer_must_be_a_registered_actor(self):
+        # §9.13: the audit record names who proposed the change — a §17 role
+        # or the user. An anonymous or invented actor cannot move state.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        for proposer, folds in (("", False), ("ghost-agent", False),
+                                ("user", True), ("state-auditor", True)):
+            decision = self._decision(
+                "2026-02-01", "concept:c", "confidence", "high",
+                ["artifact:2026-01-01-001"])
+            decision["proposed_by"] = proposer
+            with self.subTest(proposed_by=proposer), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            if folds:
+                self.assertEqual([], errors)
+                self.assertEqual(
+                    "high", graph["state"]["concept:c"]["confidence"])
+            else:
+                self.assertTrue(
+                    any("/proposed_by must be a §17 agent role" in error
+                        for error in errors), errors)
+                self.assertEqual(
+                    "unknown", graph["state"]["concept:c"]["confidence"])
+
+    def test_user_self_proposal_must_cite_a_note_artifact(self):
+        # §9.13: a manual state edit is a user self-proposal through the
+        # ordinary decision gate, and its durable rationale is the owner's
+        # note. A deleted/out-of-cut note may dangle per §20.1.
+        cases = {
+            "own-note": ("note", ["artifact:2026-01-01-001"], True),
+            "non-note": ("script", ["artifact:2026-01-01-001"], False),
+            "wrong-kind": (None, ["encounter:2026-01-01-001"], False),
+            "dangling-note": (None, ["artifact:missing"], True),
+        }
+        for name, (artifact_kind, evidence, folds) in cases.items():
+            tree = {"concepts/c.md": _CONCEPT % ("c", "C")}
+            if artifact_kind is not None:
+                artifact = self._artifact(
+                    "artifact:2026-01-01-001", "2026-01-01", "noticed")
+                artifact["type"] = artifact_kind
+                tree["state/artifacts.jsonl"] = self._jsonl([artifact])
+            if name == "wrong-kind":
+                tree["materials/m.md"] = _MATERIAL % ("m", "M")
+                tree["state/encounters.jsonl"] = _encounter_row()
+            decision = self._decision(
+                "2026-02-01", "concept:c", "confidence", "high", evidence)
+            tree["state/decisions.jsonl"] = self._jsonl([decision])
+            with self.subTest(case=name), _materialize(tree) as directory:
+                graph, errors, warnings = build_atlas_graph.build(
+                    Path(directory))
+
+            self.assertEqual(
+                "high" if folds else "unknown",
+                graph["state"]["concept:c"]["confidence"],
+            )
+            if folds:
+                self.assertEqual([], errors)
+                if name == "dangling-note":
+                    self.assertTrue(
+                        any("dangling evidence ref" in warning
+                            for warning in warnings), warnings)
+            else:
+                self.assertTrue(
+                    any("user self-proposal" in error for error in errors),
+                    errors,
+                )
+
+    def test_question_status_needs_resolution_evidence(self):
+        # §9.8: the transition cites what made it true — the artifact or
+        # encounter that clarified or resolved it. The question's own
+        # creation record establishes nothing about its outcome.
+        artifact = self._artifact(
+            "artifact:2026-07-16-001", "2026-07-16", "noticed")
+        question = json.loads(_QUESTION_ROW)
+        for evidence, folds in ((["question:q"], False),
+                                (["artifact:2026-07-16-001"], True)):
+            decision = self._decision(
+                "2026-08-01", question["id"], "status", "resolved", evidence)
+            with self.subTest(evidence=evidence), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/questions.jsonl": self._jsonl([question]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            status = graph["state"][question["id"]]["status"]
+            if folds:
+                self.assertEqual([], errors)
+                self.assertEqual("resolved", status)
+            else:
+                self.assertTrue(
+                    any("§9.8 resolution evidence" in error
+                        for error in errors), errors)
+                self.assertEqual("open", status)
+
+    def test_stale_status_must_cite_the_users_own_note(self):
+        # §9.8/§31.5: nothing declines automatically. Staleness is the
+        # owner's judgment, so an encounter or someone else's artifact
+        # cannot carry it — only their own note.
+        question = json.loads(_QUESTION_ROW)
+        encounter = {
+            "id": "encounter:2026-07-16-001", "date": "2026-07-16",
+            "target": "material:m", "depth": "skim", "mode": "background",
+        }
+        cases = {
+            "encounter": (["encounter:2026-07-16-001"], "note", "open"),
+            "non-note-artifact": (["artifact:2026-07-16-001"], "script",
+                                  "open"),
+            "own-note": (["artifact:2026-07-16-001"], "note", "stale"),
+        }
+        for name, (evidence, kind, expected) in cases.items():
+            artifact = self._artifact(
+                "artifact:2026-07-16-001", "2026-07-16", "noticed")
+            artifact["type"] = kind
+            decision = self._decision(
+                "2026-08-01", "question:q", "status", "stale", evidence)
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "materials/m.md": _MATERIAL % ("m", "M"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/encounters.jsonl": self._jsonl([encounter]),
+                "state/questions.jsonl": self._jsonl([question]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertEqual(expected, graph["state"]["question:q"]["status"])
+            if expected == "stale":
+                self.assertEqual([], errors)
+            else:
+                self.assertTrue(
+                    any("note" in error for error in errors), errors)
+
+    def test_stale_note_outside_as_of_does_not_block_the_decision(self):
+        # §20.1: the in-cut decision applies even when its actual note lies
+        # after the cut. A different in-cut artifact must not turn the
+        # partially-resolved evidence set into a false non-note rejection.
+        question = json.loads(_QUESTION_ROW)
+        in_cut = self._artifact(
+            "artifact:in-cut", "2026-07-16", "noticed")
+        in_cut["type"] = "script"
+        future_note = self._artifact(
+            "artifact:future-note", "2026-08-01", "noticed")
+        decision = self._decision(
+            "2026-07-20", question["id"], "status", "stale",
+            [in_cut["id"], future_note["id"]])
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([in_cut, future_note]),
+            "state/questions.jsonl": self._jsonl([question]),
+            "state/decisions.jsonl": self._jsonl([decision]),
+        }) as directory:
+            graph, errors, warnings = build_atlas_graph.build(
+                Path(directory), "2026-07-31")
+
+        self.assertEqual([], errors)
+        self.assertEqual("stale", graph["state"][question["id"]]["status"])
+        self.assertTrue(
+            any(
+                future_note["id"] in warning
+                and "dangling evidence ref" in warning
+                for warning in warnings
+            ),
+            warnings,
+        )
+
+    def test_direct_journal_is_the_newest_tail_of_the_rotation(self):
+        # §8/§20.1: rotation moves old rows out, so the per-year files are
+        # the older half and state/decisions.jsonl is the newest tail. A
+        # same-day tie on one target and dimension resolves to the row
+        # appended last — the direct one, never the rotated one.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        rotated = self._decision(
+            "2026-02-01", "concept:c", "confidence", "low",
+            ["artifact:2026-01-01-001"])
+        direct = self._decision(
+            "2026-02-01", "concept:c", "confidence", "high",
+            ["artifact:2026-01-01-001"])
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "state/artifacts.jsonl": self._jsonl([artifact]),
+            "state/decisions/2026.jsonl": self._jsonl([rotated]),
+            "state/decisions.jsonl": self._jsonl([direct]),
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+        self.assertEqual([], errors)
+        self.assertEqual("high", graph["state"]["concept:c"]["confidence"])
+
+    def test_taught_needs_a_review_that_can_follow_the_explanation(self):
+        # §14.1/§14.5: taught is an explanation that survived review, so a
+        # review predating the explanation cannot establish it — old review
+        # history must not promote the next explanation.
+        cases = {
+            "review-after": (
+                "2026-01-01", "2026-02-01", False, "taught"),
+            "same-day-review-after": (
+                "2026-01-01", "2026-01-01", False, "taught"),
+            "same-day-review-before": (
+                "2026-01-01", "2026-01-01", True, "applied"),
+            "review-before": (
+                "2026-02-01", "2026-01-01", False, "applied"),
+        }
+        for name, (explained_on, reviewed_on, review_first,
+                   expected) in cases.items():
+            explained = self._artifact(
+                "artifact:2026-01-01-001", explained_on,
+                "explained", supports=["concept:c"])
+            reviewed = self._artifact(
+                "artifact:2026-01-02-001", reviewed_on,
+                "reviewed", supports=["concept:c"])
+            rows = ([reviewed, explained] if review_first
+                    else [explained, reviewed])
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl(rows),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertEqual([], errors)
+            # `reviewed` alone still reaches applied (§14.5); the compound is
+            # what the ordering gates.
+            exposure = graph["state"]["concept:c"]["exposure"]
+            self.assertEqual(expected, exposure)
+
+    def test_decisions_the_slice_cannot_fold_are_all_refused(self):
+        # The genus behind the body ladders: §14.9 edge weight and §32's
+        # pattern targets validate as canon but fall outside this fold too.
+        # Anything the fold does not apply fails closed, so no build reports
+        # success while dropping a confirmed decision.
+        artifact = self._artifact(
+            "artifact:2026-01-01-001", "2026-01-01", "noticed")
+        cases = {
+            "weight": (
+                self._decision(
+                    "2026-01-02", "supports:part:b/y->part:a/x", "weight",
+                    "high", ["artifact:2026-01-01-001"]),
+                "§14.9 edge weight",
+            ),
+            "pattern-target": (
+                self._decision(
+                    "2026-01-02", "pattern:press", "confidence", "high",
+                    ["artifact:2026-01-01-001"]),
+                "§32 body-domain target",
+            ),
+        }
+        for name, (decision, expected) in cases.items():
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "patterns/press.md": (
+                    "---\nid: pattern:press\ntype: pattern\n"
+                    "title: Press (Vera Example)\n---\n"),
+                "state/artifacts.jsonl": self._jsonl([artifact]),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertTrue(any(expected in error for error in errors), errors)
+            self.assertNotIn("pattern:press", graph["state"])
+
+    def test_non_scalar_decision_fields_fail_closed_without_a_traceback(self):
+        # §24.4: a persisted row is untrusted input. An unhashable value in
+        # a field the reader tests for membership must produce the ordinary
+        # prefixed diagnostic, never a set-lookup traceback.
+        for field, value in (("dimension", ["confidence"]),
+                             ("decision", {"confirmed": True}),
+                             ("to", ["high"])):
+            decision = self._decision(
+                "2026-01-02", "concept:c", "confidence", "high",
+                ["artifact:2026-01-01-001"])
+            decision[field] = value
+            with self.subTest(field=field), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/decisions.jsonl": self._jsonl([decision]),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertTrue(any(f"/{field}" in error for error in errors),
+                            errors)
+
+    def test_invalid_encounter_date_fails_closed_without_a_traceback(self):
+        # §9/§10: a rejected date leaves the node dateless, and the material
+        # fold still has to reduce over it — the owner gets the prefixed
+        # validation error, never an uncaught reduction failure.
+        encounter = json.loads(_encounter_row())
+        encounter["date"] = "not-a-date"
+        with _materialize({
+            "concepts/c.md": _CONCEPT % ("c", "C"),
+            "materials/m.md": _MATERIAL % ("m", "M"),
+            "state/encounters.jsonl": json.dumps(encounter) + "\n",
+        }) as directory:
+            graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+        self.assertTrue(
+            any("date is not a valid YYYY-MM-DD date" in error
+                for error in errors), errors)
+
+    def test_graph_boundary_closes_state_keys_and_target_shapes(self):
+        # The schema closes each value; the boundary joins its dynamic key
+        # to the emitted node and that node's fold shape without echoing an
+        # invalid key (§20 step 9, §24.4).
+        cases = {
+            "unknown-key": (
+                {
+                    "SECRET_REJECTED_VERA": {
+                        "exposure": "unseen",
+                        "confidence": "unknown",
+                        "clarity": "vague",
+                        "coverage": "none",
+                        "evidence": [],
+                        "decisions": [],
+                    },
+                },
+                "is not keyed by an emitted node id",
+            ),
+            "wrong-target-shape": (
+                {
+                    "concept:c": {
+                        "depth_reached": "read",
+                        "last_seen": "2026-01-01",
+                        "evidence": ["encounter:2026-01-01-001"],
+                    },
+                },
+                "does not carry the concept fold shape",
+            ),
+        }
+        for name, (state, expected) in cases.items():
+            with self.subTest(name=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+            }) as directory:
+                root = Path(directory)
+                graph, build_errors, _ = build_atlas_graph.build(root)
+                self.assertEqual([], build_errors)
+                graph["state"] = state
+                output = root / "graph" / "atlas-graph.json"
+                output.parent.mkdir()
+                output.write_text(
+                    json.dumps(graph, indent=2) + "\n", encoding="utf-8")
+                errors, _, _ = validate_atlas.validate_instance(root)
+            self.assertTrue(any(expected in error for error in errors),
+                            errors)
+            self.assertTrue(
+                all("SECRET_REJECTED_VERA" not in error for error in errors),
+                errors,
+            )
 
 
 if __name__ == "__main__":
