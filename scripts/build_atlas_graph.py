@@ -56,11 +56,11 @@ ID_PREFIXES = {
 # §10.2 — closed set; extended only by a domain pass in the same commit.
 EDGE_TYPES = {
     "related_to", "prerequisite_of", "extends", "implements", "contradicts",
-    "explains", "demonstrates", "critiques", "mentions", "loads", "has_part",
-    "overall_concept", "supports", "part_of_direction", "step_of_route",
-    "suggested_next", "visited", "moved_to", "via", "pulled_by",
-    "produced_artifact", "updates_state", "influences", "probed_by",
-    "primary_for", "supporting_for",
+    "alternative_to", "explains", "demonstrates", "critiques", "mentions",
+    "loads", "has_part", "overall_concept", "supports", "part_of_direction",
+    "step_of_route", "suggested_next", "visited", "moved_to", "via",
+    "pulled_by", "produced_artifact", "updates_state", "influences",
+    "probed_by", "primary_for", "supporting_for",
 }
 
 # §10.1 — id shape is part of the graph contract (§16.4 uses ids as URL focus
@@ -73,7 +73,20 @@ NODE_ID_RE = re.compile(rf"^[a-z-]+:{_SLUG}$")
 # types (has_part, step_of_route, …) are created by the builder only.
 AUTHORED_ROLES = {
     "related_to", "prerequisite_of", "extends", "implements", "contradicts",
-    "explains", "demonstrates", "critiques", "mentions", "loads",
+    "alternative_to", "explains", "demonstrates", "critiques", "mentions",
+    "loads",
+}
+
+# §20.3: the authored concept-kind relations whose direction carries no
+# meaning; canonicalization sorts their endpoints before identity/dedup.
+SYMMETRIC_EDGE_TYPES = {"related_to", "alternative_to"}
+
+# §9.10: one-hop weak influence traverses exactly this structural set.
+# Influence emission remains §29 Phase 4; keeping its closed row here prevents
+# the builder's transcribed vocabulary from drifting before that producer lands.
+WEAK_HALO_EDGE_TYPES = {
+    "related_to", "prerequisite_of", "extends", "contradicts",
+    "alternative_to", "loads",
 }
 
 # §10.4: fields = union of the fields of the region nodes reachable through
@@ -170,6 +183,7 @@ ENDPOINT_RULES = {
     "extends": (CONCEPT_KIND | {"material_part"}, CONCEPT_KIND),
     "implements": ({"material_part"}, CONCEPT_KIND),
     "contradicts": (CONCEPT_KIND | {"material_part"}, CONCEPT_KIND),
+    "alternative_to": (CONCEPT_KIND, CONCEPT_KIND),
     "explains": ({"material_part"}, CONCEPT_KIND),
     "demonstrates": ({"material_part"}, CONCEPT_KIND),
     "critiques": ({"material_part"}, CONCEPT_KIND),
@@ -584,7 +598,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             errors.append(f"{path}: concept_edges on {owner_id} must be a "
                           f"list of edge mappings (§9.3)")
             return targets
-        for ce in entries or []:
+        for index, ce in enumerate(entries or []):
             if not isinstance(ce, dict):
                 errors.append(f"{path}: concept_edges item {ce!r} on "
                               f"{owner_id} is not an edge mapping (§9.3)")
@@ -608,7 +622,25 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                               f"{ce.get('to')} is not authorable from a "
                               f"{owner_kind} source (§10.2)")
                 continue
-            add_edge(owner_id, ce.get("to"), role, path, [owner_id], weight=weight)
+            alternative_in = None
+            if "alternative_in" in ce:
+                pointer = f"concept_edges[{index}].alternative_in"
+                if role != "alternative_to":
+                    errors.append(
+                        f"{path}: {pointer} is legal only for "
+                        "role alternative_to (§10.3)"
+                    )
+                    continue
+                alternative_in = [
+                    ref for ref in (
+                        kinded_ref(value, path, pointer,
+                                   {"concept", "pattern"}, "§10.3")
+                        for value in id_list(
+                            ce.get("alternative_in"), path, pointer))
+                    if ref is not None
+                ]
+            add_edge(owner_id, ce.get("to"), role, path, [owner_id],
+                     weight=weight, alternative_in=alternative_in)
             if isinstance(ce.get("to"), str):
                 targets.append(ce["to"])
         return targets
@@ -756,6 +788,10 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             if expected == "direction":
                 extra["attractor"] = str_field(meta.get("attractor"),
                                                path, "attractor")
+                stable_while = str_field(
+                    meta.get("stable_while"), path, "stable_while")
+                if stable_while is not None:
+                    extra["stable_while"] = stable_while
             if expected in ("suggested_route", "probe"):
                 source_plan = str_field(meta.get("source_plan"), path,
                                         "source_plan")
@@ -1482,6 +1518,10 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         if isinstance(edge.get("provenance"), list):
             edge["provenance"] = sorted(
                 resolve_ref(ref, edge["_origin"]) for ref in edge["provenance"])
+        if isinstance(edge.get("alternative_in"), list):
+            edge["alternative_in"] = sorted(
+                resolve_ref(ref, edge["_origin"])
+                for ref in edge["alternative_in"])
     for refs in field_refs.values():
         refs[:] = [retired.get(ref, ref) if isinstance(ref, str) else ref
                    for ref in refs]
@@ -1615,12 +1655,13 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                     node["sensitivity"] = marked
                     break
 
-    # §20.3 normalization: related_to is the one symmetric type — endpoints
-    # sort lexicographically before anything else sees the edge, so
-    # two-sided authoring becomes one identity (provenance unions in the
-    # collapse below). Sorted after §34.4 resolution: renames re-sort.
+    # §20.3 normalization: related_to and alternative_to are symmetric —
+    # endpoints sort lexicographically before anything else sees the edge,
+    # so two-sided authoring becomes one identity (provenance and optional
+    # annotations union in the collapse below). Sorted after §34.4
+    # resolution: renames re-sort.
     for edge in edges:
-        if (edge["type"] == "related_to"
+        if (edge["type"] in SYMMETRIC_EDGE_TYPES
                 and isinstance(edge.get("source"), str)
                 and isinstance(edge.get("target"), str)
                 and edge["target"] < edge["source"]):
@@ -1655,6 +1696,10 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                 continue
         kept["provenance"] = sorted(
             set(kept["provenance"]) | set(edge["provenance"]))
+        if ("alternative_in" in kept or "alternative_in" in edge):
+            kept["alternative_in"] = sorted(
+                set(kept.get("alternative_in", []))
+                | set(edge.get("alternative_in", [])))
     edges = deduped
 
     # §20.3 cycles: a prerequisite_of cycle is a WARNING carrying the cycle
@@ -1760,6 +1805,16 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                 errors.append(
                     f"{edge['_origin']}: broken curated link {edge['source']} "
                     f"-[{edge['type']}]-> {edge['target']} ({ref} not found)")
+        for ref in edge.get("alternative_in", []):
+            if id_type(ref) not in CONCEPT_KIND:
+                errors.append(
+                    f"{edge['_origin']}: alternative_in ref {ref!r} must be "
+                    "concept/pattern (§10.3)")
+            elif ref not in nodes:
+                errors.append(
+                    f"{edge['_origin']}: broken curated alternative_in ref "
+                    f"{ref} on {edge['source']} -[{edge['type']}]-> "
+                    f"{edge['target']} (§10.3)")
 
     edges = [e for e in edges
              if e["source"] in nodes and e["target"] in nodes

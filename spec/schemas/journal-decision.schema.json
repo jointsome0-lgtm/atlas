@@ -35,7 +35,7 @@
       "type": "string",
       "description": "Weight decisions review-gate the authored species only (§14.9) — the concept_edges roles and supports — with the §10.2 endpoint kinds per species.",
       "anyOf": [
-        {"pattern": "^related_to:(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*->(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        {"pattern": "^(?:related_to|alternative_to):(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*->(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
         {"pattern": "^(?:prerequisite_of|extends|contradicts):(?:(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*|part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*)->(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
         {"pattern": "^(?:implements|explains|demonstrates|critiques|mentions):part:[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*->(?:concept|pattern):[a-z0-9]+(?:-[a-z0-9]+)*$"},
         {"pattern": "^loads:pattern:[a-z0-9]+(?:-[a-z0-9]+)*->zone:[a-z0-9]+(?:-[a-z0-9]+)*$"},

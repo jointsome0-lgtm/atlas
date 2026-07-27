@@ -9,6 +9,7 @@
     "title": {"type": "string"},
     "status": {"$ref": "#/$defs/lifecycleStatus"},
     "attractor": {"type": "string"},
+    "stable_while": {"type": "string", "description": "§9.5 (#95): optional authored prose describing when the direction remains stable; it is never evaluated."},
     "core_concepts": {"type": "array", "items": {"$ref": "#/$defs/conceptId"}},
     "formerly": {"type": "array", "items": {"$ref": "#/$defs/directionId"}}
   },

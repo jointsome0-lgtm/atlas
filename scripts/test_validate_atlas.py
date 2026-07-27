@@ -1084,6 +1084,160 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual(validate_atlas.SCHEMA_NAMES, set(schemas))
 
+    def test_alternative_and_stability_schema_decisions(self):
+        # §9.1/§9.5/§10.2–§10.4 (#94, #95): the three authored schemas
+        # admit the new shapes and reject cross-role, cross-kind, or
+        # non-prose uses.
+        schemas, errors = validate_atlas._load_registry()
+        self.assertEqual([], errors)
+
+        concept = {
+            "id": "concept:a",
+            "type": "concept",
+            "title": "A (Vera Example)",
+            "concept_edges": [{
+                "to": "pattern:p",
+                "role": "alternative_to",
+                "alternative_in": ["concept:a", "pattern:p"],
+            }],
+        }
+        concept_validator = validate_atlas.SchemaValidator(
+            schemas["concept"])
+        self.assertEqual([], concept_validator.validate(concept))
+        invalid_concept = json.loads(json.dumps(concept))
+        invalid_concept["concept_edges"][0]["role"] = "prerequisite_of"
+        self.assertTrue(concept_validator.validate(invalid_concept))
+
+        pattern = {
+            "id": "pattern:p",
+            "type": "pattern",
+            "title": "P (Vera Example)",
+            "concept_edges": [{
+                "to": "concept:a",
+                "role": "alternative_to",
+                "alternative_in": ["concept:a"],
+            }],
+        }
+        pattern_validator = validate_atlas.SchemaValidator(
+            schemas["pattern"])
+        self.assertEqual([], pattern_validator.validate(pattern))
+        invalid_pattern = json.loads(json.dumps(pattern))
+        invalid_pattern["concept_edges"][0]["to"] = "zone:z"
+        self.assertTrue(pattern_validator.validate(invalid_pattern))
+
+        direction = {
+            "id": "direction:d",
+            "type": "direction",
+            "title": "D (Vera Example)",
+            "status": "active",
+            "attractor": "Keep learning",
+            "stable_while": "The goal remains exploratory.",
+            "core_concepts": ["concept:a"],
+        }
+        direction_validator = validate_atlas.SchemaValidator(
+            schemas["direction"])
+        self.assertEqual([], direction_validator.validate(direction))
+        direction["stable_while"] = ["not", "prose"]
+        self.assertTrue(direction_validator.validate(direction))
+
+    def test_graph_schema_accepts_alternative_annotation_and_stability(self):
+        # The persisted boundary is closed too: the authored-schema
+        # additions must survive builder embedding without widening unrelated
+        # edge or node payloads.
+        schemas, errors = validate_atlas._load_registry()
+        self.assertEqual([], errors)
+        graph = {
+            "format": "atlas-graph",
+            "version": 1,
+            "nodes": [
+                {
+                    "id": "concept:a", "type": "concept", "title": "A",
+                    "fields": ["knowledge"], "aliases": [],
+                },
+                {
+                    "id": "concept:b", "type": "concept", "title": "B",
+                    "fields": ["knowledge"], "aliases": [],
+                },
+                {
+                    "id": "direction:d", "type": "direction", "title": "D",
+                    "fields": ["knowledge"], "status": "active",
+                    "attractor": "Keep learning",
+                    "stable_while": "The goal remains exploratory.",
+                },
+            ],
+            "edges": [{
+                "source": "concept:a",
+                "target": "concept:b",
+                "type": "alternative_to",
+                "provenance": ["concept:a"],
+                "weight": "unassessed",
+                "alternative_in": ["concept:a"],
+            }],
+            "trails": [],
+            "state": {},
+            "influence": {},
+            "frontier": [],
+            "projections": {},
+        }
+        validator = validate_atlas.SchemaValidator(schemas["atlas-graph"])
+        self.assertEqual([], validator.validate(graph))
+        graph["edges"][0]["type"] = "related_to"
+        self.assertTrue(validator.validate(graph))
+
+    def test_graph_checks_generalize_symmetric_alternative_invariants(self):
+        # §10.3/§20.3 (#94): alternative_to shares related_to's canonical
+        # endpoints and endpoint-owned provenance, while alternative_in is
+        # a canonical live-ref set but never part of identity.
+        base = json.loads(VALID_EMPTY_GRAPH)
+        base["nodes"] = [
+            {
+                "id": f"concept:{slug}", "type": "concept",
+                "title": slug.upper(), "fields": ["knowledge"], "aliases": [],
+            }
+            for slug in ("a", "b", "c")
+        ]
+        base["state"] = {
+            f"concept:{slug}": json.loads(NO_KNOWLEDGE_CONCEPT)
+            for slug in ("a", "b", "c")
+        }
+        edge = {
+            "source": "concept:a",
+            "target": "concept:b",
+            "type": "alternative_to",
+            "provenance": ["concept:a"],
+            "weight": "unassessed",
+            "alternative_in": ["concept:a", "concept:c"],
+        }
+        cases = {
+            "reversed": (
+                {**edge, "source": "concept:b", "target": "concept:a",
+                 "provenance": ["concept:b"]},
+                "endpoints concept:b -> concept:a are not sorted",
+            ),
+            "foreign-provenance": (
+                {**edge, "provenance": ["concept:c"]},
+                "alternative_to provenance must include an authoring endpoint",
+            ),
+            "unsorted-scope": (
+                {**edge, "alternative_in": ["concept:c", "concept:a"]},
+                "alternative_in is not a sorted unique set",
+            ),
+            "dangling-scope": (
+                {**edge, "alternative_in": ["concept:missing"]},
+                "alternative_in concept:missing is not an emitted node id",
+            ),
+        }
+        for name, (candidate, expected) in cases.items():
+            graph = {**base, "edges": [candidate]}
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                materialize(
+                    {"graph/atlas-graph.json": json.dumps(graph) + "\n"},
+                    Path(directory),
+                )
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(expected, stderr)
+
     def test_runner_contract_envelopes_are_closed(self):
         # §17.7/#46: the four transient role boundaries accept their minimal
         # envelopes, while model-authored sensitivity or write authority has

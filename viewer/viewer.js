@@ -17,7 +17,9 @@ const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 5;
 const ROUTE_TYPES = new Set(["step_of_route", "suggested_next"]);
 const TRAIL_TYPES = new Set(["moved_to", "via", "produced_artifact"]);
-const AUTHORED_TYPES = new Set(["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"]);
+const AUTHORED_TYPES = new Set(["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"]);
+// §10.2/§20.3: the two symmetric types render without an arrowhead.
+const SYMMETRIC_TYPES = new Set(["related_to", "alternative_to"]);
 const STRUCTURAL_TYPES = new Set(["has_part", "overall_concept", "part_of_direction"]);
 const EDGE_FAMILIES = [
   {key: "route", className: "edge-route", label: "routes (hideable)"},
@@ -584,7 +586,7 @@ function makeEdge(edge, positions, nodeById) {
     item.setAttribute("x2", target.x.toFixed(3));
     item.setAttribute("y2", target.y.toFixed(3));
   }
-  if (edge.type !== "related_to") line.setAttribute("marker-end", "url(#arrow)");
+  if (!SYMMETRIC_TYPES.has(edge.type)) line.setAttribute("marker-end", "url(#arrow)");
   const opacity = {"low": 0.45, "medium": 0.7, "high": 1, "unassessed": 0.7}[edge.weight] || 0.7;
   line.setAttribute("stroke-opacity", String(opacity));
   const label = svgElement("text", "edge-label");
@@ -849,7 +851,7 @@ function renderLegend() {
     row.append(sample, htmlElement("span", "", family.label));
     edgesSection.append(row);
   }
-  edgesSection.append(htmlElement("p", "legend-direction", "arrowhead = direction; related_to has none"));
+  edgesSection.append(htmlElement("p", "legend-direction", "arrowhead = direction; related_to and alternative_to have none"));
   legend.append(nodesSection, edgesSection);
 }
 

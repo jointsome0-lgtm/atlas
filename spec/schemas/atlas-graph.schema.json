@@ -124,12 +124,12 @@
     },
     "edgeType": {
       "type": "string",
-      "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"],
+      "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"],
       "description": "Closed edge types transcribed verbatim from §10.2."
     },
     "authoredRole": {
       "type": "string",
-      "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads"],
+      "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads"],
       "description": "Union of authored concept_edges roles transcribed from §9.1, §9.3, §32.1, and the §10.2 matrix."
     },
     "edgeWeight": {
@@ -201,6 +201,7 @@
         "extends": {"$ref": "#/$defs/endConceptPartConcept"},
         "implements": {"$ref": "#/$defs/endPartConcept"},
         "contradicts": {"$ref": "#/$defs/endConceptPartConcept"},
+        "alternative_to": {"$ref": "#/$defs/endConceptConcept"},
         "explains": {"$ref": "#/$defs/endPartConcept"},
         "demonstrates": {"$ref": "#/$defs/endPartConcept"},
         "critiques": {"$ref": "#/$defs/endPartConcept"},
@@ -259,6 +260,7 @@
         "status": {"type": "string"},
         "source_plan": {"type": "string", "pattern": "^plan:[a-z0-9]+(?:-[a-z0-9]+)*$"},
         "attractor": {"type": "string"},
+        "stable_while": {"type": "string", "description": "§9.5/§10.4 (#95): optional authored validity-condition prose embedded without evaluation."},
         "text": {"type": "string"},
         "created_at": {"$ref": "#/$defs/date"},
         "source": {
@@ -345,18 +347,20 @@
         "confidence": {"type": "string", "enum": ["unknown", "low", "medium", "high"], "description": "Confidence annotations transcribe §14.2."},
         "created_by": {"type": "string"},
         "created_at": {"$ref": "#/$defs/date"},
-        "note": {"type": "string"}
+        "note": {"type": "string"},
+        "alternative_in": {"type": "array", "items": {"$ref": "#/$defs/conceptKindRef"}, "description": "§10.3 (#94): optional alternative_to scope annotation; never edge identity, unioned and sorted when duplicates collapse."}
       },
       "required": ["source", "target", "type", "provenance"],
       "additionalProperties": false,
       "allOf": [
-        {"if": {"properties": {"type": {"enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"], "description": "Authored edge species requiring an emitted §14.9 fold weight, transcribed from §10.2–§10.3."}}, "required": ["type"]}, "then": {"required": ["weight"]}},
+        {"if": {"properties": {"type": {"enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"], "description": "Authored edge species requiring an emitted §14.9 fold weight, transcribed from §10.2–§10.3."}}, "required": ["type"]}, "then": {"required": ["weight"]}},
         {"if": {"properties": {"type": {"enum": ["has_part", "overall_concept", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"], "description": "Derived edge types never carry weight (§10.2)."}}, "required": ["type"]}, "then": {"properties": {"weight": false}}},
         {"if": {"properties": {"type": {"const": "step_of_route"}}, "required": ["type"]}, "then": {"required": ["order"]}},
         {"if": {"properties": {"type": {"const": "suggested_next"}}, "required": ["type"]}, "then": {"properties": {"context": {"pattern": "^suggested-route:", "description": "context is the deriving route id (§10.2)."}}, "required": ["context"]}},
         {"if": {"properties": {"type": {"enum": ["primary_for", "supporting_for"], "description": "Route-context material-role edges: step names a route step — a concept-kind id (§9.4, §10.3)."}}, "required": ["type"]}, "then": {"properties": {"step": {"pattern": "^(?:concept:|pattern:)"}}}},
         {"if": {"properties": {"type": {"enum": ["primary_for", "supporting_for"], "description": "Contextual material-role edge types transcribed from §10.2–§10.3."}, "target": {"pattern": "^suggested-route:"}}, "required": ["type", "target"]}, "then": {"required": ["step"]}},
-        {"if": {"properties": {"type": {"const": "related_to"}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/conceptKindRef"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
+        {"if": {"properties": {"type": {"enum": ["related_to", "alternative_to"], "description": "The two symmetric concept-kind rows transcribed from §10.2 and §20.3."}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/conceptKindRef"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
+        {"if": {"properties": {"type": {"enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "supports", "has_part", "overall_concept", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"]}}, "required": ["type"]}, "then": {"properties": {"alternative_in": false}}, "description": "§10.3 (#94): alternative_in is legal only on alternative_to."},
         {"if": {"properties": {"type": {"enum": ["prerequisite_of", "extends", "contradicts"], "description": "Endpoint kinds transcribed from the §10.2 matrix."}}, "required": ["type"]}, "then": {"properties": {"source": {"$ref": "#/$defs/conceptPartRef"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
         {"if": {"properties": {"type": {"enum": ["implements", "explains", "demonstrates", "critiques", "mentions"], "description": "Endpoint kinds transcribed from the §10.2 matrix."}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^part:"}, "target": {"$ref": "#/$defs/conceptKindRef"}}}},
         {"if": {"properties": {"type": {"const": "loads"}}, "required": ["type"]}, "then": {"properties": {"source": {"pattern": "^pattern:"}, "target": {"pattern": "^zone:"}}}},

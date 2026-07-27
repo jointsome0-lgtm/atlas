@@ -22,20 +22,26 @@
         "to": {"$ref": "#/$defs/regionId"},
         "role": {
           "type": "string",
-          "enum": ["related_to", "prerequisite_of", "extends", "contradicts", "loads"],
+          "enum": ["related_to", "prerequisite_of", "extends", "contradicts", "alternative_to", "loads"],
           "description": "Pattern-source authored roles transcribed verbatim from §32.1 and the §10.2 matrix."
         },
         "weight": {
           "type": "string",
           "enum": ["low", "medium", "high"],
           "description": "Authored edge-weight hypotheses transcribed verbatim from §14.9."
+        },
+        "alternative_in": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/conceptId"},
+          "description": "Optional concept-kind scope annotation for alternative_to, transcribed from §10.2–§10.3 (#94)."
         }
       },
       "required": ["to", "role"],
       "additionalProperties": false,
       "allOf": [
         {"if": {"properties": {"role": {"const": "loads"}}, "required": ["role"]}, "then": {"properties": {"to": {"$ref": "#/$defs/zoneId"}}, "description": "§32.1/§10.2: pattern loads edges target zones only."}},
-        {"if": {"properties": {"role": {"enum": ["related_to", "prerequisite_of", "extends", "contradicts"], "description": "Concept-voice roles transcribed from the §10.2 matrix."}}, "required": ["role"]}, "then": {"properties": {"to": {"$ref": "#/$defs/conceptId"}}}}
+        {"if": {"properties": {"role": {"enum": ["related_to", "prerequisite_of", "extends", "contradicts", "alternative_to"], "description": "Concept-voice roles transcribed from the §10.2 matrix."}}, "required": ["role"]}, "then": {"properties": {"to": {"$ref": "#/$defs/conceptId"}}}},
+        {"if": {"properties": {"role": {"enum": ["related_to", "prerequisite_of", "extends", "contradicts", "loads"]}}, "required": ["role"]}, "then": {"properties": {"alternative_in": false}}, "description": "§10.2–§10.3 (#94): alternative_in is legal only on alternative_to."}
       ]
     },
     "zoneId": {"type": "string", "pattern": "^zone:[a-z0-9]+(?:-[a-z0-9]+)*$"},

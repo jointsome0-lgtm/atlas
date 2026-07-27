@@ -61,7 +61,7 @@
         "ref": {"$ref": "#/$defs/edgeRef"},
         "kind": {
           "type": "string",
-          "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"],
+          "enum": ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"],
           "description": "Runner v1 observer subset of the closed §10.2 edge kinds; Body Atlas's loads relation stays gated by #45."
         },
         "source_ref": {"$ref": "#/$defs/nodeRef"},

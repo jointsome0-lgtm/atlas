@@ -82,9 +82,9 @@ lock and a second concurrent run refuses with exit 1 (§25.6).
 Edges are emitted per the §10.2 matrix — the ownership column names the reading surface per type; the builder's endpoint constants transcribe the matrix and cite it, never the reverse (#31).
 
 ```text
-Normalization: related_to is symmetric — endpoints sort
-lexicographically before anything else sees the edge, so
-two-sided authoring becomes one identity.
+Normalization: related_to and alternative_to are symmetric
+(#94) — endpoints sort lexicographically before anything else
+sees the edge, so two-sided authoring becomes one identity.
 Dedup: identity = (type, source, target) plus the §10.2 meta
 discriminant (order / context / step). One identity emits one
 edge; provenance is the union of the collapsed authors' or

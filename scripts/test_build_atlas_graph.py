@@ -627,6 +627,108 @@ class BuilderIntegrationTests(unittest.TestCase):
         self.assertEqual("high", prereqs[0]["weight"])
         self.assertEqual(["concept:a"], prereqs[0]["provenance"])
 
+    def test_alternative_to_emits_from_concept_and_pattern_and_unions_scope(self):
+        # §9.1/§10.2/§10.3/§20.3 (#94): concept-kind authors share the
+        # symmetric alternative_to species. Two-sided authoring collapses,
+        # while alternative_in is annotation unioned and sorted, never
+        # identity; an unauthored annotation stays absent.
+        files = {
+            "concepts/a.md": (
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: pattern:p\n    role: alternative_to\n"
+                "    alternative_in:\n      - concept:z\n"
+                "      - concept:a\n---\n"
+            ),
+            "concepts/b.md": (
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\n---\n"
+            ),
+            "concepts/z.md": (
+                "---\nid: concept:z\ntype: concept\n"
+                "title: Z (Vera Example)\n---\n"
+            ),
+            "patterns/p.md": (
+                "---\nid: pattern:p\ntype: pattern\n"
+                "title: P (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:a\n    role: alternative_to\n"
+                "    alternative_in:\n      - concept:b\n"
+                "      - concept:a\n"
+                "  - to: concept:b\n    role: alternative_to\n---\n"
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative, content in files.items():
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            graph, errors, _ = build_atlas_graph.build(root)
+            self.assertEqual([], errors)
+
+            alternatives = [
+                edge for edge in graph["edges"]
+                if edge["type"] == "alternative_to"
+            ]
+            self.assertEqual(2, len(alternatives))
+            collapsed = next(
+                edge for edge in alternatives
+                if {edge["source"], edge["target"]}
+                == {"concept:a", "pattern:p"}
+            )
+            self.assertEqual(("concept:a", "pattern:p"),
+                             (collapsed["source"], collapsed["target"]))
+            self.assertEqual(["concept:a", "pattern:p"],
+                             collapsed["provenance"])
+            self.assertEqual(["concept:a", "concept:b", "concept:z"],
+                             collapsed["alternative_in"])
+
+            pattern_authored = next(
+                edge for edge in alternatives
+                if {edge["source"], edge["target"]}
+                == {"concept:b", "pattern:p"}
+            )
+            self.assertEqual(["pattern:p"], pattern_authored["provenance"])
+            self.assertNotIn("alternative_in", pattern_authored)
+
+            # The new edge/annotation shape must pass the persisted graph
+            # boundary, including symmetric provenance ownership.
+            out = root / "graph" / "atlas-graph.json"
+            out.parent.mkdir()
+            out.write_text(json.dumps(graph), encoding="utf-8")
+            import validate_atlas
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = validate_atlas.main(["validate", str(root)])
+            self.assertEqual(0, code, stderr.getvalue())
+
+        self.assertIn("alternative_to",
+                      build_atlas_graph.WEAK_HALO_EDGE_TYPES)
+
+    def test_alternative_in_on_other_role_is_a_pointer_named_build_error(self):
+        # §10.3 (#94): the builder mirrors the closed schema even when used
+        # directly, naming the authored file and nested field pointer.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "concepts" / "a.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nconcept_edges:\n"
+                "  - to: concept:b\n    role: prerequisite_of\n"
+                "    alternative_in:\n      - concept:a\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any(
+                str(path) in error
+                and "concept_edges[0].alternative_in" in error
+                and "legal only for role alternative_to" in error
+                for error in errors
+            ),
+            errors,
+        )
+
     def test_concept_cannot_author_part_voice_roles(self):
         # §10.2: mentions is part-voice — not authorable from a concept.
         with tempfile.TemporaryDirectory() as directory:
@@ -660,6 +762,66 @@ class BuilderIntegrationTests(unittest.TestCase):
         self.assertTrue(
             any("not authorable from a material_part source" in error
                 for error in errors), errors)
+
+    def test_part_cannot_author_alternative_to(self):
+        # §10.2 (#94): alternative_to has concept-kind endpoints only.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "materials"
+            base.mkdir(parents=True)
+            (base / "m.md").write_text(
+                "---\nid: material:m\ntype: material\n"
+                "title: M (Vera Example)\nkind: docs\nurl: \"\"\n"
+                "status: active\nparts:\n  - id: part:m/x\n    title: X\n"
+                "    concept_edges:\n      - to: concept:c\n"
+                "        role: alternative_to\n---\n",
+                encoding="utf-8",
+            )
+            _, errors, _ = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any(
+                "role alternative_to" in error
+                and "not authorable from a material_part source" in error
+                for error in errors
+            ),
+            errors,
+        )
+
+    def test_direction_stable_while_embeds_only_when_authored(self):
+        # §9.5/§10.4 (#95): stable_while is optional prose carried to the
+        # direction node without any derived interpretation.
+        files = {
+            "concepts/a.md": (
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\n---\n"
+            ),
+            "directions/stable.md": (
+                "---\nid: direction:stable\ntype: direction\n"
+                "title: Stable (Vera Example)\nstatus: active\n"
+                "attractor: Keep learning\n"
+                "stable_while: The goal remains exploratory.\n"
+                "core_concepts:\n  - concept:a\n---\n"
+            ),
+            "directions/plain.md": (
+                "---\nid: direction:plain\ntype: direction\n"
+                "title: Plain (Vera Example)\nstatus: active\n"
+                "attractor: Learn one thing\n"
+                "core_concepts:\n  - concept:a\n---\n"
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative, content in files.items():
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            graph, errors, _ = build_atlas_graph.build(root)
+        self.assertEqual([], errors)
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        self.assertEqual(
+            "The goal remains exploratory.",
+            nodes["direction:stable"]["stable_while"],
+        )
+        self.assertNotIn("stable_while", nodes["direction:plain"])
 
     def test_two_sided_related_to_collapses_sorted_with_union(self):
         # §20.3: related_to is symmetric — endpoints sort and two-sided

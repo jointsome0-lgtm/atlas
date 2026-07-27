@@ -88,6 +88,8 @@ A dependency suggestion — "to move X, Y is the real lever" — is allowed when
 3. the evidence is cited: the records that make the claim true.
 ```
 
+`alternative_to` is deliberately outside the lever set (#94): "another way toward your anchor" multiplies suggestions rather than naming a dependency, so it never grounds a dependency suggestion.
+
 Unconditional imperatives ("you must"), deficit against external norms, deadlines, and retention mechanics (streaks, rings, loss warnings) remain forbidden regardless of wording (§31.6).
 
 ## §15.4 Deterministic Baseline (v1)

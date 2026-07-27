@@ -13,11 +13,11 @@ export const CEILINGS = {
 
 // Canonical JSON blocks below transcribe the closed atlas-graph schema sets.
 export const ENVELOPE_KEYS = ["format", "version", "generated_at", "nodes", "edges", "trails", "state", "influence", "frontier", "projections", "withheld"];
-export const NODE_KEYS = ["id", "type", "title", "fields", "formerly", "sensitivity", "aliases", "notes", "material", "kind", "url", "status", "source_plan", "attractor", "text", "created_at", "source", "body", "path", "observed_at", "summary", "evidence_strength", "probe", "date", "target", "depth", "mode", "context", "direction", "from", "to", "via", "reason", "resulting_questions"];
-export const EDGE_KEYS = ["source", "target", "type", "provenance", "sensitivity", "weight", "order", "context", "step", "confidence", "created_by", "created_at", "note"];
+export const NODE_KEYS = ["id", "type", "title", "fields", "formerly", "sensitivity", "aliases", "notes", "material", "kind", "url", "status", "source_plan", "attractor", "stable_while", "text", "created_at", "source", "body", "path", "observed_at", "summary", "evidence_strength", "probe", "date", "target", "depth", "mode", "context", "direction", "from", "to", "via", "reason", "resulting_questions"];
+export const EDGE_KEYS = ["source", "target", "type", "provenance", "sensitivity", "weight", "order", "context", "step", "confidence", "created_by", "created_at", "note", "alternative_in"];
 export const NODE_TYPES = ["plan", "concept", "material", "material_part", "direction", "suggested_route", "personal_trail", "trail_segment", "artifact", "encounter", "question", "probe", "zone", "pattern"];
-export const EDGE_TYPES = ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"];
-export const AUTHORED_ROLES = ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "explains", "demonstrates", "critiques", "mentions", "loads"];
+export const EDGE_TYPES = ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "has_part", "overall_concept", "supports", "part_of_direction", "step_of_route", "suggested_next", "visited", "moved_to", "via", "pulled_by", "produced_artifact", "updates_state", "influences", "probed_by", "primary_for", "supporting_for"];
+export const AUTHORED_ROLES = ["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads"];
 export const FIELDS = ["knowledge", "body"];
 export const ID_PREFIXES = {"concept": "concept", "material": "material", "part": "material_part", "direction": "direction", "suggested-route": "suggested_route", "trail-segment": "trail_segment", "personal-trail": "personal_trail", "artifact": "artifact", "encounter": "encounter", "question": "question", "probe": "probe", "plan": "plan", "zone": "zone", "pattern": "pattern"};
 export const MATERIAL_KINDS = ["article", "docs", "paper", "book", "repo", "video", "course", "spec", "tutorial", "internal"];
@@ -34,7 +34,7 @@ export const FRESHNESS_VALUES = ["fresh", "aging", "stale"];
 export const QUESTION_STATUSES = ["open", "clarified", "resolved", "stale"];
 export const LIFECYCLE_STATUSES = ["active", "archived"];
 export const ROUTE_STATUSES = ["available", "hidden", "partially_followed", "ignored", "archived"];
-export const ENDPOINT_RULES = {"related_to": [["concept", "pattern"], ["concept", "pattern"]], "prerequisite_of": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "extends": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "implements": [["material_part"], ["concept", "pattern"]], "contradicts": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "explains": [["material_part"], ["concept", "pattern"]], "demonstrates": [["material_part"], ["concept", "pattern"]], "critiques": [["material_part"], ["concept", "pattern"]], "mentions": [["material_part"], ["concept", "pattern"]], "loads": [["pattern"], ["zone"]], "supports": [["material", "material_part"], ["material", "material_part"]], "has_part": [["material"], ["material_part"]], "overall_concept": [["material"], ["concept", "pattern"]], "part_of_direction": [["concept", "pattern"], ["direction"]], "step_of_route": [["concept", "pattern"], ["suggested_route"]], "suggested_next": [["concept", "pattern"], ["concept", "pattern"]], "probed_by": [["concept", "pattern", "zone"], ["probe"]], "pulled_by": [["concept", "pattern", "zone"], ["question"]], "visited": [["encounter"], ["material", "material_part"]], "influences": [["artifact"], ["concept", "pattern", "zone"]], "updates_state": [["artifact"], ["concept", "pattern", "zone"]], "moved_to": [["concept", "pattern"], ["concept", "pattern"]], "via": [["trail_segment"], ["material", "material_part"]], "produced_artifact": [["trail_segment"], ["artifact"]], "primary_for": [["material", "material_part"], ["suggested_route", "question", "trail_segment"]], "supporting_for": [["material", "material_part"], ["suggested_route", "question", "trail_segment"]]};
+export const ENDPOINT_RULES = {"related_to": [["concept", "pattern"], ["concept", "pattern"]], "prerequisite_of": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "extends": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "implements": [["material_part"], ["concept", "pattern"]], "contradicts": [["concept", "material_part", "pattern"], ["concept", "pattern"]], "alternative_to": [["concept", "pattern"], ["concept", "pattern"]], "explains": [["material_part"], ["concept", "pattern"]], "demonstrates": [["material_part"], ["concept", "pattern"]], "critiques": [["material_part"], ["concept", "pattern"]], "mentions": [["material_part"], ["concept", "pattern"]], "loads": [["pattern"], ["zone"]], "supports": [["material", "material_part"], ["material", "material_part"]], "has_part": [["material"], ["material_part"]], "overall_concept": [["material"], ["concept", "pattern"]], "part_of_direction": [["concept", "pattern"], ["direction"]], "step_of_route": [["concept", "pattern"], ["suggested_route"]], "suggested_next": [["concept", "pattern"], ["concept", "pattern"]], "probed_by": [["concept", "pattern", "zone"], ["probe"]], "pulled_by": [["concept", "pattern", "zone"], ["question"]], "visited": [["encounter"], ["material", "material_part"]], "influences": [["artifact"], ["concept", "pattern", "zone"]], "updates_state": [["artifact"], ["concept", "pattern", "zone"]], "moved_to": [["concept", "pattern"], ["concept", "pattern"]], "via": [["trail_segment"], ["material", "material_part"]], "produced_artifact": [["trail_segment"], ["artifact"]], "primary_for": [["material", "material_part"], ["suggested_route", "question", "trail_segment"]], "supporting_for": [["material", "material_part"], ["suggested_route", "question", "trail_segment"]]};
 
 export const MODES = ["field", "material", "route", "trail", "influence", "state", "frontier", "question"];
 export const DEFAULT_FIELD = FIELDS[0];
@@ -66,7 +66,7 @@ const NODE_PAYLOAD_FIELDS = {
   "material_part": ["material"],
   "material": ["kind", "url", "status"],
   "suggested_route": ["status", "source_plan"],
-  "direction": ["status", "attractor"],
+  "direction": ["status", "attractor", "stable_while"],
   "question": ["text", "created_at", "source"],
   "probe": ["status", "source_plan", "body"],
   "artifact": ["kind", "path", "observed_at", "summary", "evidence_strength", "probe"],
@@ -136,7 +136,7 @@ function validateOptionalNodeProperty(node, key, path) {
     case "formerly": return isStringArray(value, (item) => NODE_ID_RE.test(item));
     case "sensitivity": return SENSITIVITY_CLASSES.includes(value);
     case "aliases": return isStringArray(value);
-    case "notes": case "kind": case "status": case "attractor": case "text":
+    case "notes": case "kind": case "status": case "attractor": case "stable_while": case "text":
     case "body": case "path": case "summary": case "reason": return typeof value === "string";
     case "material": return ref("material:");
     case "url": {
@@ -251,6 +251,16 @@ function validateEdge(edge, index) {
   if (Object.prototype.hasOwnProperty.call(edge, "created_by") && typeof edge.created_by !== "string") return diagnostic(path + "/created_by", "type");
   if (Object.prototype.hasOwnProperty.call(edge, "created_at") && !isCalendarDate(edge.created_at)) return diagnostic(path + "/created_at", "date");
   if (Object.prototype.hasOwnProperty.call(edge, "note") && typeof edge.note !== "string") return diagnostic(path + "/note", "type");
+  if (Object.prototype.hasOwnProperty.call(edge, "alternative_in")) {
+    const conceptKindRef = (item) => (item.startsWith("concept:") || item.startsWith("pattern:")) && NODE_ID_RE.test(item);
+    if (!isStringArray(edge.alternative_in, conceptKindRef)) return diagnostic(path + "/alternative_in", "conceptKindRefs");
+    for (let item = 1; item < edge.alternative_in.length; item += 1) {
+      if (edge.alternative_in[item - 1] >= edge.alternative_in[item]) {
+        return diagnostic(path + "/alternative_in", "canonicalSet");
+      }
+    }
+    if (edge.type !== "alternative_to") return diagnostic(path + "/alternative_in", "forbidden");
+  }
   // §10.2/§10.3: the meta discriminants belong to their matrix rows only —
   // order on step_of_route, context on suggested_next, step on the
   // route-context role edges. Anywhere else they could mint duplicate
@@ -762,12 +772,15 @@ export function validateGraph(value) {
     if (!nodeIds.has(edge.target)) return diagnostic("/edges/" + index + "/target", "danglingEndpoint");
     if (Object.prototype.hasOwnProperty.call(edge, "context") && !nodeIds.has(edge.context)) return diagnostic("/edges/" + index + "/context", "danglingRef");
     if (Object.prototype.hasOwnProperty.call(edge, "step") && !nodeIds.has(edge.step)) return diagnostic("/edges/" + index + "/step", "danglingRef");
+    for (const ref of edge.alternative_in || []) {
+      if (!nodeIds.has(ref)) return diagnostic("/edges/" + index + "/alternative_in", "danglingRef");
+    }
     for (const ref of edge.provenance) {
       if (!nodeIds.has(ref)) return diagnostic("/edges/" + index + "/provenance", "danglingRef");
     }
-    // §20.3: related_to is canonicalized — endpoints sorted before anything
-    // else sees the edge; a reversed pair is a non-canonical emission.
-    if (edge.type === "related_to" && edge.source > edge.target) {
+    // §20.3: related_to and alternative_to are canonicalized — endpoints
+    // sort before anything else sees the edge.
+    if ((edge.type === "related_to" || edge.type === "alternative_to") && edge.source > edge.target) {
       return diagnostic("/edges/" + index, "canonicalOrder");
     }
     // §20.3: one identity emits one edge — duplicates are malformed.
@@ -810,6 +823,7 @@ function projectEdge(edge) {
   for (const key of ["sensitivity", "weight", "order", "context", "step", "confidence", "created_by", "created_at", "note"]) {
     if (Object.prototype.hasOwnProperty.call(edge, key)) projected[key] = edge[key];
   }
+  if (Object.prototype.hasOwnProperty.call(edge, "alternative_in")) projected.alternative_in = [...edge.alternative_in];
   return projected;
 }
 

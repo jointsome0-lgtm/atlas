@@ -632,7 +632,9 @@ _ZONE_ID_RE = re.compile(rf"^zone:{_SLUG}$")
 # name the owning record — the authored species' authoring endpoint (§9.3
 # concept_edges on the source, §9.14 supported_by on the receiving target),
 # a derived species' deriving payload node (§10.2/§10.4 ownership).
-_PROVENANCE_SOURCE_OWNED = (_builder.AUTHORED_ROLES - {"related_to"}) | {
+_PROVENANCE_SOURCE_OWNED = (
+    _builder.AUTHORED_ROLES - _builder.SYMMETRIC_EDGE_TYPES
+) | {
     "overall_concept", "has_part", "visited", "influences",
     "updates_state", "via", "produced_artifact"}
 _PROVENANCE_TARGET_OWNED = {
@@ -1802,6 +1804,28 @@ def validate_instance(root: Path):
                                 f"{path}: edges[{index}].{key} {ref} "
                                 "is not an emitted node id (§10.3)"
                             )
+                    # §10.3 (#94): alternative_in is an optional canonical
+                    # set of concept-kind refs. It is annotation, not an
+                    # identity discriminant, but every ref still resolves in
+                    # the same graph consumed by the viewer.
+                    alternative_in = _as_list(edge.get("alternative_in"))
+                    alternative_refs = [
+                        ref for ref in alternative_in
+                        if isinstance(ref, str)
+                    ]
+                    if (len(alternative_refs) == len(alternative_in)
+                            and alternative_refs
+                            != sorted(set(alternative_refs))):
+                        errors.append(
+                            f"{path}: edges[{index}].alternative_in is not "
+                            "a sorted unique set (§10.3/§20.3)"
+                        )
+                    for ref in alternative_refs:
+                        if ref not in node_ids:
+                            errors.append(
+                                f"{path}: edges[{index}].alternative_in {ref} "
+                                "is not an emitted node id (§10.3)"
+                            )
                     # §10.3: provenance is the derivation basis, not just any
                     # resolvable ids — it must name the record that authored
                     # or derived the edge, or redaction/audit consumers trust
@@ -1823,10 +1847,10 @@ def validate_instance(root: Path):
                             f"{path}: edges[{index}] {etype} provenance must "
                             f"include the {owner_role} {owner} (§10.3)"
                         )
-                    elif etype == "related_to" and prov and not (
+                    elif etype in _builder.SYMMETRIC_EDGE_TYPES and prov and not (
                             prov & {edge.get("source"), edge.get("target")}):
                         errors.append(
-                            f"{path}: edges[{index}] related_to provenance "
+                            f"{path}: edges[{index}] {etype} provenance "
                             "must include an authoring endpoint (§10.3)"
                         )
                     # moved_to's owning segment is not an endpoint: its
@@ -1945,16 +1969,15 @@ def validate_instance(root: Path):
                                     f"carries {key} — not this type's §10.2 "
                                     "meta discriminant (§20.3)"
                                 )
-                        # §20.3: related_to is the one symmetric type —
-                        # persisted edges carry the canonical sorted
-                        # endpoints, and identity uses the sorted pair so a
-                        # reversed duplicate cannot sit beside the canonical
-                        # spelling.
+                        # §20.3: related_to and alternative_to are symmetric
+                        # — persisted edges carry canonical sorted endpoints,
+                        # and identity uses the sorted pair so a reversed
+                        # duplicate cannot sit beside the canonical spelling.
                         source, target = edge["source"], edge["target"]
-                        if edge["type"] == "related_to":
+                        if edge["type"] in _builder.SYMMETRIC_EDGE_TYPES:
                             if target < source:
                                 errors.append(
-                                    f"{path}: edges[{index}] related_to "
+                                    f"{path}: edges[{index}] {edge['type']} "
                                     f"endpoints {source} -> {target} are "
                                     "not sorted (§20.3)"
                                 )

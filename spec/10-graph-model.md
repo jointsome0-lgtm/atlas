@@ -63,6 +63,7 @@ prerequisite_of
 extends
 implements
 contradicts
+alternative_to
 explains
 demonstrates
 critiques
@@ -95,6 +96,7 @@ related_to        | concept, pattern       | concept, pattern       | authored: 
 prerequisite_of   | concept, part, pattern | concept, pattern       | authored: concept_edges (§9.1, §9.3, §32.1)
 extends           | concept, part, pattern | concept, pattern       | authored: concept_edges (§9.1, §9.3, §32.1)
 contradicts       | concept, part, pattern | concept, pattern       | authored: concept_edges (§9.1, §9.3, §32.1)
+alternative_to    | concept, pattern       | concept, pattern       | authored: concept_edges (§9.1, §32.1); concept-kind only — a part is never "an alternative to" a concept (#94)
 implements        | part                   | concept, pattern       | authored: concept_edges (§9.3)
 explains          | part                   | concept, pattern       | authored: concept_edges (§9.3)
 demonstrates      | part                   | concept, pattern       | authored: concept_edges (§9.3)
@@ -123,7 +125,9 @@ Rules:
 
 ```text
 Direction is real: a→b / b→a coexist as independent edges for
-every type except related_to — the one symmetric type;
+every type except the two symmetric types — related_to and
+alternative_to (alternatives don't disagree, and neither side
+is primary; #94);
 canonicalization, identity/dedup, weight-conflict errors, and
 cycle handling are §20.3's.
 Weight exists on the authored species only, per the §14.9 chain;
@@ -170,7 +174,10 @@ step_of_route, context on suggested_next, step on route-context
 primary_for/supporting_for — the meta discriminants are part of
 edge identity.
 Everything else (created_by, created_at, confidence, the §9.14
-note) is optional annotation.
+note, alternative_to's alternative_in — the concept-kind ids
+the substitution holds for; annotation, never identity, unioned and
+sorted like provenance when duplicates collapse; #94) is
+optional annotation.
 ```
 
 ## §10.4 Per-kind Node Contract
@@ -188,7 +195,7 @@ zone            | registry (§10.1)                     | notes (file body: care
 material_part   | concept_edges targets                | material (parent id)
 material        | overall_concepts ∪ its parts' fields | kind, url, status
 suggested_route | steps                                | status, source_plan, sensitivity (§33.3)
-direction       | core_concepts                        | status, attractor
+direction       | core_concepts                        | status, attractor, stable_while
 question        | pulls                                | text, created_at, source
 probe           | probed targets (concepts:)           | status, source_plan, body (the check, §9.11)
 artifact        | touches ∪ supports_state_updates     | kind (authored type:, renamed — type is

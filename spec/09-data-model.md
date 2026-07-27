@@ -28,7 +28,7 @@ concept_edges:
 
 Concept files carry identity, links, and content only: understanding state is derived at build time from the `state/` journals (§8, §20) and moves only per §14; material roles live on contextual edges only (§11). `aliases` is search vocabulary; a retired id lives in `formerly:` (§34.4), never in `aliases`.
 
-Concepts are the one authored edge species' third author (#31): the same `concept_edges:` block parts (§9.3) and patterns (§32.1) carry. Roles legal from a concept source: `related_to`, `prerequisite_of`, `extends`, `contradicts` (§10.2 matrix) — the structural concept→concept edges the honest-lever rule presupposes (§15.3). `related_concepts` stays as sugar for `role: related_to` with no weight; an authored `weight` is the §14.9 hypothesis, gated like every other.
+Concepts are the one authored edge species' third author (#31): the same `concept_edges:` block parts (§9.3) and patterns (§32.1) carry. Roles legal from a concept source: `related_to`, `prerequisite_of`, `extends`, `contradicts`, `alternative_to` (§10.2 matrix) — the structural concept→concept edges the honest-lever rule draws on (§15.3; `alternative_to` is deliberately not a lever type). `alternative_to` names substitutable approaches — alternatives don't disagree, so `contradicts` is not its substitute (#94); it is symmetric like `related_to` (§20.3) and may carry `alternative_in:` — the concept-kind ids the substitution holds for — as optional annotation (§10.3). `related_concepts` stays as sugar for `role: related_to` with no weight; an authored `weight` is the §14.9 hypothesis, gated like every other.
 
 Body:
 
@@ -216,6 +216,9 @@ status: active
 attractor: >
   Understand how backend systems coordinate HTTP APIs,
   caches, event logs, task queues, RPC services, and integration tests.
+stable_while: >
+  The goal remains understanding how these systems fit together,
+  not completing a fixed curriculum.
 core_concepts:
   - concept:rest-api
   - concept:redis
@@ -228,6 +231,8 @@ core_concepts:
 
 A direction is not a route.
 It is a compass.
+
+`stable_while` (optional) is the direction's falsifiable validity condition — the assumptions under which the direction remains a direction; it is the documented reason a hand edit would flip `status: active` (#95). Like the §9.11 check body it is prose for the user, never evaluated: no build derives a validity boolean from it, no clock decays it (§14.7 runs over regions and materials, not directions), and it informs frontier wording only through the user's own reading — it never qualifies an item (§15.2).
 
 ---
 
@@ -475,7 +480,7 @@ medium ← open questions' pulls (a question whose derived status
          material's concept_edges and overall_concepts)
 weak   ← one authored hop from any strong/medium node over
          related_to | prerequisite_of | extends | contradicts |
-         loads — never further
+         alternative_to | loads — never further (#94)
 ```
 
 Combining is ordinal max — no counting, no numeric scores (§4, §19). `sources` is the explicit deduplicated set of contributing records; a weak node inherits the record whose halo reached it, so the claim stays citable (§25.3). Influence `freshness` is §14.7 over the newest source date against the build as-of (#34). The mapping is a v1 floor to tune after real trail data; any change bumps through the Decision Log.
