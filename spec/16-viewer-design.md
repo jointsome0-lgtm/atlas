@@ -61,25 +61,25 @@ State:
 ```text
 node border or badge
 confidence/clarity/exposure visible
-Monotone dimensions (exposure §14.1, depth_reached §14.8,
-freshness §14.7) and review-gated ones (§14.6, §14.9) never
-share one visual value: a no-decision value is never a point on
-a continuous scale — silence must not read as an assertion.
-Whether it renders as absence or as its own mark is a design
-choice, not a canon one.
-Freshness joins this block as the three §14.7 classes (fresh,
-aging, stale), never as continuous decay: the picture asserts
-no more than the data, and a stale node is an invitation, never
-an obligation (§14.7, §25.4). It follows §32.2's severity
+Dimensions that move without a decision (exposure §14.1,
+depth_reached §14.8, freshness §14.7) and review-gated ones
+(§14.6, §14.9) never share one visual value: a no-decision
+value is never a point on a continuous scale — silence must not
+read as an assertion. Whether it renders as absence or as its
+own mark is a design choice, not a canon one.
+Freshness joins this block as its §14.7 classes, never as
+continuous decay: the picture asserts no more than the data,
+and a stale node is an invitation, never an obligation (§14.7,
+§25.4). It follows §32.2's severity
 precedent — recessive, never an alarm — and §27.8's rule that
 state is distinguishable without colour alone, so opacity alone
 is not the encoding. Aging against the viewer's own as-of
 (§14.7) stays out: acceptance pins freshness to the build's
 as-of, and changing that is its own decision.
 No route- or field-level aggregate: per-node state only — no
-counts, no proportions, no progress bars, no completion (§4).
-A course's completion is activity semantics and belongs to the
-system that owns the activity.
+counts, no proportions, and never understanding as measurement
+(§4). A course's completion is activity semantics and belongs
+to the system that owns the activity.
 ```
 
 Support:
