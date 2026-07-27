@@ -287,7 +287,7 @@ const CONCEPT_GATED_DEFAULTS = {
 };
 const QUESTION_GATED_DEFAULTS = {"status": QUESTION_STATUSES[0]};
 // §14.5 upper bound only: the producer fold additionally weighs link kind
-// and journal order/dates that the emitted state does not repeat.
+// and same-day journal position that the emitted state does not repeat.
 const ARTIFACT_EXPOSURE_RANK = {
   "noticed": 1,
   "read": 2,
@@ -466,10 +466,18 @@ function validateStateEntry(entry, nodeType, nodesById, asOf) {
     if (!ENCOUNTER_DEPTHS.includes(entry.depth_reached)) return diagnostic(path, "depth");
     if (!isCalendarDate(entry.last_seen)) return diagnostic(path, "lastSeen");
     if (!isEvidenceArray(entry.evidence, ["encounter"], 1)) return diagnostic(path, "evidence");
-    const hasEncounter = entry.evidence.some(
-      (ref) => nodesById.get(ref)?.type === "encounter",
-    );
-    if (!hasEncounter) return diagnostic(path + "/evidence", "emittedEncounter");
+    const encounterDates = entry.evidence.flatMap((ref) => {
+      const node = nodesById.get(ref);
+      return node?.type === "encounter" ? [node.date] : [];
+    });
+    if (encounterDates.length === 0) {
+      return diagnostic(path + "/evidence", "emittedEncounter");
+    }
+    if (entry.last_seen !== encounterDates.reduce(
+      (latest, date) => date > latest ? date : latest,
+    )) {
+      return diagnostic(path + "/last_seen", "materialLastSeen");
+    }
     if (ENCOUNTER_DEPTHS.indexOf(entry.depth_reached)
         > depthCeiling(entry.evidence, nodesById)) {
       return diagnostic(path + "/evidence", "depthCeiling");
@@ -481,6 +489,17 @@ function validateStateEntry(entry, nodeType, nodesById, asOf) {
     if (!isEvidenceArray(entry.evidence, ["artifact", "encounter", "question"])) return diagnostic(path, "evidence");
     const decisionFailure = validateDecisionReferences(entry.decisions, ["status"], path);
     if (decisionFailure) return decisionFailure;
+    const statusReference = entry.decisions.find(
+      (reference) => reference.dimension === "status",
+    );
+    const statusEvidence = statusReference === undefined
+      ? [] : statusReference.evidence;
+    if (entry.evidence.length !== statusEvidence.length
+        || entry.evidence.some(
+          (reference, index) => reference !== statusEvidence[index],
+        )) {
+      return diagnostic(path + "/evidence", "statusEvidenceJoin");
+    }
     const statusEvidenceFailure = validateStatusEvidence(entry, nodesById, path);
     if (statusEvidenceFailure) return statusEvidenceFailure;
     const gateFailure = validateReviewGates(entry, QUESTION_GATED_DEFAULTS, path);

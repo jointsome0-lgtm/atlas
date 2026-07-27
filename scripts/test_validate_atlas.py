@@ -1892,18 +1892,25 @@ class SchemaValidatorTests(unittest.TestCase):
         script_id = "artifact:demo-retry-script"
         cases = {
             "resolved-artifact": (
-                "resolved", [script_id], 0, None),
+                "resolved", [script_id], [script_id], 0, None),
+            "resolved-divergent-provenance": (
+                "resolved", [], [script_id], 1,
+                "evidence that differs from its status decision"),
             "resolved-question-record": (
-                "resolved", [question_id], 1,
+                "resolved", [question_id], [question_id], 1,
                 "outside the §9.8 outcome restriction"),
             "stale-resolved-script": (
-                "stale", [script_id], 1,
+                "stale", [script_id], [script_id], 1,
                 "without the user's own note"),
             # §20.1: the decision survives evidence outside the graph cut.
             "stale-dangling-artifact": (
-                "stale", ["artifact:missing-note"], 0, None),
+                "stale", ["artifact:missing-note"],
+                ["artifact:missing-note"], 0, None),
+            "open-with-evidence-but-no-decision": (
+                "open", [script_id], None, 1,
+                "evidence that differs from its status decision"),
         }
-        for name, (status, evidence, expected_code,
+        for name, (status, evidence, decision_evidence, expected_code,
                    expected) in cases.items():
             graph = json.loads(
                 (ROOT / "fixtures/demo-graph/atlas-graph.json").read_text(
@@ -1911,10 +1918,10 @@ class SchemaValidatorTests(unittest.TestCase):
             graph["state"][question_id] = {
                 "status": status,
                 "evidence": evidence,
-                "decisions": [{
+                "decisions": [] if decision_evidence is None else [{
                     "dimension": "status",
                     "date": "2026-07-10",
-                    "evidence": evidence,
+                    "evidence": decision_evidence,
                 }],
             }
             with self.subTest(case=name), \
@@ -2620,6 +2627,66 @@ class SchemaValidatorTests(unittest.TestCase):
         self.assertIn(
             "material state with no emitted encounter evidence", stderr
         )
+
+    def test_material_last_seen_is_latest_resolved_cited_encounter(self):
+        material = {
+            "id": "material:example",
+            "type": "material",
+            "title": "Example material (Vera Example)",
+            "fields": [],
+            "kind": "docs",
+            "url": "",
+            "status": "active",
+        }
+        encounters = [
+            {
+                "id": f"encounter:{name}",
+                "type": "encounter",
+                "title": "",
+                "fields": [],
+                "date": date,
+                "target": material["id"],
+                "depth": depth,
+                "mode": "background",
+            }
+            for name, date, depth in (
+                ("first", "2026-07-15", "read"),
+                ("second", "2026-07-16", "applied"),
+            )
+        ]
+        for name, last_seen, expected_code in (
+                ("older-contact", "2026-07-15", 1),
+                ("latest-contact", "2026-07-16", 0)):
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [material, *encounters]
+            graph["edges"] = [
+                {
+                    "source": item["id"],
+                    "target": material["id"],
+                    "type": "visited",
+                    "provenance": [item["id"]],
+                }
+                for item in encounters
+            ]
+            graph["state"] = {
+                material["id"]: {
+                    "depth_reached": "applied",
+                    "last_seen": last_seen,
+                    "evidence": [item["id"] for item in encounters],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "last_seen other than its latest cited encounter", stderr
+                )
 
     def test_emitted_journal_nodes_are_bounded_by_graph_as_of(self):
         # Keep exposure_ceiling an upper bound: the independent §20.1 graph

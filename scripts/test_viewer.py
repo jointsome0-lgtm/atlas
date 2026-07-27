@@ -359,6 +359,19 @@ class ViewerBrowserTests(unittest.TestCase):
         })
         cases["status-cites-question-creation"] = graph
 
+        graph = self.graph_envelope(nodes=[question])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][question["id"]].update({
+            "status": "resolved",
+            "evidence": [],
+            "decisions": [{
+                "dimension": "status",
+                "date": "2026-07-16",
+                "evidence": [artifact["id"]],
+            }],
+        })
+        cases["status-evidence-diverges-from-decision"] = graph
+
         graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
         graph["state"]["question:demo-when-is-retry-safe"] = {
             "status": "stale",
@@ -420,6 +433,15 @@ class ViewerBrowserTests(unittest.TestCase):
             "evidence": [encounter["id"]],
         }
         cases["depth-exceeds-encounter"] = graph
+
+        graph = self.graph_envelope(nodes=[material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "applied",
+            "last_seen": "2026-07-15",
+            "evidence": [encounter["id"]],
+        }
+        cases["material-last-seen-predates-cited-encounter"] = graph
 
         graph = self.graph_envelope(nodes=[material])
         graph["generated_at"] = "2026-07-16T00:00:00Z"

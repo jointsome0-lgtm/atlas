@@ -706,7 +706,8 @@ def _state_status_evidence_errors(
 
 
 def _review_gate_errors(entry: dict, path: Path, position: int,
-                        as_of: str | None, nodes: dict) -> list[str]:
+                        as_of: str | None, nodes: dict,
+                        node_type: str | None) -> list[str]:
     """§14.5–§14.7/§9.8: a gated value moves only by a reviewed decision and
     never carries two competing references, a ladder moves only on recorded
     evidence, and freshness is a derivation against the fold as-of. The
@@ -718,9 +719,9 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
     # §14.5/§14.8: the ladders move on recorded artifact or encounter
     # evidence, so only a first value can stand uncited — and the cited
     # records must be able to reach the asserted rung. The ceiling is an
-    # upper bound (the fold also weighs link kind and dates the emission
-    # does not repeat), which is exactly what rejects imported
-    # understanding without second-guessing a real fold (§31.3).
+    # upper bound (the fold also weighs link kind and same-day journal
+    # position the emission does not repeat), which is exactly what rejects
+    # imported understanding without second-guessing a real fold (§31.3).
     ladders = (
         # `unseen` is the one rung standing for no contact at all; material
         # state exists only because an encounter created it, so its first
@@ -758,6 +759,40 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
             errors.append(
                 f"{path}: /state property #{position} asserts {dimension} "
                 "beyond what its cited evidence can reach (§14.5/§14.8)"
+            )
+    if node_type in {"material", "material_part"}:
+        encounter_dates = []
+        for ref in _as_list(entry.get("evidence")):
+            if not isinstance(ref, str):
+                continue
+            node = nodes.get(ref)
+            if not isinstance(node, dict) or node.get("type") != "encounter":
+                continue
+            date = node.get("date")
+            if isinstance(date, str) and _is_calendar_date(date):
+                encounter_dates.append(date)
+        if (encounter_dates
+                and isinstance(entry.get("last_seen"), str)
+                and entry["last_seen"] != max(encounter_dates)):
+            errors.append(
+                f"{path}: /state property #{position} carries material "
+                "last_seen other than its latest cited encounter (§14.8)"
+            )
+    elif node_type == "question":
+        reference = next((
+            item for item in _as_list(entry.get("decisions"))
+            if isinstance(item, dict) and item.get("dimension") == "status"
+        ), None)
+        state_evidence = entry.get("evidence")
+        decision_evidence = (
+            [] if reference is None else reference.get("evidence")
+        )
+        if (isinstance(state_evidence, list)
+                and isinstance(decision_evidence, list)
+                and state_evidence != decision_evidence):
+            errors.append(
+                f"{path}: /state property #{position} carries question "
+                "evidence that differs from its status decision (§9.8)"
             )
     exposure = entry.get("exposure")
     if (isinstance(exposure, str)
@@ -1575,7 +1610,7 @@ def validate_instance(root: Path):
                     if isinstance(state_entry, dict):
                         errors.extend(_review_gate_errors(
                             state_entry, path, position, graph_as_of,
-                            nodes_by_id))
+                            nodes_by_id, node_type))
                 # §14.6/§9.8 make every gated value review-gated, and §20
                 # step 9 makes the fold total over the kinds that carry a
                 # default: a concept is at worst `unseen`/no-knowledge and a
