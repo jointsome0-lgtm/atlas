@@ -286,11 +286,12 @@ MATERIAL_DEPTH = ("skim", "read", "summarized", "applied", "taught")
 
 def exposure_ceiling(evidence_ids, nodes) -> int:
     """§14.5: the highest exposure rank the cited records could produce —
-    an upper bound, because the fold also depends on link kind and dates
-    the emission does not repeat. The boundary uses it to reject an
-    exposure no cited evidence can support (§31.3)."""
+    an upper bound, because the fold also depends on link kind and same-day
+    journal position the emission does not repeat. The boundary uses it to
+    reject an exposure no cited evidence can support (§31.3)."""
     ceiling = 0
-    strengths = set()
+    explanations: list[str] = []
+    reviews: list[str] = []
     for ref in evidence_ids:
         if not isinstance(ref, str):
             continue
@@ -304,12 +305,19 @@ def exposure_ceiling(evidence_ids, nodes) -> int:
             # never feed an unhashable rejected value to set/dict lookup.
             if not isinstance(strength, str):
                 continue
-            strengths.add(strength)
+            observed_at = node.get("observed_at")
+            if isinstance(observed_at, str):
+                if strength == "explained":
+                    explanations.append(observed_at)
+                elif strength == "reviewed":
+                    reviews.append(observed_at)
             ceiling = max(ceiling, ARTIFACT_EXPOSURE_RANK.get(strength, 0))
         elif node.get("type") == "encounter":
             # A skim is contact; read or deeper is capped at read (§14.5).
             ceiling = max(ceiling, 1 if node.get("depth") == "skim" else 2)
-    if {"explained", "reviewed"} <= strengths:
+    # Cross-day order is repeated by the emitted artifact dates. Same-day
+    # position is not, so equality remains an intentional upper-bound case.
+    if explanations and reviews and max(reviews) >= min(explanations):
         ceiling = len(CONCEPT_EXPOSURE) - 1
     return ceiling
 

@@ -2062,6 +2062,66 @@ class SchemaValidatorTests(unittest.TestCase):
                 self.assertIn("beyond what its cited evidence can reach",
                               stderr)
 
+    def test_taught_ceiling_uses_observable_review_chronology(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+
+        def artifact(node_id, date, strength):
+            return {
+                "id": node_id,
+                "type": "artifact",
+                "title": "",
+                "fields": [],
+                "kind": "note",
+                "path": "notes/example.md",
+                "observed_at": date,
+                "summary": "Synthetic chronology fixture (Vera Example).",
+                "evidence_strength": strength,
+            }
+
+        for name, explained_on, reviewed_on, expected_code in (
+                ("review-before", "2026-07-16", "2026-07-15", 1),
+                # Same-day journal position is absent from the graph, so the
+                # boundary deliberately keeps this as an upper-bound case.
+                ("same-day", "2026-07-16", "2026-07-16", 0),
+                ("review-after", "2026-07-15", "2026-07-16", 0)):
+            explained = artifact(
+                "artifact:explained", explained_on, "explained")
+            reviewed = artifact(
+                "artifact:reviewed", reviewed_on, "reviewed")
+            last_seen = max(explained_on, reviewed_on)
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = f"{last_seen}T00:00:00Z"
+            graph["nodes"] = [concept, explained, reviewed]
+            graph["state"] = {
+                concept["id"]: {
+                    "exposure": "taught",
+                    "confidence": "unknown",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "last_seen": last_seen,
+                    "freshness": "fresh",
+                    "evidence": [explained["id"], reviewed["id"]],
+                    "decisions": [],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "beyond what its cited evidence can reach", stderr
+                )
+
     def test_malformed_exposure_strength_reports_without_a_traceback(self):
         # §24.4: schema-invalid graph values still reach the semantic joins,
         # which must preserve the ordinary prefixed report. Lists and

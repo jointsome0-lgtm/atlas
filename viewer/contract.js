@@ -374,12 +374,17 @@ function validateStateAsOf(entry, asOf, path) {
 
 function exposureCeiling(evidence, nodesById) {
   let ceiling = 0;
-  const strengths = new Set();
+  const explanations = [];
+  const reviews = [];
   for (const ref of evidence) {
     const node = nodesById.get(ref);
     if (!node) continue;
     if (node.type === "artifact") {
-      strengths.add(node.evidence_strength);
+      if (node.evidence_strength === "explained") {
+        explanations.push(node.observed_at);
+      } else if (node.evidence_strength === "reviewed") {
+        reviews.push(node.observed_at);
+      }
       ceiling = Math.max(
         ceiling, ARTIFACT_EXPOSURE_RANK[node.evidence_strength] ?? 0,
       );
@@ -387,7 +392,14 @@ function exposureCeiling(evidence, nodesById) {
       ceiling = Math.max(ceiling, node.depth === "skim" ? 1 : 2);
     }
   }
-  if (strengths.has("explained") && strengths.has("reviewed")) {
+  // Dates prove cross-day order; same-day journal position is intentionally
+  // absent from this upper bound and therefore remains admissible.
+  if (explanations.length > 0 && reviews.length > 0
+      && reviews.some(
+        (reviewedOn) => explanations.some(
+          (explainedOn) => reviewedOn >= explainedOn,
+        ),
+      )) {
     ceiling = CONCEPT_EXPOSURES.length - 1;
   }
   return ceiling;

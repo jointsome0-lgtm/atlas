@@ -430,6 +430,29 @@ class ViewerBrowserTests(unittest.TestCase):
         }
         cases["material-cites-no-emitted-encounter"] = graph
 
+        explained = {
+            **artifact,
+            "id": "artifact:explained",
+            "observed_at": "2026-07-16",
+            "evidence_strength": "explained",
+        }
+        reviewed_before = {
+            **artifact,
+            "id": "artifact:reviewed",
+            "observed_at": "2026-07-15",
+            "evidence_strength": "reviewed",
+        }
+        graph = self.graph_envelope(
+            nodes=[concept, explained, reviewed_before])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "taught",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [explained["id"], reviewed_before["id"]],
+        })
+        cases["taught-review-predates-explanation"] = graph
+
         for name, impossible in cases.items():
             with self.subTest(case=name):
                 self.write_graph(impossible)
@@ -448,6 +471,24 @@ class ViewerBrowserTests(unittest.TestCase):
                 "evidence": ["artifact:missing-note"],
             }],
         }
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+
+        # Cross-day order is knowable from emitted nodes, but same-day
+        # journal position is not; keep the latter as an upper-bound case.
+        reviewed_same_day = {
+            **reviewed_before,
+            "observed_at": "2026-07-16",
+        }
+        graph = self.graph_envelope(
+            nodes=[concept, explained, reviewed_same_day])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "taught",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [explained["id"], reviewed_same_day["id"]],
+        })
         self.write_graph(graph)
         self.open_state("#mode=field", "FIELD")
 
