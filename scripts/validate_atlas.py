@@ -969,15 +969,17 @@ def _reproposal_errors(row, path, rejected, known_targets, retired) -> list[str]
         target,
         dimension,
         proposed,
-        tuple(sorted(set(evidence))),
     )
-    if identity in rejected:
+    evidence_set = frozenset(evidence)
+    if any(
+            evidence_set <= rejected_evidence
+            for rejected_evidence in rejected.get(identity, ())):
         return [
             f"{path}: a rejected proposal cannot be re-proposed without "
             "new evidence (§14.6/§9.13)"
         ]
     if outcome == "rejected":
-        rejected.add(identity)
+        rejected.setdefault(identity, []).append(evidence_set)
     return []
 
 
@@ -1331,7 +1333,9 @@ def validate_instance(root: Path):
     if has_state:
         artifact_kinds: dict[str, str] = {}
         known_decision_targets = set(living)
-        rejected_proposals: set[tuple] = set()
+        rejected_proposals: dict[
+            tuple[str, str, str], list[frozenset[str]]
+        ] = {}
         decision_records: list[tuple[str, int, dict, str]] = []
         decision_position = 0
         for stem, schema_name in JOURNALS.items():

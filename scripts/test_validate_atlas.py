@@ -2499,6 +2499,39 @@ class SchemaValidatorTests(unittest.TestCase):
             "cannot be re-proposed without new evidence", stderr
         )
 
+    def test_reproposal_preflight_requires_an_added_citation(self):
+        def decision(date, evidence, outcome):
+            return json.dumps({
+                "date": date,
+                "target": "concept:example",
+                "dimension": "confidence",
+                "to": "high",
+                "evidence": evidence,
+                "proposed_by": "state-auditor",
+                "decision": outcome,
+            }) + "\n"
+
+        first = ["artifact:first-note", "artifact:second-note"]
+        for name, later, expected_code in (
+                ("removed-only", ["artifact:first-note"], 1),
+                ("added-third",
+                 ["artifact:first-note", "artifact:third-note"], 0)):
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "atlas/concepts/example.md": VALID_CONCEPT,
+                    "state/decisions.jsonl": (
+                        decision("2026-07-15", first, "rejected")
+                        + decision("2026-07-16", later, "confirmed")
+                    ),
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "cannot be re-proposed without new evidence", stderr
+                )
+
     def test_material_state_requires_emitted_encounter_evidence(self):
         graph = json.loads(VALID_EMPTY_GRAPH)
         graph["generated_at"] = "2026-07-16T00:00:00Z"

@@ -476,6 +476,29 @@ class ViewerBrowserTests(unittest.TestCase):
         self.write_graph(graph)
         self.open_state("#mode=field", "FIELD")
 
+    def test_dated_nodes_require_and_obey_graph_as_of(self):
+        demo = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        dated_fields = {
+            "artifact": "observed_at",
+            "encounter": "date",
+            "question": "created_at",
+            "trail_segment": "date",
+        }
+        for node_type, field in dated_fields.items():
+            source = next(
+                node for node in demo["nodes"] if node["type"] == node_type)
+            for case, generated_at in (
+                    ("missing-as-of", None),
+                    ("after-as-of", "2026-07-08T00:00:00Z")):
+                node = json.loads(json.dumps(source))
+                graph = self.graph_envelope(nodes=[node])
+                if generated_at is not None:
+                    graph["generated_at"] = generated_at
+                with self.subTest(
+                        node_type=node_type, field=field, case=case):
+                    self.write_graph(graph)
+                    self.open_state("#mode=field", "REJECTED")
+
     def test_bom_crlf_and_withheld_reject_whole(self):
         clean = json.dumps(self.graph_envelope(), ensure_ascii=False)
         self.graph_path.write_bytes(b"\xef\xbb\xbf" + clean.encode("utf-8"))

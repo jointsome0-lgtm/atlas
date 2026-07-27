@@ -2733,6 +2733,41 @@ class StateFoldTests(unittest.TestCase):
             errors,
         )
 
+    def test_reproposal_requires_an_added_evidence_citation(self):
+        evidence = [
+            self._artifact("artifact:first-note", "2026-01-01", "noticed"),
+            self._artifact("artifact:second-note", "2026-01-02", "noticed"),
+            self._artifact("artifact:third-note", "2026-01-03", "noticed"),
+        ]
+        rejected_evidence = [evidence[0]["id"], evidence[1]["id"]]
+        for name, later_evidence, expected, has_error in (
+                ("removed-only", [evidence[0]["id"]], "unknown", True),
+                ("added-third", [evidence[0]["id"], evidence[2]["id"]],
+                 "high", False)):
+            decisions = [
+                self._decision(
+                    "2026-02-01", "concept:c", "confidence", "high",
+                    rejected_evidence, decision="rejected"),
+                self._decision(
+                    "2026-02-02", "concept:c", "confidence", "high",
+                    later_evidence),
+            ]
+            with self.subTest(case=name), _materialize({
+                "concepts/c.md": _CONCEPT % ("c", "C"),
+                "state/artifacts.jsonl": self._jsonl(evidence),
+                "state/decisions.jsonl": self._jsonl(decisions),
+            }) as directory:
+                graph, errors, _ = build_atlas_graph.build(Path(directory))
+
+            self.assertEqual(
+                expected, graph["state"]["concept:c"]["confidence"])
+            self.assertEqual(
+                has_error,
+                any("cannot be re-proposed without new evidence" in error
+                    for error in errors),
+                errors,
+            )
+
     def test_explicit_as_of_bounds_the_fold_but_keeps_in_cut_decision(self):
         early = self._artifact(
             "artifact:2026-01-01-001", "2026-01-01", "noticed",

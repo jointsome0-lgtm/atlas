@@ -75,6 +75,12 @@ const NODE_PAYLOAD_FIELDS = {
   "personal_trail": ["direction"],
   "plan": []
 };
+const DATED_NODE_FIELDS = {
+  "artifact": "observed_at",
+  "encounter": "date",
+  "question": "created_at",
+  "trail_segment": "date",
+};
 
 function isPlainObject(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -592,6 +598,13 @@ export function validateGraph(value) {
   for (let index = 0; index < value.nodes.length; index += 1) {
     const failure = validateNode(value.nodes[index], index);
     if (failure) return failure;
+    const datedField = DATED_NODE_FIELDS[value.nodes[index].type];
+    if (datedField !== undefined) {
+      if (graphAsOf === null) return diagnostic("/generated_at", "nodeAsOfRequired");
+      if (value.nodes[index][datedField] > graphAsOf) {
+        return diagnostic("/nodes/" + index + "/" + datedField, "nodeAfterAsOf");
+      }
+    }
     // One id, one node (§10.1): the builder errors on duplicates, so a
     // repeated id is a malformed file — focus and details must never
     // resolve ambiguously (§16.5).

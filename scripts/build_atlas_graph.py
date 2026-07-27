@@ -1910,7 +1910,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     # same-day ties resolve by physical journal position. Rejections do not
     # move state and therefore never replace a confirmed winner.
     decision_winners: dict[tuple[str, str], tuple] = {}
-    rejected_proposals: set[tuple] = set()
+    rejected_proposals: dict[tuple[str, str, str], list[frozenset[str]]] = {}
     for position, origin, row, row_date in sorted(
             decision_records,
             key=lambda record: fold_order_key(record[3], record[0])):
@@ -1957,23 +1957,27 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                     f"{origin}: /evidence for a user self-proposal must cite "
                     "the user's own note (§9.13)")
                 continue
-        # §14.6/§9.13: a rejection is durable memory. Proposal identity is
-        # semantic — resolved target, dimension, proposed value, evidence
-        # set — so reordering the same citations cannot manufacture novelty.
+        # §14.6/§9.13: a rejection is durable memory. The proposal is the
+        # resolved target/dimension/value; retrying it requires at least one
+        # citation outside every evidence set that already supported a
+        # rejection. Reordering or removing citations is not new evidence.
         proposal = (
             target,
             dimension,
             row["to"],
-            tuple(sorted(set(row["evidence"]))),
         )
-        if proposal in rejected_proposals:
+        proposal_evidence = frozenset(row["evidence"])
+        if any(
+                proposal_evidence <= rejected_evidence
+                for rejected_evidence in rejected_proposals.get(proposal, ())):
             errors.append(
                 f"{origin}: a rejected proposal cannot be re-proposed "
                 "without new evidence (§14.6/§9.13)"
             )
             continue
         if row["decision"] == "rejected":
-            rejected_proposals.add(proposal)
+            rejected_proposals.setdefault(proposal, []).append(
+                proposal_evidence)
             continue
         # §9.8: the read pass held staleness to an artifact; the kind is
         # knowable only here, where nodes exist. §20.1 lets a decision
