@@ -320,7 +320,41 @@ function validateReviewGates(entry, defaults, path) {
   return null;
 }
 
-function validateStateEntry(entry, nodeType) {
+function validateStatusEvidence(entry, nodesById, path) {
+  const reference = entry.decisions.find((item) => item.dimension === "status");
+  if (!reference) return null;
+  const prefixes = entry.status === "stale"
+    ? ["artifact"] : ["artifact", "encounter"];
+  if (!isEvidenceArray(reference.evidence, prefixes, 1)) {
+    return diagnostic(path + "/decisions", "statusEvidence");
+  }
+  if (entry.status === "stale") {
+    const resolved = reference.evidence
+      .filter((ref) => nodesById.has(ref))
+      .map((ref) => nodesById.get(ref));
+    if (resolved.length === reference.evidence.length
+        && !resolved.some((node) => node.type === "artifact" && node.kind === "note")) {
+      return diagnostic(path + "/decisions", "staleNoteEvidence");
+    }
+  }
+  return null;
+}
+
+function validateStateAsOf(entry, asOf, path) {
+  const dates = [];
+  if (Object.prototype.hasOwnProperty.call(entry, "last_seen")) {
+    dates.push(entry.last_seen);
+  }
+  for (const reference of Array.isArray(entry.decisions) ? entry.decisions : []) {
+    dates.push(reference.date);
+  }
+  if (dates.length === 0) return null;
+  if (asOf === null) return diagnostic("/generated_at", "stateAsOfRequired");
+  if (dates.some((date) => date > asOf)) return diagnostic(path, "stateAfterAsOf");
+  return null;
+}
+
+function validateStateEntry(entry, nodeType, nodesById, asOf) {
   const path = "/state";
   if (!isPlainObject(entry)) return diagnostic(path, "entryShape");
   if (nodeType === "concept") {
@@ -357,6 +391,8 @@ function validateStateEntry(entry, nodeType) {
     if (!isEvidenceArray(entry.evidence, ["artifact", "encounter", "question"])) return diagnostic(path, "evidence");
     const decisionFailure = validateDecisionReferences(entry.decisions, ["status"], path);
     if (decisionFailure) return decisionFailure;
+    const statusEvidenceFailure = validateStatusEvidence(entry, nodesById, path);
+    if (statusEvidenceFailure) return statusEvidenceFailure;
     const gateFailure = validateReviewGates(entry, QUESTION_GATED_DEFAULTS, path);
     if (gateFailure) return gateFailure;
   } else {
@@ -366,6 +402,8 @@ function validateStateEntry(entry, nodeType) {
       && !SENSITIVITY_CLASSES.includes(entry.sensitivity)) {
     return diagnostic(path, "sensitivity");
   }
+  const asOfFailure = validateStateAsOf(entry, asOf, path);
+  if (asOfFailure) return asOfFailure;
   return null;
 }
 
@@ -448,6 +486,8 @@ export function validateGraph(value) {
           || !isCalendarDate(value.generated_at.slice(0, 10)))) {
     return diagnostic("/generated_at", "shape");
   }
+  const graphAsOf = Object.prototype.hasOwnProperty.call(value, "generated_at")
+    ? value.generated_at.slice(0, 10) : null;
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return diagnostic("", "arrayShape");
   if (!Array.isArray(value.trails) || value.trails.length !== 0) return diagnostic("/trails", "producerClosed");
   // §20 step 9 is implemented, so state is no longer producer-closed. The
@@ -488,7 +528,7 @@ export function validateGraph(value) {
   for (const [key, entry] of Object.entries(value.state)) {
     const node = nodesById.get(key);
     if (!node) return diagnostic("/state", "danglingKey");
-    const failure = validateStateEntry(entry, node.type);
+    const failure = validateStateEntry(entry, node.type, nodesById, graphAsOf);
     if (failure) return failure;
   }
   // §14.6/§9.8/§20 step 9: the full fold is total over the two kinds with

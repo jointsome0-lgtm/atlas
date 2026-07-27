@@ -311,10 +311,79 @@ class ViewerBrowserTests(unittest.TestCase):
         })
         cases["unseen-with-dates"] = graph
 
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": ["artifact:missing"],
+        })
+        cases["dated-state-without-as-of"] = graph
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2099-01-01",
+            "freshness": "fresh",
+            "evidence": ["artifact:missing"],
+        })
+        cases["last-seen-after-as-of"] = graph
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]]["confidence"] = "high"
+        graph["state"][concept["id"]]["decisions"] = [{
+            **reference,
+            "date": "2099-01-01",
+        }]
+        cases["decision-after-as-of"] = graph
+
+        graph = self.graph_envelope(nodes=[question])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][question["id"]].update({
+            "status": "resolved",
+            "evidence": [question["id"]],
+            "decisions": [{
+                "dimension": "status",
+                "date": "2026-07-16",
+                "evidence": [question["id"]],
+            }],
+        })
+        cases["status-cites-question-creation"] = graph
+
+        graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        graph["state"]["question:demo-when-is-retry-safe"] = {
+            "status": "stale",
+            "evidence": ["artifact:demo-retry-script"],
+            "decisions": [{
+                "dimension": "status",
+                "date": "2026-07-10",
+                "evidence": ["artifact:demo-retry-script"],
+            }],
+        }
+        cases["stale-cites-resolved-script"] = graph
+
         for name, impossible in cases.items():
             with self.subTest(case=name):
                 self.write_graph(impossible)
                 self.open_state("#mode=field", "REJECTED")
+
+        # §20.1 keeps a decision applicable when its cited artifact lies
+        # outside the cut or was deleted, so unresolved stale evidence stays
+        # acceptable until its non-note kind is actually knowable.
+        graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        graph["state"]["question:demo-when-is-retry-safe"] = {
+            "status": "stale",
+            "evidence": ["artifact:missing-note"],
+            "decisions": [{
+                "dimension": "status",
+                "date": "2026-07-10",
+                "evidence": ["artifact:missing-note"],
+            }],
+        }
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
 
     def test_bom_crlf_and_withheld_reject_whole(self):
         clean = json.dumps(self.graph_envelope(), ensure_ascii=False)

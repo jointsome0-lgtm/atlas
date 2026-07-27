@@ -1887,6 +1887,46 @@ class SchemaValidatorTests(unittest.TestCase):
             self.assertEqual(1, code, stderr)
             self.assertIn(expected, stderr)
 
+    def test_emitted_status_evidence_matches_the_builder(self):
+        question_id = "question:demo-when-is-retry-safe"
+        script_id = "artifact:demo-retry-script"
+        cases = {
+            "resolved-artifact": (
+                "resolved", [script_id], 0, None),
+            "resolved-question-record": (
+                "resolved", [question_id], 1,
+                "outside the §9.8 outcome restriction"),
+            "stale-resolved-script": (
+                "stale", [script_id], 1,
+                "without the user's own note"),
+            # §20.1: the decision survives evidence outside the graph cut.
+            "stale-dangling-artifact": (
+                "stale", ["artifact:missing-note"], 0, None),
+        }
+        for name, (status, evidence, expected_code,
+                   expected) in cases.items():
+            graph = json.loads(
+                (ROOT / "fixtures/demo-graph/atlas-graph.json").read_text(
+                    encoding="utf-8"))
+            graph["state"][question_id] = {
+                "status": status,
+                "evidence": evidence,
+                "decisions": [{
+                    "dimension": "status",
+                    "date": "2026-07-10",
+                    "evidence": evidence,
+                }],
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected is not None:
+                self.assertIn(expected, stderr)
+
     def test_graph_boundary_holds_the_derived_state_joins(self):
         # §14.5/§14.8 move a ladder only on recorded evidence, and §14.7
         # freshness is a derivation against the as-of, not a stored opinion.

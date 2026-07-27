@@ -655,6 +655,56 @@ def _state_entry_has_dated_input(entry) -> bool:
     )
 
 
+def _state_status_evidence_errors(
+        entry: dict, path: Path, position: int, nodes: dict) -> list[str]:
+    """§9.8: emitted status evidence keeps the journal outcome restriction.
+
+    The stale note kind is knowable only when every cited artifact resolves;
+    §20.1 deliberately permits a decision to retain dangling evidence.
+    """
+    status = entry.get("status")
+    if (not isinstance(status, str)
+            or status not in _builder.DECISION_VALUES["status"]):
+        return []
+    reference = next((
+        item for item in _as_list(entry.get("decisions"))
+        if isinstance(item, dict) and item.get("dimension") == "status"
+    ), None)
+    if reference is None:
+        return []
+    evidence = reference.get("evidence")
+    prefixes = (
+        _builder.STALE_EVIDENCE_PREFIXES
+        if status == "stale" else _builder.STATUS_EVIDENCE_PREFIXES
+    )
+    if (not isinstance(evidence, list) or not evidence
+            or any(
+                not isinstance(ref, str)
+                or ref.split(":", 1)[0] not in prefixes
+                for ref in evidence
+            )):
+        return [
+            f"{path}: /state property #{position} carries status decision "
+            "evidence outside the §9.8 outcome restriction"
+        ]
+    if status == "stale":
+        resolved = [
+            nodes[ref] for ref in evidence
+            if ref in nodes and isinstance(nodes[ref], dict)
+        ]
+        if (len(resolved) == len(evidence)
+                and not any(
+                    node.get("type") == "artifact"
+                    and node.get("kind") == _builder.STALE_EVIDENCE_KIND
+                    for node in resolved
+                )):
+            return [
+                f"{path}: /state property #{position} carries stale status "
+                "without the user's own note (§9.8/§31.5)"
+            ]
+    return []
+
+
 def _review_gate_errors(entry: dict, path: Path, position: int,
                         as_of: str | None, nodes: dict) -> list[str]:
     """§14.5–§14.7/§9.8: a gated value moves only by a reviewed decision and
@@ -663,7 +713,8 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
     schema closes each value independently and cannot express those joins,
     which would let a fixture or an alternate producer import understanding
     past the gate (§31)."""
-    errors: list[str] = []
+    errors = _state_status_evidence_errors(
+        entry, path, position, nodes)
     # §14.5/§14.8: the ladders move on recorded artifact or encounter
     # evidence, so only a first value can stand uncited — and the cited
     # records must be able to reach the asserted rung. The ceiling is an
