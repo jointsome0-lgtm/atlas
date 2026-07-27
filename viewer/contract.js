@@ -432,8 +432,80 @@ function freshnessOf(lastSeen, asOf) {
   return age <= 30 ? "fresh" : age <= 90 ? "aging" : "stale";
 }
 
-function validateStateEntry(entry, nodeType, nodesById, asOf) {
+function validateStateProvenance(entry, node, nodesById, path) {
+  if (node.type === "concept") {
+    const omitsDecisionEvidence = entry.decisions.some(
+      (reference) => reference.evidence.some(
+        (evidence) => !entry.evidence.includes(evidence),
+      ),
+    );
+    if (omitsDecisionEvidence) {
+      return diagnostic(path + "/evidence", "conceptDecisionEvidence");
+    }
+    if (Object.prototype.hasOwnProperty.call(entry, "last_seen")) {
+      const contactDates = entry.evidence.flatMap((reference) => {
+        const evidence = nodesById.get(reference);
+        if (evidence?.type === "artifact") return [evidence.observed_at];
+        if (evidence?.type === "encounter") return [evidence.date];
+        return [];
+      });
+      if (!contactDates.includes(entry.last_seen)) {
+        return diagnostic(path + "/last_seen", "conceptContactDate");
+      }
+    }
+  } else if (node.type === "material" || node.type === "material_part") {
+    const encounterDates = entry.evidence.flatMap((reference) => {
+      const evidence = nodesById.get(reference);
+      return evidence?.type === "encounter" ? [evidence.date] : [];
+    });
+    if (encounterDates.length !== entry.evidence.length) {
+      return diagnostic(path + "/evidence", "emittedEncounter");
+    }
+    if (entry.last_seen !== encounterDates.reduce(
+      (latest, date) => date > latest ? date : latest,
+    )) {
+      return diagnostic(path + "/last_seen", "materialLastSeen");
+    }
+  } else if (node.type === "question") {
+    const statusReference = entry.decisions.find(
+      (reference) => reference.dimension === "status",
+    );
+    const statusEvidence = statusReference === undefined
+      ? [] : statusReference.evidence;
+    if (entry.evidence.length !== statusEvidence.length
+        || entry.evidence.some(
+          (reference, index) => reference !== statusEvidence[index],
+        )) {
+      return diagnostic(path + "/evidence", "statusEvidenceJoin");
+    }
+  }
+
+  const provenanceReferences = [
+    ...entry.evidence,
+    ...(Array.isArray(entry.decisions)
+      ? entry.decisions.flatMap((reference) => reference.evidence)
+      : []),
+  ];
+  const sources = [
+    node,
+    ...provenanceReferences.flatMap((reference) => {
+      const evidence = nodesById.get(reference);
+      return evidence === undefined ? [] : [evidence];
+    }),
+  ];
+  const requiredSensitivity = sources.find(
+    (source) => SENSITIVITY_CLASSES.includes(source.sensitivity),
+  )?.sensitivity;
+  if (requiredSensitivity !== undefined
+      && entry.sensitivity !== requiredSensitivity) {
+    return diagnostic(path + "/sensitivity", "provenanceSensitivity");
+  }
+  return null;
+}
+
+function validateStateEntry(entry, node, nodesById, asOf) {
   const path = "/state";
+  const nodeType = node.type;
   if (!isPlainObject(entry)) return diagnostic(path, "entryShape");
   if (nodeType === "concept") {
     if (!hasOnlyKeys(entry, CONCEPT_STATE_KEYS)) return diagnostic(path, "additionalProperties");
@@ -466,18 +538,6 @@ function validateStateEntry(entry, nodeType, nodesById, asOf) {
     if (!ENCOUNTER_DEPTHS.includes(entry.depth_reached)) return diagnostic(path, "depth");
     if (!isCalendarDate(entry.last_seen)) return diagnostic(path, "lastSeen");
     if (!isEvidenceArray(entry.evidence, ["encounter"], 1)) return diagnostic(path, "evidence");
-    const encounterDates = entry.evidence.flatMap((ref) => {
-      const node = nodesById.get(ref);
-      return node?.type === "encounter" ? [node.date] : [];
-    });
-    if (encounterDates.length === 0) {
-      return diagnostic(path + "/evidence", "emittedEncounter");
-    }
-    if (entry.last_seen !== encounterDates.reduce(
-      (latest, date) => date > latest ? date : latest,
-    )) {
-      return diagnostic(path + "/last_seen", "materialLastSeen");
-    }
     if (ENCOUNTER_DEPTHS.indexOf(entry.depth_reached)
         > depthCeiling(entry.evidence, nodesById)) {
       return diagnostic(path + "/evidence", "depthCeiling");
@@ -489,17 +549,6 @@ function validateStateEntry(entry, nodeType, nodesById, asOf) {
     if (!isEvidenceArray(entry.evidence, ["artifact", "encounter", "question"])) return diagnostic(path, "evidence");
     const decisionFailure = validateDecisionReferences(entry.decisions, ["status"], path);
     if (decisionFailure) return decisionFailure;
-    const statusReference = entry.decisions.find(
-      (reference) => reference.dimension === "status",
-    );
-    const statusEvidence = statusReference === undefined
-      ? [] : statusReference.evidence;
-    if (entry.evidence.length !== statusEvidence.length
-        || entry.evidence.some(
-          (reference, index) => reference !== statusEvidence[index],
-        )) {
-      return diagnostic(path + "/evidence", "statusEvidenceJoin");
-    }
     const statusEvidenceFailure = validateStatusEvidence(entry, nodesById, path);
     if (statusEvidenceFailure) return statusEvidenceFailure;
     const gateFailure = validateReviewGates(entry, QUESTION_GATED_DEFAULTS, path);
@@ -511,6 +560,10 @@ function validateStateEntry(entry, nodeType, nodesById, asOf) {
       && !SENSITIVITY_CLASSES.includes(entry.sensitivity)) {
     return diagnostic(path, "sensitivity");
   }
+  const provenanceFailure = validateStateProvenance(
+    entry, node, nodesById, path,
+  );
+  if (provenanceFailure) return provenanceFailure;
   const asOfFailure = validateStateAsOf(entry, asOf, path);
   if (asOfFailure) return asOfFailure;
   if (nodeType === "concept"
@@ -649,7 +702,7 @@ export function validateGraph(value) {
   for (const [key, entry] of Object.entries(value.state)) {
     const node = nodesById.get(key);
     if (!node) return diagnostic("/state", "danglingKey");
-    const failure = validateStateEntry(entry, node.type, nodesById, graphAsOf);
+    const failure = validateStateEntry(entry, node, nodesById, graphAsOf);
     if (failure) return failure;
   }
   // §14.6/§9.8/§20 step 9: the full fold is total over the two kinds with

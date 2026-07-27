@@ -305,6 +305,19 @@ class ViewerBrowserTests(unittest.TestCase):
         cases["duplicate-decision-dimension"] = graph
 
         graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "confidence": "high",
+            "evidence": [],
+            "decisions": [{
+                "dimension": "confidence",
+                "date": "2026-07-16",
+                "evidence": [artifact["id"]],
+            }],
+        })
+        cases["concept-omits-decision-evidence"] = graph
+
+        graph = self.graph_envelope(nodes=[concept, artifact])
         graph["state"][concept["id"]].update({
             "exposure": "touched",
             "evidence": [artifact["id"]],
@@ -414,6 +427,41 @@ class ViewerBrowserTests(unittest.TestCase):
         })
         cases["freshness-not-derived"] = graph
 
+        earlier_artifact = {
+            **artifact,
+            "id": "artifact:earlier-contact",
+            "observed_at": "2026-07-10",
+        }
+        graph = self.graph_envelope(nodes=[concept, earlier_artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [earlier_artifact["id"]],
+        })
+        cases["concept-last-seen-is-not-cited-date"] = graph
+
+        classed_artifact = {
+            **artifact,
+            "id": "artifact:classed",
+            "sensitivity": "medical",
+        }
+        graph = self.graph_envelope(nodes=[concept, classed_artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [classed_artifact["id"]],
+        })
+        cases["state-omits-evidence-sensitivity"] = graph
+
+        graph = self.graph_envelope(
+            nodes=[{**concept, "sensitivity": "medical"}])
+        graph["state"][concept["id"]].pop("sensitivity", None)
+        cases["state-omits-target-sensitivity"] = graph
+
         material = {
             "id": "material:example", "type": "material",
             "title": "Example material (Vera Example)", "fields": [],
@@ -451,6 +499,15 @@ class ViewerBrowserTests(unittest.TestCase):
             "evidence": ["encounter:missing"],
         }
         cases["material-cites-no-emitted-encounter"] = graph
+
+        graph = self.graph_envelope(nodes=[material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "applied",
+            "last_seen": "2026-07-16",
+            "evidence": [encounter["id"], "encounter:missing"],
+        }
+        cases["material-cites-partially-dangling-encounters"] = graph
 
         explained = {
             **artifact,
@@ -493,6 +550,24 @@ class ViewerBrowserTests(unittest.TestCase):
                 "evidence": ["artifact:missing-note"],
             }],
         }
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+
+        # The observable §32.6 union is accepted when the class is preserved;
+        # the same graph also proves that concept decision evidence may add
+        # provenance without being treated as direct contact.
+        graph = self.graph_envelope(nodes=[concept, classed_artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "confidence": "high",
+            "evidence": [classed_artifact["id"]],
+            "decisions": [{
+                "dimension": "confidence",
+                "date": "2026-07-16",
+                "evidence": [classed_artifact["id"]],
+            }],
+            "sensitivity": "medical",
+        })
         self.write_graph(graph)
         self.open_state("#mode=field", "FIELD")
 

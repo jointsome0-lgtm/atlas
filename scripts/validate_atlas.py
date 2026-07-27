@@ -705,9 +705,132 @@ def _state_status_evidence_errors(
     return []
 
 
+def _state_provenance_errors(
+        entry: dict, path: Path, position: int, state_id: str,
+        node_type: str | None, nodes: dict) -> list[str]:
+    """Check emitted §9.8/§14/§32.6 joins without partially re-folding.
+
+    Target/link semantics and same-day journal position remain producer
+    concerns. The boundary uses only identities, dates, and classes that the
+    graph itself repeats.
+    """
+    errors = []
+    state_evidence = _as_list(entry.get("evidence"))
+
+    if node_type == "concept":
+        for reference in _as_list(entry.get("decisions")):
+            if not isinstance(reference, dict):
+                continue
+            if any(
+                    isinstance(ref, str) and ref not in state_evidence
+                    for ref in _as_list(reference.get("evidence"))):
+                errors.append(
+                    f"{path}: /state property #{position} omits concept "
+                    "decision evidence from its state provenance (§14.6)"
+                )
+                break
+
+        # State evidence also contains decision citations, so their dates
+        # cannot safely define the latest contact. The producer's last_seen
+        # must nevertheless equal one resolved artifact/encounter date in
+        # that union; an unrelated invented date is never possible.
+        contact_dates = []
+        for ref in state_evidence:
+            if not isinstance(ref, str):
+                continue
+            node = nodes.get(ref)
+            if not isinstance(node, dict):
+                continue
+            if node.get("type") == "artifact":
+                date = node.get("observed_at")
+            elif node.get("type") == "encounter":
+                date = node.get("date")
+            else:
+                date = None
+            if isinstance(date, str) and _is_calendar_date(date):
+                contact_dates.append(date)
+        last_seen = entry.get("last_seen")
+        if (isinstance(last_seen, str)
+                and last_seen not in contact_dates):
+            errors.append(
+                f"{path}: /state property #{position} carries concept "
+                "last_seen absent from its cited contact evidence (§14.5)"
+            )
+
+    elif node_type in {"material", "material_part"}:
+        encounter_dates = []
+        for ref in state_evidence:
+            if not isinstance(ref, str):
+                continue
+            node = nodes.get(ref)
+            if not isinstance(node, dict) or node.get("type") != "encounter":
+                continue
+            date = node.get("date")
+            if isinstance(date, str) and _is_calendar_date(date):
+                encounter_dates.append(date)
+        if (encounter_dates
+                and isinstance(entry.get("last_seen"), str)
+                and entry["last_seen"] != max(encounter_dates)):
+            errors.append(
+                f"{path}: /state property #{position} carries material "
+                "last_seen other than its latest cited encounter (§14.8)"
+            )
+
+    elif node_type == "question":
+        reference = next((
+            item for item in _as_list(entry.get("decisions"))
+            if isinstance(item, dict) and item.get("dimension") == "status"
+        ), None)
+        decision_evidence = (
+            [] if reference is None else reference.get("evidence")
+        )
+        if (isinstance(entry.get("evidence"), list)
+                and isinstance(decision_evidence, list)
+                and entry["evidence"] != decision_evidence):
+            errors.append(
+                f"{path}: /state property #{position} carries question "
+                "evidence that differs from its status decision (§9.8)"
+            )
+
+    provenance_refs = [
+        ref for ref in state_evidence if isinstance(ref, str)
+    ]
+    for reference in _as_list(entry.get("decisions")):
+        if not isinstance(reference, dict):
+            continue
+        provenance_refs.extend(
+            ref for ref in _as_list(reference.get("evidence"))
+            if isinstance(ref, str)
+        )
+    sources = []
+    target = nodes.get(state_id)
+    if isinstance(target, dict):
+        sources.append(target)
+    for ref in provenance_refs:
+        source = nodes.get(ref)
+        if isinstance(source, dict):
+            sources.append(source)
+    required_classes = {
+        sensitivity
+        for source in sources
+        if isinstance((sensitivity := source.get("sensitivity")), str)
+        and sensitivity in _builder.SENSITIVITY_CLASSES
+    }
+    entry_sensitivity = entry.get("sensitivity")
+    if (required_classes
+            and (not isinstance(entry_sensitivity, str)
+                 or entry_sensitivity not in required_classes)):
+        errors.append(
+            f"{path}: /state property #{position} omits sensitivity "
+            "carried by its target or resolved evidence (§32.6)"
+        )
+
+    return errors
+
+
 def _review_gate_errors(entry: dict, path: Path, position: int,
                         as_of: str | None, nodes: dict,
-                        node_type: str | None) -> list[str]:
+                        state_id: str, node_type: str | None) -> list[str]:
     """§14.5–§14.7/§9.8: a gated value moves only by a reviewed decision and
     never carries two competing references, a ladder moves only on recorded
     evidence, and freshness is a derivation against the fold as-of. The
@@ -716,6 +839,8 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
     past the gate (§31)."""
     errors = _state_status_evidence_errors(
         entry, path, position, nodes)
+    errors.extend(_state_provenance_errors(
+        entry, path, position, state_id, node_type, nodes))
     # §14.5/§14.8: the ladders move on recorded artifact or encounter
     # evidence, so only a first value can stand uncited — and the cited
     # records must be able to reach the asserted rung. The ceiling is an
@@ -742,9 +867,10 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
                 "its first value with no evidence (§14.5/§14.8)"
             )
         elif (dimension == "depth_reached"
-              and not any(
+              and not all(
                   isinstance(ref, str)
-                  and nodes.get(ref, {}).get("type") == "encounter"
+                  and isinstance(nodes.get(ref), dict)
+                  and nodes[ref].get("type") == "encounter"
                   for ref in evidence
               )):
             # Material state is sparse and exists only because an emitted
@@ -752,47 +878,13 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
             # survives a deleted/out-of-cut evidence row (§14.8/§20.1).
             errors.append(
                 f"{path}: /state property #{position} carries material "
-                "state with no emitted encounter evidence (§14.8)"
+                "state without wholly emitted encounter evidence (§14.8)"
             )
         elif value in ladder and ladder.index(value) > ceiling_of(
                 evidence, nodes):
             errors.append(
                 f"{path}: /state property #{position} asserts {dimension} "
                 "beyond what its cited evidence can reach (§14.5/§14.8)"
-            )
-    if node_type in {"material", "material_part"}:
-        encounter_dates = []
-        for ref in _as_list(entry.get("evidence")):
-            if not isinstance(ref, str):
-                continue
-            node = nodes.get(ref)
-            if not isinstance(node, dict) or node.get("type") != "encounter":
-                continue
-            date = node.get("date")
-            if isinstance(date, str) and _is_calendar_date(date):
-                encounter_dates.append(date)
-        if (encounter_dates
-                and isinstance(entry.get("last_seen"), str)
-                and entry["last_seen"] != max(encounter_dates)):
-            errors.append(
-                f"{path}: /state property #{position} carries material "
-                "last_seen other than its latest cited encounter (§14.8)"
-            )
-    elif node_type == "question":
-        reference = next((
-            item for item in _as_list(entry.get("decisions"))
-            if isinstance(item, dict) and item.get("dimension") == "status"
-        ), None)
-        state_evidence = entry.get("evidence")
-        decision_evidence = (
-            [] if reference is None else reference.get("evidence")
-        )
-        if (isinstance(state_evidence, list)
-                and isinstance(decision_evidence, list)
-                and state_evidence != decision_evidence):
-            errors.append(
-                f"{path}: /state property #{position} carries question "
-                "evidence that differs from its status decision (§9.8)"
             )
     exposure = entry.get("exposure")
     if (isinstance(exposure, str)
@@ -1610,7 +1702,7 @@ def validate_instance(root: Path):
                     if isinstance(state_entry, dict):
                         errors.extend(_review_gate_errors(
                             state_entry, path, position, graph_as_of,
-                            nodes_by_id, node_type))
+                            nodes_by_id, state_id, node_type))
                 # §14.6/§9.8 make every gated value review-gated, and §20
                 # step 9 makes the fold total over the kinds that carry a
                 # default: a concept is at worst `unseen`/no-knowledge and a

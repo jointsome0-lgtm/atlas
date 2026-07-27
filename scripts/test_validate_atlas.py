@@ -1934,6 +1934,106 @@ class SchemaValidatorTests(unittest.TestCase):
             if expected is not None:
                 self.assertIn(expected, stderr)
 
+    def test_concept_state_includes_every_decision_evidence(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:decision-note",
+            "type": "artifact",
+            "title": "",
+            "fields": [],
+            "kind": "note",
+            "path": "notes/example.md",
+            "observed_at": "2026-07-16",
+            "summary": "Synthetic decision note (Vera Example).",
+            "evidence_strength": "noticed",
+        }
+        for name, evidence, expected_code in (
+                ("omitted", [], 1),
+                ("included", [artifact["id"]], 0)):
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [concept, artifact]
+            graph["state"] = {
+                concept["id"]: {
+                    "exposure": "unseen",
+                    "confidence": "high",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "evidence": evidence,
+                    "decisions": [{
+                        "dimension": "confidence",
+                        "date": "2026-07-16",
+                        "evidence": [artifact["id"]],
+                    }],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "omits concept decision evidence", stderr
+                )
+
+    def test_concept_last_seen_matches_a_cited_contact_date(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:contact",
+            "type": "artifact",
+            "title": "",
+            "fields": [],
+            "kind": "note",
+            "path": "notes/example.md",
+            "observed_at": "2026-07-10",
+            "summary": "Synthetic contact note (Vera Example).",
+            "evidence_strength": "noticed",
+        }
+        for name, last_seen, expected_code in (
+                ("invented-date", "2026-07-16", 1),
+                ("recorded-date", "2026-07-10", 0)):
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [concept, artifact]
+            graph["state"] = {
+                concept["id"]: {
+                    "exposure": "touched",
+                    "confidence": "unknown",
+                    "clarity": "vague",
+                    "coverage": "none",
+                    "last_seen": last_seen,
+                    "freshness": "fresh",
+                    "evidence": [artifact["id"]],
+                    "decisions": [],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "last_seen absent from its cited contact evidence", stderr
+                )
+
     def test_graph_boundary_holds_the_derived_state_joins(self):
         # §14.5/§14.8 move a ladder only on recorded evidence, and §14.7
         # freshness is a derivation against the as-of, not a stored opinion.
@@ -2600,9 +2700,7 @@ class SchemaValidatorTests(unittest.TestCase):
                 )
 
     def test_material_state_requires_emitted_encounter_evidence(self):
-        graph = json.loads(VALID_EMPTY_GRAPH)
-        graph["generated_at"] = "2026-07-16T00:00:00Z"
-        graph["nodes"] = [{
+        material = {
             "id": "material:example",
             "type": "material",
             "title": "Example (Vera Example)",
@@ -2610,23 +2708,52 @@ class SchemaValidatorTests(unittest.TestCase):
             "kind": "docs",
             "url": "",
             "status": "active",
-        }]
-        graph["state"] = {
-            "material:example": {
-                "depth_reached": "skim",
-                "last_seen": "2026-07-16",
-                "evidence": ["encounter:missing"],
-            },
         }
-        with tempfile.TemporaryDirectory() as directory:
-            materialize({
-                "graph/atlas-graph.json": json.dumps(graph) + "\n",
-            }, Path(directory))
-            code, _, stderr = self.run_cli("validate", directory)
-        self.assertEqual(1, code, stderr)
-        self.assertIn(
-            "material state with no emitted encounter evidence", stderr
-        )
+        encounter = {
+            "id": "encounter:example",
+            "type": "encounter",
+            "title": "",
+            "fields": [],
+            "date": "2026-07-16",
+            "target": material["id"],
+            "depth": "skim",
+            "mode": "background",
+        }
+        for name, nodes, edges, evidence in (
+                ("missing-only", [material], [], ["encounter:missing"]),
+                (
+                    "partially-dangling",
+                    [material, encounter],
+                    [{
+                        "source": encounter["id"],
+                        "target": material["id"],
+                        "type": "visited",
+                        "provenance": [encounter["id"]],
+                    }],
+                    [encounter["id"], "encounter:missing"],
+                )):
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = nodes
+            graph["edges"] = edges
+            graph["state"] = {
+                material["id"]: {
+                    "depth_reached": "skim",
+                    "last_seen": "2026-07-16",
+                    "evidence": evidence,
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(1, code, stderr)
+            self.assertIn(
+                "material state without wholly emitted encounter evidence",
+                stderr,
+            )
 
     def test_material_last_seen_is_latest_resolved_cited_encounter(self):
         material = {
@@ -2686,6 +2813,143 @@ class SchemaValidatorTests(unittest.TestCase):
             if expected_code:
                 self.assertIn(
                     "last_seen other than its latest cited encounter", stderr
+                )
+
+    def test_state_requires_observable_sensitivity_union(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:classed",
+            "type": "artifact",
+            "title": "",
+            "fields": [],
+            "kind": "note",
+            "path": "notes/example.md",
+            "observed_at": "2026-07-16",
+            "summary": "Synthetic classed note (Vera Example).",
+            "evidence_strength": "noticed",
+            "sensitivity": "medical",
+        }
+        concept_evidence = json.loads(VALID_EMPTY_GRAPH)
+        concept_evidence["generated_at"] = "2026-07-16T00:00:00Z"
+        concept_evidence["nodes"] = [concept, artifact]
+        concept_evidence["state"] = {
+            concept["id"]: {
+                "exposure": "unseen",
+                "confidence": "high",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": [artifact["id"]],
+                "decisions": [{
+                    "dimension": "confidence",
+                    "date": "2026-07-16",
+                    "evidence": [artifact["id"]],
+                }],
+            },
+        }
+
+        concept_target = json.loads(VALID_EMPTY_GRAPH)
+        concept_target["nodes"] = [{**concept, "sensitivity": "medical"}]
+        concept_target["state"] = {
+            concept["id"]: {
+                "exposure": "unseen",
+                "confidence": "unknown",
+                "clarity": "vague",
+                "coverage": "none",
+                "evidence": [],
+                "decisions": [],
+            },
+        }
+
+        material = {
+            "id": "material:example",
+            "type": "material",
+            "title": "Example material (Vera Example)",
+            "fields": [],
+            "kind": "docs",
+            "url": "",
+            "status": "active",
+        }
+        encounter = {
+            "id": "encounter:classed",
+            "type": "encounter",
+            "title": "",
+            "fields": [],
+            "date": "2026-07-16",
+            "target": material["id"],
+            "depth": "applied",
+            "mode": "background",
+            "sensitivity": "medical",
+        }
+        material_evidence = json.loads(VALID_EMPTY_GRAPH)
+        material_evidence["generated_at"] = "2026-07-16T00:00:00Z"
+        material_evidence["nodes"] = [material, encounter]
+        material_evidence["edges"] = [{
+            "source": encounter["id"],
+            "target": material["id"],
+            "type": "visited",
+            "provenance": [encounter["id"]],
+            "sensitivity": "medical",
+        }]
+        material_evidence["state"] = {
+            material["id"]: {
+                "depth_reached": "applied",
+                "last_seen": "2026-07-16",
+                "evidence": [encounter["id"]],
+            },
+        }
+
+        question = {
+            "id": "question:example",
+            "type": "question",
+            "title": "",
+            "fields": [],
+            "text": "Synthetic classed question? (Vera Example)",
+            "created_at": "2026-07-16",
+            "source": {"artifact": artifact["id"]},
+        }
+        question_evidence = json.loads(VALID_EMPTY_GRAPH)
+        question_evidence["generated_at"] = "2026-07-16T00:00:00Z"
+        question_evidence["nodes"] = [artifact, question]
+        question_evidence["state"] = {
+            question["id"]: {
+                "status": "resolved",
+                "evidence": [artifact["id"]],
+                "decisions": [{
+                    "dimension": "status",
+                    "date": "2026-07-16",
+                    "evidence": [artifact["id"]],
+                }],
+            },
+        }
+
+        positive = json.loads(json.dumps(concept_evidence))
+        positive["state"][concept["id"]]["sensitivity"] = "medical"
+        malformed = json.loads(json.dumps(concept_evidence))
+        malformed["state"][concept["id"]]["sensitivity"] = []
+        for name, graph, expected_code in (
+                ("concept-evidence", concept_evidence, 1),
+                ("concept-target", concept_target, 1),
+                ("material-evidence", material_evidence, 1),
+                ("question-evidence", question_evidence, 1),
+                ("malformed-class", malformed, 1),
+                ("class-preserved", positive, 0)):
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "omits sensitivity carried by its target or resolved "
+                    "evidence", stderr
                 )
 
     def test_emitted_journal_nodes_are_bounded_by_graph_as_of(self):
