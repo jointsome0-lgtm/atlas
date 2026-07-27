@@ -1919,6 +1919,70 @@ class SchemaValidatorTests(unittest.TestCase):
             self.assertEqual(1, code, stderr)
             self.assertIn(expected, stderr)
 
+    def test_concept_contact_exactly_matches_freshness_dates(self):
+        concept = {
+            "id": "concept:example",
+            "type": "concept",
+            "title": "Example (Vera Example)",
+            "fields": ["knowledge"],
+            "aliases": [],
+        }
+        artifact = {
+            "id": "artifact:example-note",
+            "type": "artifact",
+            "title": "",
+            "fields": [],
+            "kind": "note",
+            "path": "notes/example.md",
+            "observed_at": "2026-07-16",
+            "summary": "Synthetic boundary fixture (Vera Example).",
+            "evidence_strength": "noticed",
+        }
+        default = {
+            "exposure": "unseen",
+            "confidence": "unknown",
+            "clarity": "vague",
+            "coverage": "none",
+            "evidence": [],
+            "decisions": [],
+        }
+        contacted = {
+            **default,
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+        }
+        cases = {
+            "unseen-without-dates": (default, 0),
+            "contact-with-dates": (contacted, 0),
+            "unseen-with-dates": ({
+                **default,
+                "last_seen": "2026-07-16",
+                "freshness": "fresh",
+            }, 1),
+            "contact-without-dates": ({
+                key: value for key, value in contacted.items()
+                if key not in ("last_seen", "freshness")
+            }, 1),
+        }
+        for name, (entry, expected_code) in cases.items():
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [concept, artifact]
+            graph["state"] = {concept["id"]: entry}
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected_code, code, stderr)
+            if expected_code:
+                self.assertIn(
+                    "exactly when exposure records contact", stderr
+                )
+
     def test_exposure_may_not_exceed_what_its_evidence_can_reach(self):
         # §14.5/§31.3: citing a record is not enough — the cited records
         # have to be able to produce the asserted rung. An encounter caps
@@ -1936,7 +2000,8 @@ class SchemaValidatorTests(unittest.TestCase):
             entry = (f'{{"exposure": "{exposure}", "confidence": "unknown",'
                      ' "clarity": "vague", "coverage": "none",'
                      ' "evidence": ["encounter:2026-07-16-001"],'
-                     ' "decisions": []}')
+                     ' "decisions": [], "last_seen": "2026-07-16",'
+                     ' "freshness": "fresh"}')
             graph = VALID_EMPTY_GRAPH.replace(
                 '"version": 1,',
                 '"version": 1, "generated_at": "2026-07-16T00:00:00Z",',

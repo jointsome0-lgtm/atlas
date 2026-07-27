@@ -3139,17 +3139,25 @@ class StateFoldTests(unittest.TestCase):
         # review predating the explanation cannot establish it — old review
         # history must not promote the next explanation.
         cases = {
-            "review-after": ("2026-01-01", "2026-02-01", "taught"),
-            "same-day": ("2026-01-01", "2026-01-01", "taught"),
-            "review-before": ("2026-02-01", "2026-01-01", "summarized"),
+            "review-after": (
+                "2026-01-01", "2026-02-01", False, "taught"),
+            "same-day-review-after": (
+                "2026-01-01", "2026-01-01", False, "taught"),
+            "same-day-review-before": (
+                "2026-01-01", "2026-01-01", True, "applied"),
+            "review-before": (
+                "2026-02-01", "2026-01-01", False, "applied"),
         }
-        for name, (explained_on, reviewed_on, expected) in cases.items():
-            rows = [
-                self._artifact("artifact:2026-01-01-001", explained_on,
-                               "explained", supports=["concept:c"]),
-                self._artifact("artifact:2026-01-02-001", reviewed_on,
-                               "reviewed", supports=["concept:c"]),
-            ]
+        for name, (explained_on, reviewed_on, review_first,
+                   expected) in cases.items():
+            explained = self._artifact(
+                "artifact:2026-01-01-001", explained_on,
+                "explained", supports=["concept:c"])
+            reviewed = self._artifact(
+                "artifact:2026-01-02-001", reviewed_on,
+                "reviewed", supports=["concept:c"])
+            rows = ([reviewed, explained] if review_first
+                    else [explained, reviewed])
             with self.subTest(case=name), _materialize({
                 "concepts/c.md": _CONCEPT % ("c", "C"),
                 "state/artifacts.jsonl": self._jsonl(rows),
@@ -3160,8 +3168,7 @@ class StateFoldTests(unittest.TestCase):
             # `reviewed` alone still reaches applied (§14.5); the compound is
             # what the ordering gates.
             exposure = graph["state"]["concept:c"]["exposure"]
-            self.assertEqual(
-                expected if expected == "taught" else "applied", exposure)
+            self.assertEqual(expected, exposure)
 
     def test_decisions_the_slice_cannot_fold_are_all_refused(self):
         # The genus behind the body ladders: §14.9 edge weight and §32's

@@ -274,6 +274,12 @@ const CONCEPT_STATE_KEYS = ["exposure", "confidence", "clarity", "coverage", "fr
 const MATERIAL_STATE_KEYS = ["depth_reached", "last_seen", "evidence", "sensitivity"];
 const QUESTION_STATE_KEYS = ["status", "evidence", "decisions", "sensitivity"];
 const DECISION_REFERENCE_KEYS = ["dimension", "date", "evidence"];
+const CONCEPT_GATED_DEFAULTS = {
+  "confidence": CONFIDENCE_VALUES[0],
+  "clarity": CLARITY_VALUES[0],
+  "coverage": COVERAGE_VALUES[0],
+};
+const QUESTION_GATED_DEFAULTS = {"status": QUESTION_STATUSES[0]};
 
 function isEvidenceArray(value, prefixes, minimum = 0) {
   return isStringArray(
@@ -286,11 +292,14 @@ function isEvidenceArray(value, prefixes, minimum = 0) {
 function validateDecisionReferences(value, dimensions, path) {
   if (!Array.isArray(value)) return diagnostic(path, "type");
   const identities = [];
+  const seenDimensions = new Set();
   for (const reference of value) {
     if (!isPlainObject(reference)) return diagnostic(path, "itemType");
     if (!hasOnlyKeys(reference, DECISION_REFERENCE_KEYS)) return diagnostic(path, "additionalProperties");
     if (!hasKeys(reference, DECISION_REFERENCE_KEYS)) return diagnostic(path, "required");
     if (!dimensions.includes(reference.dimension)) return diagnostic(path, "dimension");
+    if (seenDimensions.has(reference.dimension)) return diagnostic(path, "dimensionUnique");
+    seenDimensions.add(reference.dimension);
     if (!isCalendarDate(reference.date)) return diagnostic(path, "date");
     if (!isEvidenceArray(reference.evidence, ["artifact", "encounter", "question"], 1)) return diagnostic(path, "evidence");
     identities.push(JSON.stringify([
@@ -298,6 +307,16 @@ function validateDecisionReferences(value, dimensions, path) {
     ]));
   }
   if (!isUnique(identities)) return diagnostic(path, "uniqueItems");
+  return null;
+}
+
+function validateReviewGates(entry, defaults, path) {
+  const decided = new Set(entry.decisions.map((reference) => reference.dimension));
+  for (const [dimension, defaultValue] of Object.entries(defaults)) {
+    if (entry[dimension] !== defaultValue && !decided.has(dimension)) {
+      return diagnostic(path + "/decisions", "reviewGate");
+    }
+  }
   return null;
 }
 
@@ -319,8 +338,12 @@ function validateStateEntry(entry, nodeType) {
     const hasLastSeen = Object.prototype.hasOwnProperty.call(entry, "last_seen");
     const hasFreshness = Object.prototype.hasOwnProperty.call(entry, "freshness");
     if (hasLastSeen !== hasFreshness) return diagnostic(path, "freshnessPair");
+    const hasContact = entry.exposure !== CONCEPT_EXPOSURES[0];
+    if (hasLastSeen !== hasContact) return diagnostic(path, "contactDates");
     if (hasLastSeen && !isCalendarDate(entry.last_seen)) return diagnostic(path, "lastSeen");
     if (hasFreshness && !FRESHNESS_VALUES.includes(entry.freshness)) return diagnostic(path, "freshness");
+    const gateFailure = validateReviewGates(entry, CONCEPT_GATED_DEFAULTS, path);
+    if (gateFailure) return gateFailure;
   } else if (nodeType === "material" || nodeType === "material_part") {
     if (!hasOnlyKeys(entry, MATERIAL_STATE_KEYS)) return diagnostic(path, "additionalProperties");
     if (!hasKeys(entry, ["depth_reached", "last_seen", "evidence"])) return diagnostic(path, "required");
@@ -334,6 +357,8 @@ function validateStateEntry(entry, nodeType) {
     if (!isEvidenceArray(entry.evidence, ["artifact", "encounter", "question"])) return diagnostic(path, "evidence");
     const decisionFailure = validateDecisionReferences(entry.decisions, ["status"], path);
     if (decisionFailure) return decisionFailure;
+    const gateFailure = validateReviewGates(entry, QUESTION_GATED_DEFAULTS, path);
+    if (gateFailure) return gateFailure;
   } else {
     return diagnostic(path, "nodeKind");
   }

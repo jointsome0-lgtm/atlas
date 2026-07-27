@@ -45,7 +45,9 @@
             "additionalProperties": false,
             "allOf": [
               {"if": {"required": ["last_seen"]}, "then": {"required": ["freshness"]}},
-              {"if": {"required": ["freshness"]}, "then": {"required": ["last_seen"]}}
+              {"if": {"required": ["freshness"]}, "then": {"required": ["last_seen"]}},
+              {"if": {"required": ["last_seen"]}, "then": {"properties": {"exposure": {"enum": ["touched", "read", "summarized", "applied", "taught"]}}}},
+              {"if": {"properties": {"exposure": {"enum": ["touched", "read", "summarized", "applied", "taught"]}}, "required": ["exposure"]}, "then": {"required": ["last_seen", "freshness"]}}
             ]
           },
           {

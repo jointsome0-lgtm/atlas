@@ -708,6 +708,19 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
                 f"{path}: /state property #{position} asserts {dimension} "
                 "beyond what its cited evidence can reach (§14.5/§14.8)"
             )
+    exposure = entry.get("exposure")
+    if (isinstance(exposure, str)
+            and exposure in _builder.CONCEPT_EXPOSURE):
+        has_contact = exposure != _builder.CONCEPT_EXPOSURE[0]
+        has_last_seen = "last_seen" in entry
+        has_freshness = "freshness" in entry
+        if ((has_contact and not (has_last_seen and has_freshness))
+                or (not has_contact and (has_last_seen or has_freshness))):
+            errors.append(
+                f"{path}: /state property #{position} must carry last_seen "
+                "and freshness exactly when exposure records contact "
+                "(§14.5/§14.7)"
+            )
     # §14.7/§20.1: last_seen is a fold input, never later than the as-of it
     # is measured against, and freshness is recomputed from the two. The
     # caller only passes a calendar-valid as-of — an unparsable stamp is

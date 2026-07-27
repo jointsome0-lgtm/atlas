@@ -257,6 +257,65 @@ class ViewerBrowserTests(unittest.TestCase):
                 shutil.copyfile(REJECTED_ACCEPTANCE / name, self.graph_path)
                 self.open_state("#mode=field", "REJECTED")
 
+    def test_state_semantic_gates_reject_builder_impossible_graphs(self):
+        concept = {
+            "id": "concept:alone", "type": "concept",
+            "title": "Alone (Vera Example)",
+            "fields": ["knowledge"], "aliases": [],
+        }
+        question = {
+            "id": "question:alone", "type": "question", "title": "",
+            "fields": ["knowledge"],
+            "text": "Is this resolved? (Vera Example)",
+            "created_at": "2026-07-16",
+            "source": {"artifact": "artifact:missing"},
+        }
+        reference = {
+            "dimension": "confidence",
+            "date": "2026-07-16",
+            "evidence": ["artifact:first"],
+        }
+        cases = {}
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]]["confidence"] = "high"
+        cases["concept-missing-decision"] = graph
+
+        graph = self.graph_envelope(nodes=[question])
+        graph["state"][question["id"]]["status"] = "resolved"
+        cases["question-missing-decision"] = graph
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]]["confidence"] = "high"
+        graph["state"][concept["id"]]["decisions"] = [
+            reference,
+            {
+                **reference,
+                "date": "2026-07-17",
+                "evidence": ["artifact:second"],
+            },
+        ]
+        cases["duplicate-decision-dimension"] = graph
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "evidence": ["artifact:missing"],
+        })
+        cases["contact-without-dates"] = graph
+
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]].update({
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+        })
+        cases["unseen-with-dates"] = graph
+
+        for name, impossible in cases.items():
+            with self.subTest(case=name):
+                self.write_graph(impossible)
+                self.open_state("#mode=field", "REJECTED")
+
     def test_bom_crlf_and_withheld_reject_whole(self):
         clean = json.dumps(self.graph_envelope(), ensure_ascii=False)
         self.graph_path.write_bytes(b"\xef\xbb\xbf" + clean.encode("utf-8"))

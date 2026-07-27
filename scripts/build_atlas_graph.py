@@ -449,6 +449,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
     field_refs: dict[str, list] = {}  # node -> refs its §10.4 fields derive from
     segments: list = []  # (id, origins, via, path) — §9.9/§11.3 derivation
     artifact_touches: dict = {}  # artifact id -> touched region ids (§9.9)
+    artifact_positions: dict[str, int] = {}  # id -> §20.1 journal position
     question_records: dict = {}  # question id -> (source object, pulls)
     encounter_records: list = []  # (id, target, depth, ctx question/artifact, origin)
     decision_records: list = []  # (journal position, origin, row, row date)
@@ -1155,7 +1156,8 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             except ReaderError as exc:
                 errors.append(str(exc))
 
-    for origin, row, row_date in journal_rows("artifacts", "observed_at"):
+    for position, (origin, row, row_date) in enumerate(
+            journal_rows("artifacts", "observed_at"), 1):
         # §9.6/§10.4: the authored type: embeds as kind (type is §10.1's).
         touches = [
             ref for ref in (
@@ -1193,6 +1195,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         aid = row.get("id")
         if not isinstance(aid, str):
             continue
+        artifact_positions[aid] = position
         for field in ("touches", "supports_state_updates"):
             # §9.6: both relation arrays are required on every evidence
             # row — an absent one is a malformed row, never an artifact
@@ -1793,7 +1796,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             "exposure_rank": 0,
             "last_seen": None,
             "evidence": set(),
-            "strengths": {},  # §14.5 strength → the dates it was recorded
+            "strengths": {},  # §14.5 strength → §20.1 fold keys
             "sensitivity": node.get("sensitivity"),
         }
 
@@ -1823,6 +1826,7 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
         artifact = nodes.get(artifact_id, {})
         date = artifact.get("observed_at")
         strength = artifact.get("evidence_strength")
+        position = artifact_positions.get(artifact_id)
         links = artifact_links[artifact_id]
         # Merely touched concepts move at most to touched, whatever the
         # artifact's strength (§14.5).
@@ -1832,16 +1836,18 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             observe_concept(
                 concept_id, artifact_rank.get(strength, 0), date, artifact_id)
             current = concept_work.get(concept_id)
-            if current is not None and date is not None:
-                current["strengths"].setdefault(strength, []).append(date)
+            if (current is not None and date is not None
+                    and position is not None):
+                current["strengths"].setdefault(strength, []).append(
+                    fold_order_key(date, position))
 
     # explained + reviewed is the only compound artifact transition: an
     # explanation that survived review reaches taught (§14.1/§14.5). The
     # review has to be able to be a review OF that explanation, so it cannot
     # predate it — old review history on a concept does not make the next
-    # explanation taught. Absent a link from review to reviewed work, dates
-    # are the evidence available: the latest review against the earliest
-    # explanation, same day included (both land undated-by-hour).
+    # explanation taught. Absent a link from review to reviewed work, the
+    # §20.1 keys are the evidence available: the latest review against the
+    # earliest explanation, with same-day order decided by journal position.
     for current in concept_work.values():
         explanations = current["strengths"].get("explained")
         reviews = current["strengths"].get("reviewed")
