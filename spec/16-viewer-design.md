@@ -21,6 +21,18 @@ One view set serves every field: a view renders in the focused field's geometry 
 
 Semantics are per-geometry. The blocks below are the node-link geometry — the knowledge field, and body patterns with their `loads` edges (§32.1); body zones render in silhouette geometry (end of section).
 
+Layout:
+
+```text
+Layout is a property of the geometry, never of the mode: where
+authored order carries the meaning (route steps, trail
+chronology) it is deterministic by construction; where only
+adjacency carries it (concept neighbourhoods, material
+supports) a free layout is allowed, bounded by §27.8's seeded
+rule — same graph, same picture, derived from the graph file
+and the URL alone.
+```
+
 Suggested routes:
 
 ```text
@@ -49,6 +61,34 @@ State:
 ```text
 node border or badge
 confidence/clarity/exposure visible
+Monotone dimensions (exposure §14.1, depth_reached §14.8,
+freshness §14.7) and review-gated ones (§14.6, §14.9) never
+share one visual value: a no-decision value is never a point on
+a continuous scale — silence must not read as an assertion.
+Whether it renders as absence or as its own mark is a design
+choice, not a canon one.
+Freshness joins this block as the three §14.7 classes (fresh,
+aging, stale), never as continuous decay: the picture asserts
+no more than the data, and a stale node is an invitation, never
+an obligation (§14.7, §25.4). It follows §32.2's severity
+precedent — recessive, never an alarm — and §27.8's rule that
+state is distinguishable without colour alone, so opacity alone
+is not the encoding. Aging against the viewer's own as-of
+(§14.7) stays out: acceptance pins freshness to the build's
+as-of, and changing that is its own decision.
+No route- or field-level aggregate: per-node state only — no
+counts, no proportions, no progress bars, no completion (§4).
+A course's completion is activity semantics and belongs to the
+system that owns the activity.
+```
+
+Support:
+
+```text
+A supports edge (§9.14) renders joined with its endpoints' own
+§14.8 state and the concepts the facet maps to, and with no
+sufficiency verdict — sufficiency is the user's judgment, never
+a gate.
 ```
 
 Questions:
