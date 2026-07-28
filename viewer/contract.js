@@ -671,9 +671,9 @@ export function validateGraph(value) {
     ? value.generated_at.slice(0, 10) : null;
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return diagnostic("", "arrayShape");
   if (!Array.isArray(value.trails) || value.trails.length !== 0) return diagnostic("/trails", "producerClosed");
-  // §20 step 9 is implemented, so state is no longer producer-closed. The
-  // viewer does not render it in this slice, but §16.5 still requires the
-  // whole untrusted graph to pass its closed input contract.
+  // §20 step 9 is implemented, so state is no longer producer-closed: the
+  // plates render it (§16.2), and §16.5 requires the whole untrusted graph
+  // to pass its closed input contract before any of it is drawn.
   if (!isPlainObject(value.state)) return diagnostic("/state", "type");
   for (const entry of Object.values(value.state)) {
     if (!isPlainObject(entry)) return diagnostic("/state", "entryShape");
@@ -822,6 +822,39 @@ function projectNode(node) {
   return projected;
 }
 
+// §16.2 State block: the renderer draws per-node state, so the projection
+// carries it — the dimension values, the contact pair, and which gated
+// dimensions a confirmed decision moved, because A2 renders the undecided
+// ones as an open slot, never as their fold-default value on the scale.
+function projectStateEntry(entry, node, asOf) {
+  const projected = {};
+  if (node.type === "concept") {
+    projected.exposure = entry.exposure;
+    projected.confidence = entry.confidence;
+    projected.clarity = entry.clarity;
+    projected.coverage = entry.coverage;
+    if (Object.prototype.hasOwnProperty.call(entry, "last_seen")) {
+      projected.last_seen = entry.last_seen;
+      projected.freshness = entry.freshness;
+    }
+  } else if (node.type === "material" || node.type === "material_part") {
+    projected.depth_reached = entry.depth_reached;
+    projected.last_seen = entry.last_seen;
+    // §14.7 against the fold's as-of, never the viewer's clock; a material
+    // entry always carries last_seen, so validateStateAsOf guarantees asOf.
+    projected.freshness = freshnessOf(entry.last_seen, asOf);
+  } else if (node.type === "question") {
+    projected.status = entry.status;
+  }
+  projected.decided = Array.isArray(entry.decisions)
+    ? entry.decisions.map((reference) => reference.dimension)
+    : [];
+  // §29/#107 boundary: state-entry sensitivity stays validation-only during
+  // the freeze. The §14 knowledge-state values remain visible as #98 requires;
+  // withholding a whole tainted entry is #38 redaction policy, still deferred.
+  return projected;
+}
+
 function projectEdge(edge) {
   const projected = {source: edge.source, target: edge.target, type: edge.type, provenance: [...edge.provenance]};
   for (const key of ["sensitivity", "weight", "order", "context", "step", "confidence", "created_by", "created_at", "note"]) {
@@ -879,6 +912,13 @@ export function acceptGraphBuffer(buffer) {
       if (!retired.has(oldId)) retired.set(oldId, node.id);
     }
   }
+  const sourceById = new Map(value.nodes.map((node) => [node.id, node]));
+  const graphAsOf = Object.prototype.hasOwnProperty.call(value, "generated_at")
+    ? value.generated_at.slice(0, 10) : null;
+  const state = {};
+  for (const [key, entry] of Object.entries(value.state)) {
+    state[key] = projectStateEntry(entry, sourceById.get(key), graphAsOf);
+  }
   return {
     kind: "ACCEPTED",
     graph: {
@@ -886,7 +926,7 @@ export function acceptGraphBuffer(buffer) {
       generated_at: value.generated_at,
       nodes,
       edges: value.edges.map(projectEdge),
-      trails: [], state: {}, influence: {}, frontier: [],
+      trails: [], state, influence: {}, frontier: [],
       projections: {...value.projections}
     },
     retired
