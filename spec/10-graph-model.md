@@ -130,6 +130,15 @@ alternative_to (alternatives don't disagree, and neither side
 is primary; #94);
 canonicalization, identity/dedup, weight-conflict errors, and
 cycle handling are §20.3's.
+Endpoints are two distinct nodes: no type applies to itself, so
+source == target — after the §34.4 resolution that can collapse
+an authored pair into one node — is rejected, never drawn
+(#102). Only the rows whose source and target kinds overlap can
+spell one at all; the rest the matrix already forbids. None of
+those rows has a meaningful self-application: a self
+prerequisite is a one-node cycle, the symmetric rows presuppose
+two sides, and a segment landing on its own origin is §9.9's
+landing, not movement. Severity and skip mechanics: §20.3.
 Weight exists on the authored species only, per the §14.9 chain;
 supports is authored with no weight at all (§9.14); derived edges
 never carry weight.

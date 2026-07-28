@@ -233,6 +233,10 @@ function validateEdge(edge, index) {
   if (!hasKeys(edge, ["source", "target", "type", "provenance"])) return diagnostic(path, "required");
   if (typeof edge.source !== "string" || !NODE_ID_RE.test(edge.source)) return diagnostic(path + "/source", "nodeId");
   if (typeof edge.target !== "string" || !NODE_ID_RE.test(edge.target)) return diagnostic(path + "/target", "nodeId");
+  // §10.2 (#102): endpoints are two distinct nodes — no type applies to
+  // itself. A self-edge has no drawable geometry, so accepting one would
+  // leave the file carrying a claim the picture never shows (§27.8).
+  if (edge.source === edge.target) return diagnostic(path + "/target", "selfEdge");
   if (!EDGE_TYPES.includes(edge.type)) return diagnostic(path + "/type", "enum");
   if (!isStringArray(edge.provenance, (item) => NODE_ID_RE.test(item)) || edge.provenance.length === 0) return diagnostic(path + "/provenance", "nonEmptyNodeIds");
   // §10.3/§20.3: provenance is a canonical set — dedup unions it, then the

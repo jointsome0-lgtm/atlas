@@ -105,6 +105,13 @@ Endpoints: a kind outside the type's matrix row is an ERROR when
 the edge is authored in living curation; a journal-derived edge
 whose ref resolves outside the row is skipped with a warning —
 step 11's origin rule, restated once.
+Self-edges (§10.2): an edge whose endpoints resolve to the same
+node never reaches the graph. Authored — a curated file naming
+its own node, the §34.4 merge that collapses an authored pair
+included — it is an ERROR naming the file: curation converges.
+Derived — a route repeating a step, a segment listing its own
+`to` among its `from` — the degenerate edge is skipped with a
+WARNING and the record stays as the user wrote it (§5.2).
 As-of: journal- and segment-derived edges obey the §20.1 bound
 like the fold.
 Determinism (§20.1's byte-identical promise): provenance lists

@@ -1702,6 +1702,31 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
                 | set(edge.get("alternative_in", [])))
     edges = deduped
 
+    # §10.2/§20.3 (#102): endpoints are two distinct nodes — no type applies
+    # to itself, so a self-edge never reaches the graph rather than reaching
+    # a viewer that could only draw it as a zero-length line.  The check runs
+    # on §34.4-resolved ids, so a merge that collapses an authored pair is
+    # caught, and before the cycle pass, so a self prerequisite reads as this
+    # rule rather than as a too-coarse concept cut.
+    distinct = []
+    for edge in edges:
+        if not (edge["source"] and edge["source"] == edge["target"]):
+            distinct.append(edge)
+            continue
+        if edge["type"] in AUTHORED_ROLES | {"supports"}:
+            # Authored in living curation: curation converges (§34.4).
+            errors.append(
+                f"{edge['_origin']}: {edge['type']} {edge['source']} applies "
+                f"to itself — endpoints must be two distinct nodes (§10.2)")
+        else:
+            # Derived from a record the user owns — a route repeating a step,
+            # a segment listing its own `to` among its `from`: the degenerate
+            # edge goes, the record stays as written (§5.2).
+            warnings.append(
+                f"{edge['_origin']}: {edge['type']} {edge['source']} applies "
+                f"to itself — skipped (§10.2)")
+    edges = distinct
+
     # §20.3 cycles: a prerequisite_of cycle is a WARNING carrying the cycle
     # path — usually a too-coarse concept cut, never a build failure and
     # never a dependency alarm (§15.3, §25.4). supports cycles are normal

@@ -1238,6 +1238,42 @@ class SchemaValidatorTests(unittest.TestCase):
             self.assertEqual(1, code, stderr)
             self.assertIn(expected, stderr)
 
+    def test_self_referential_edge_is_rejected(self):
+        # §10.2 (#102): both endpoints resolving to one node is a rejection —
+        # the schema cannot compare siblings, so the check lives here beside
+        # the viewer contract's. The two-endpoint spelling stays valid.
+        base = json.loads(VALID_EMPTY_GRAPH)
+        base["nodes"] = [
+            {
+                "id": f"concept:{slug}", "type": "concept",
+                "title": slug.upper(), "fields": ["knowledge"], "aliases": [],
+            }
+            for slug in ("a", "b")
+        ]
+        base["state"] = {
+            f"concept:{slug}": json.loads(NO_KNOWLEDGE_CONCEPT)
+            for slug in ("a", "b")
+        }
+        edge = {
+            "source": "concept:a", "target": "concept:a",
+            "type": "related_to", "provenance": ["concept:a"],
+            "weight": "unassessed",
+        }
+        for name, candidate, expected in (
+                ("self", edge, 1),
+                ("distinct", {**edge, "target": "concept:b"}, 0)):
+            graph = {**base, "edges": [candidate]}
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                materialize(
+                    {"graph/atlas-graph.json": json.dumps(graph) + "\n"},
+                    Path(directory),
+                )
+                code, _, stderr = self.run_cli("validate", directory)
+            self.assertEqual(expected, code, stderr)
+            if expected:
+                self.assertIn(
+                    "related_to concept:a applies to itself", stderr)
+
     def test_runner_contract_envelopes_are_closed(self):
         # §17.7/#46: the four transient role boundaries accept their minimal
         # envelopes, while model-authored sensitivity or write authority has

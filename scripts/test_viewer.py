@@ -51,6 +51,7 @@ EXPECTED_REJECTED_FIXTURES = {
     "primary-supporting-role-conflict.json",
     "projection-key-not-zone-id.json",
     "reversed-related-to-pair.json",
+    "self-referential-edge.json",
     "state-entry-missing-required.json",
     "state-entry-not-an-object.json",
     "state-entry-unknown-property.json",

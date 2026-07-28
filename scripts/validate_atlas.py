@@ -1786,6 +1786,18 @@ def validate_instance(root: Path):
                                 f"{path}: edges[{index}].{endpoint} {ref} "
                                 "is not an emitted node id (§10)"
                             )
+                    # §10.2 (#102): no edge type applies to itself, so both
+                    # endpoints resolving to one node is a rejection — the
+                    # viewer would otherwise carry a claim it draws as a
+                    # zero-length line, i.e. as nothing (§27.8).  The schema
+                    # cannot compare sibling properties; this is its arm.
+                    if (isinstance(edge.get("source"), str)
+                            and edge.get("source") == edge.get("target")):
+                        errors.append(
+                            f"{path}: edges[{index}] {edge.get('type')} "
+                            f"{edge['source']} applies to itself — endpoints "
+                            "must be two distinct nodes (§10.2)"
+                        )
                     # §10.3: provenance is the complete derivation basis —
                     # authoring node ids and deriving record/route ids, all
                     # emitted as nodes of the same build.

@@ -334,6 +334,7 @@
     },
     "edge": {
       "type": "object",
+      "description": "§10.2 (#102): source and target are two distinct nodes — no type applies to itself, and the endpoints hold the ids §34.4 resolution produced. JSON Schema 2020-12 compares no sibling properties, so the distinctness check is executable in validate_atlas.py's graph cross-checks and in viewer/contract.js, beside the other §20.3 canonical-form rules the vocabulary cannot state.",
       "properties": {
         "source": {"$ref": "#/$defs/nodeId"},
         "target": {"$ref": "#/$defs/nodeId"},

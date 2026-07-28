@@ -899,6 +899,71 @@ class BuilderIntegrationTests(unittest.TestCase):
                 and "concept:a -> concept:b -> concept:a" in warning
                 for warning in warnings), warnings)
 
+    def test_authored_self_edge_fails_the_build_after_redirects(self):
+        # §10.2/§20.3 (#102): endpoints are two distinct nodes. Authored
+        # curation converges, so both a file naming its own node and a §34.4
+        # merge that collapses an authored pair are build ERRORs.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            (base / "a.md").write_text(
+                "---\nid: concept:a\ntype: concept\n"
+                "title: A (Vera Example)\nrelated_concepts:\n"
+                "  - concept:a\n---\n",
+                encoding="utf-8",
+            )
+            (base / "b.md").write_text(
+                "---\nid: concept:b\ntype: concept\n"
+                "title: B (Vera Example)\nformerly:\n"
+                "  - concept:b-old\nconcept_edges:\n"
+                "  - to: concept:b-old\n    role: prerequisite_of\n---\n",
+                encoding="utf-8",
+            )
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertTrue(
+            any("related_to concept:a applies to itself" in error
+                for error in errors), errors)
+        self.assertTrue(
+            any("prerequisite_of concept:b applies to itself" in error
+                for error in errors), errors)
+        # The self prerequisite reads as this rule, not as a cycle path.
+        self.assertEqual(
+            [], [w for w in warnings if "prerequisite_of cycle" in w])
+        self.assertEqual(
+            [], [e for e in graph["edges"] if e["source"] == e["target"]])
+
+    def test_derived_self_edge_is_skipped_with_a_warning(self):
+        # §10.2/§20.3 (#102): a route repeating a step derives a degenerate
+        # suggested_next. The record stays as written (§5.2) and only the
+        # edge goes — a WARNING, never a build failure.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "concepts"
+            base.mkdir(parents=True)
+            for slug in ("a", "b"):
+                (base / f"{slug}.md").write_text(
+                    f"---\nid: concept:{slug}\ntype: concept\n"
+                    f"title: {slug.upper()} (Vera Example)\n---\n",
+                    encoding="utf-8",
+                )
+            routes = Path(directory) / "suggested-routes"
+            routes.mkdir(parents=True)
+            (routes / "r.md").write_text(
+                "---\nid: suggested-route:r\ntype: suggested_route\n"
+                "title: R (Vera Example)\nstatus: available\nsteps:\n"
+                "  - concept:a\n  - concept:a\n  - concept:b\n---\n",
+                encoding="utf-8",
+            )
+            graph, errors, warnings = build_atlas_graph.build(Path(directory))
+        self.assertEqual([], errors)
+        self.assertTrue(
+            any("suggested_next concept:a applies to itself" in warning
+                and "skipped" in warning for warning in warnings), warnings)
+        self.assertEqual(
+            [], [e for e in graph["edges"] if e["source"] == e["target"]])
+        self.assertEqual(
+            3, len([e for e in graph["edges"]
+                    if e["type"] == "step_of_route"]))
+
     def test_scalar_formerly_fails_the_build(self):
         # A parser-valid scalar formerly must be a build error, never a
         # char-by-char redirect walk or a string payload in the graph.
