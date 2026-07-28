@@ -167,8 +167,8 @@ function radialExtent(type) {
   return (KIND_RADIAL_EXTENT[type] || KIND_HALF_EXTENT[type] || 7) * plateUnit();
 }
 
-// The full drawn footprint of a node's kind marks — pull ring and
-// sensitivity dot included — for the cartouche frame.
+// The full drawn footprint of a node's kind marks — pull ring and sensitivity
+// dot included — for rail placement, the cartouche frame, and label anchoring.
 function glyphExtent(node) {
   const u = plateUnit();
   let extent = halfExtent(node.type);
@@ -377,14 +377,11 @@ function makeListRow(node, selected) {
   row.type = "button";
   row.dataset.nodeId = node.id;
   const entry = STATE_TYPES.has(node.type) ? accepted.graph.state[node.id] : undefined;
-  const marked = !node.sensitivity && entry && entry.sensitivity
-    ? {...node, sensitivity: entry.sensitivity} : node;
-  appendNodeGlyph(row, marked);
+  appendNodeGlyph(row, node);
   row.append(htmlElement("span", "node-list-title", displayTitle(node)));
   // §16.2 A8/A11: the list carries the field's state channels as columns.
   if (STATE_TYPES.has(node.type)) {
     const wordsByChannel = stateWords(node, entry);
-    if (entry && entry.sensitivity) row.classList.add("has-state-sensitivity");
     for (const [label, words] of wordsByChannel) {
       row.append(htmlElement("span", "node-list-state", label + ": " + words));
     }
@@ -393,6 +390,24 @@ function makeListRow(node, selected) {
   if (node.fields.length === 0) row.append(htmlElement("span", "badge", "field undefined"));
   if (selected && selected.id === node.id) row.classList.add("selected");
   row.addEventListener("click", () => updateFocus(node.id));
+  return row;
+}
+
+function makeEdgeListRow(edge) {
+  const row = htmlElement("div", "edge-list-row");
+  row.dataset.source = edge.source;
+  row.dataset.target = edge.target;
+  row.dataset.edgeType = edge.type;
+  row.append(
+    htmlElement("span", "edge-list-endpoint", edge.source),
+    htmlElement("span", "edge-list-type", edge.type),
+    htmlElement("span", "edge-list-endpoint", edge.target),
+  );
+  // §16.2 A3/A8/A11: only edge kinds that admit weight get this column;
+  // unassessed is a word here even though its field reading is an open gap.
+  if (Object.prototype.hasOwnProperty.call(edge, "weight")) {
+    row.append(htmlElement("span", "edge-list-weight", "weight: " + edge.weight));
+  }
   return row;
 }
 
@@ -421,10 +436,32 @@ async function expandSection(rows, typeNodes, selected, showAll) {
   }
 }
 
+async function expandEdgeSection(rows, edges, showAll) {
+  const generation = renderGeneration;
+  let hadFocus = document.activeElement === showAll;
+  showAll.remove();
+  let firstAppended = null;
+  for (let start = LIST_SECTION_PREVIEW; start < edges.length; start += LIST_EXPAND_CHUNK) {
+    for (const edge of edges.slice(start, start + LIST_EXPAND_CHUNK)) {
+      const row = makeEdgeListRow(edge);
+      if (!firstAppended) firstAppended = row;
+      rows.append(row);
+    }
+    if (hadFocus && firstAppended) {
+      firstAppended.setAttribute("tabindex", "-1");
+      firstAppended.focus({preventScroll: true});
+      hadFocus = false;
+    }
+    await nextFrame();
+    if (generation !== renderGeneration) return;
+  }
+}
+
 function renderList(field, nodes, edges, selected, banner, pastCeiling) {
   resetScreen(field);
   setMainState("LIST");
-  setStatus(nodes.length, visibleEdges(edges).length);
+  const listEdges = visibleEdges(edges);
+  setStatus(nodes.length, listEdges.length);
   const list = htmlElement("div", "node-list");
   if (banner) list.classList.add("has-banner");
   if (pastCeiling) {
@@ -462,6 +499,26 @@ function renderList(field, nodes, edges, selected, banner, pastCeiling) {
     list.append(section);
     const marked = rows.querySelector(".node-list-row.selected");
     if (marked) selectedRow = marked;
+  }
+  if (listEdges.length) {
+    const section = htmlElement("section", "edge-list-section");
+    section.append(htmlElement("h2", "", "edges (" + listEdges.length + ")"));
+    const rows = htmlElement("div", "edge-list-rows");
+    for (const edge of listEdges.slice(0, LIST_SECTION_PREVIEW)) {
+      rows.append(makeEdgeListRow(edge));
+    }
+    section.append(rows);
+    if (listEdges.length > LIST_SECTION_PREVIEW) {
+      const showAll = htmlElement(
+        "button", "list-show-all", "Show all " + listEdges.length + " edge rows",
+      );
+      showAll.type = "button";
+      showAll.addEventListener("click", () => {
+        void expandEdgeSection(rows, listEdges, showAll);
+      });
+      section.append(showAll);
+    }
+    list.append(section);
   }
   main.append(list);
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
@@ -714,7 +771,9 @@ function makeDefinitions() {
   // §16.2 A1 textures. A <pattern>'s content cannot inherit the referencing
   // element's colour, so each (texture, kind) pair is its own definition and
   // the tile's ink takes the kind hue from its own class.
-  const pitch = tokenNumber("--tx-hatch-pitch", 4);
+  const u = plateUnit();
+  const pitch = tokenNumber("--tx-hatch-pitch", 1.5556) * u;
+  const strokeWidth = tokenNumber("--tx-hatch-weight", 0.5833) * u;
   for (const kind of TEXTURE_KINDS) {
     for (const texture of ["hatch", "cross"]) {
       const pattern = svgElement("pattern");
@@ -730,11 +789,13 @@ function makeDefinitions() {
       const stroke = svgElement("line", "tx-ink-" + kind);
       stroke.setAttribute("x1", "0"); stroke.setAttribute("y1", "0");
       stroke.setAttribute("x2", "0"); stroke.setAttribute("y2", pitch);
+      stroke.setAttribute("stroke-width", strokeWidth.toFixed(2));
       pattern.append(stroke);
       if (texture === "cross") {
         const across = svgElement("line", "tx-ink-" + kind);
         across.setAttribute("x1", "0"); across.setAttribute("y1", "0");
         across.setAttribute("x2", pitch); across.setAttribute("y2", "0");
+        across.setAttribute("stroke-width", strokeWidth.toFixed(2));
         pattern.append(across);
       }
       defs.append(pattern);
@@ -886,7 +947,7 @@ function primaryShape(node) {
 // The taught rung's inner keyline, per plate shape (§16.2 A1).
 function keylineShape(node) {
   const u = plateUnit();
-  const inset = tokenNumber("--tx-keyline-inset", 4);
+  const inset = tokenNumber("--tx-keyline-inset", 1.5556) * u;
   if (node.type === "concept") {
     const shape = svgElement("circle", "plate-keyline");
     shape.setAttribute("r", (7 * u - inset).toFixed(2));
@@ -975,9 +1036,6 @@ function stateWords(node, entry) {
     // form, never as a value indistinguishable from a confirmed one.
     words = [["status", gated("status")]];
   }
-  if (entry && entry.sensitivity) {
-    words.push(["state sensitivity", entry.sensitivity]);
-  }
   return words;
 }
 
@@ -1010,14 +1068,15 @@ function railDimensions(node) {
 // §16.2 A1/A2: the decision rail — review-gated dimensions only, one drawn
 // slot each in fixed order. Undecided stays an unstruck slot; a decided
 // ordinal level is a struck mark whose extent carries it; disputed is the
-// fork. A non-ordinal question status uses one uniform baseline strike.
-// Only kinds that admit gated dimensions call this at all.
-function makeRail(entry, dimensions) {
+// fork. A non-ordinal question status uses one uniform baseline strike. The
+// caller anchors it beyond the complete kind-mark footprint. Only kinds that
+// admit gated dimensions call this at all.
+function makeRail(entry, dimensions, anchorExtent) {
   const {gap, width, slotH, pitch} = railGeometry();
   const u = plateUnit();
   const radius = tokenNumber("--rail-radius", 0.4667) * u;
   const split = tokenNumber("--rail-mark-split", 1.3611) * u;
-  const x = plateRadius() + gap;
+  const x = anchorExtent + gap;
   const top = -(slotH + pitch * (dimensions.length - 1)) / 2;
   const rail = svgElement("g", "rail");
   const decided = new Set(entry.decided);
@@ -1058,10 +1117,6 @@ function makeCartouche(leftExtent, rightExtent, halfHeight) {
 function makeNode(node, position, selected) {
   const u = plateUnit();
   const entry = STATE_TYPES.has(node.type) ? accepted.graph.state[node.id] : undefined;
-  // §32.6: state classed by its evidence marks the node like a classed node —
-  // one dot, one channel, whichever side the class came from.
-  const marked = !node.sensitivity && entry && entry.sensitivity
-    ? {...node, sensitivity: entry.sensitivity} : node;
   const texture = STATE_TYPES.has(node.type) ? plateTexture(node, entry) : null;
   const classes = ["node", NODE_CLASSES[node.type]];
   if (selected) classes.push("selected");
@@ -1089,21 +1144,21 @@ function makeNode(node, position, selected) {
     ring.setAttribute("r", (15 * u).toFixed(2));
     group.append(ring);
   }
-  appendKindMarks(group, marked);
+  appendKindMarks(group, node);
   if (texture === "dot") {
     const dot = svgElement("circle", "plate-dot");
-    dot.setAttribute("r", tokenNumber("--tx-dot-r", 3.4).toFixed(2));
+    dot.setAttribute("r", (tokenNumber("--tx-dot-r", 1.3222) * u).toFixed(2));
     group.append(dot);
   }
   if (texture === "keyline") group.append(keylineShape(node));
   const {gap, width, slotH, pitch} = railGeometry();
   const dimensions = entry === undefined ? [] : railDimensions(node);
   const hasRail = dimensions.length > 0;
-  if (hasRail) group.append(makeRail(entry, dimensions));
-  const drawnExtent = glyphExtent(marked);
+  const drawnExtent = glyphExtent(node);
+  if (hasRail) group.append(makeRail(entry, dimensions, drawnExtent));
   const rightExtent = Math.max(
     drawnExtent,
-    hasRail ? plateRadius() + gap + width : 0);
+    hasRail ? drawnExtent + gap + width : 0);
   if (node.fields.length === 0) {
     const halfHeight = Math.max(
       drawnExtent,

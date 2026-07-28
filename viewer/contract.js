@@ -849,9 +849,6 @@ function projectStateEntry(entry, node, asOf) {
   projected.decided = Array.isArray(entry.decisions)
     ? entry.decisions.map((reference) => reference.dimension)
     : [];
-  if (Object.prototype.hasOwnProperty.call(entry, "sensitivity")) {
-    projected.sensitivity = entry.sensitivity;
-  }
   return projected;
 }
 

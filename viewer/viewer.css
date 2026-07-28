@@ -79,13 +79,13 @@
   --halo-r-strong: 17px;
   --halo-o-strong: 0.22;
 
-  /* Interior textures and the decision rail (A1, A2). Rail tokens are
-     unitless values on the shapes' 7-unit grid; viewer.js multiplies every
-     slot and mark dimension by the current plate unit (--plate-r / 7). */
-  --tx-hatch-pitch: 4px;
-  --tx-hatch-weight: 1.5px;
-  --tx-dot-r: 3.4px;
-  --tx-keyline-inset: 4px;
+  /* Interior textures and the decision rail (A1, A2). These are unitless
+     values on the shapes' 7-unit grid; viewer.js multiplies every texture,
+     slot, and mark dimension by the current plate unit (--plate-r / 7). */
+  --tx-hatch-pitch: 1.5556;
+  --tx-hatch-weight: 0.5833;
+  --tx-dot-r: 1.3222;
+  --tx-keyline-inset: 1.5556;
   --rail-gap: 1.9444;
   --rail-w: 1.75;
   --rail-slot-h: 4.6667;
@@ -521,12 +521,14 @@ aside {
   line-height: 1.4;
 }
 
-.node-list-section {
+.node-list-section,
+.edge-list-section {
   width: min(920px, 100%);
   margin: 0 auto 26px;
 }
 
-.node-list-section h2 {
+.node-list-section h2,
+.edge-list-section h2 {
   margin: 0 0 8px;
   color: var(--ink-2);
   font-size: 0.82rem;
@@ -590,26 +592,45 @@ aside {
   grid-template-columns: 18px minmax(0, 1.4fr) repeat(5, minmax(0, 1fr)) minmax(120px, auto) auto;
 }
 
-.node-list-section[data-node-type="concept"] .node-list-row.has-state-sensitivity {
-  grid-template-columns: 18px minmax(0, 1.4fr) repeat(6, minmax(0, 1fr)) minmax(120px, auto) auto;
-}
-
 .node-list-section[data-node-type="material"] .node-list-row,
 .node-list-section[data-node-type="material_part"] .node-list-row {
   grid-template-columns: 18px minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) minmax(120px, auto) auto;
-}
-
-.node-list-section[data-node-type="material"] .node-list-row.has-state-sensitivity,
-.node-list-section[data-node-type="material_part"] .node-list-row.has-state-sensitivity {
-  grid-template-columns: 18px minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)) minmax(120px, auto) auto;
 }
 
 .node-list-section[data-node-type="question"] .node-list-row {
   grid-template-columns: 18px minmax(0, 1.4fr) minmax(0, 1fr) minmax(120px, auto) auto;
 }
 
-.node-list-section[data-node-type="question"] .node-list-row.has-state-sensitivity {
-  grid-template-columns: 18px minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) minmax(120px, auto) auto;
+.edge-list-rows {
+  display: grid;
+  gap: 4px;
+}
+
+.edge-list-row {
+  display: grid;
+  min-height: 36px;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.7fr) minmax(0, 1fr) minmax(110px, auto);
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--ground);
+  font-size: 0.78rem;
+}
+
+.edge-list-endpoint {
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.edge-list-type {
+  overflow-wrap: anywhere;
+}
+
+.edge-list-weight {
+  color: var(--ink-2);
 }
 
 .graph-stage,
@@ -784,12 +805,6 @@ aside {
 .tx-ink-concept { stroke: var(--k-concept); }
 .tx-ink-material { stroke: var(--k-material); }
 .tx-ink-material_part { stroke: var(--k-part); }
-
-.tx-ink-concept,
-.tx-ink-material,
-.tx-ink-material_part {
-  stroke-width: var(--tx-hatch-weight);
-}
 
 .plate-dot {
   fill: var(--plate-hue, var(--k-concept));
@@ -1054,6 +1069,10 @@ aside {
   .node-list-state,
   .node-list-row .badge {
     grid-column: 2;
+  }
+
+  .edge-list-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .app-shell.details-open {

@@ -779,6 +779,11 @@ class ViewerBrowserTests(unittest.TestCase):
             node for node in graph["nodes"]
             if "knowledge" in node["fields"] or node["fields"] == []
         ]
+        visible_ids = {node["id"] for node in visible}
+        visible_edges = [
+            edge for edge in graph["edges"]
+            if edge["source"] in visible_ids and edge["target"] in visible_ids
+        ]
         expected_types = [
             node_type for node_type in NODE_TYPE_ORDER
             if any(node["type"] == node_type for node in visible)
@@ -790,6 +795,28 @@ class ViewerBrowserTests(unittest.TestCase):
             "sections => sections.map(section => section.dataset.nodeType)")
         self.assertEqual(expected_types, actual_types)
         self.assertEqual(len(visible), self.page.locator(".node-list-row").count())
+        self.assertEqual(
+            len(visible_edges), self.page.locator(".edge-list-row").count())
+        weighted = [
+            edge for edge in visible_edges if "weight" in edge
+        ]
+        self.assertEqual(
+            sorted("weight: " + edge["weight"] for edge in weighted),
+            sorted(self.page.locator(
+                ".edge-list-weight").all_inner_texts()),
+        )
+        self.assertIn(
+            "weight: unassessed",
+            self.page.locator(".edge-list-weight").all_inner_texts(),
+        )
+        no_weight = next(edge for edge in visible_edges if "weight" not in edge)
+        no_weight_row = self.page.locator(
+            f'.edge-list-row[data-source="{no_weight["source"]}"]'
+            f'[data-target="{no_weight["target"]}"]'
+            f'[data-edge-type="{no_weight["type"]}"]'
+        )
+        self.assertEqual(1, no_weight_row.count())
+        self.assertEqual(0, no_weight_row.locator(".edge-list-weight").count())
         self.assertEqual(
             "true", self.page.locator("#list-view").get_attribute("aria-pressed"))
         self.assertFalse(self.page.locator("#graph-view").is_disabled())
@@ -1269,6 +1296,48 @@ class ViewerBrowserTests(unittest.TestCase):
         taught_node = self.page.locator(f'g.node[data-node-id="{taught["id"]}"]')
         self.assertEqual(1, taught_node.locator(".plate-keyline").count())
 
+        def texture_geometry():
+            return self.page.evaluate(
+                """({touchedId, taughtId}) => {
+                    const touched = document.querySelector(
+                        `g.node[data-node-id="${touchedId}"]`);
+                    const taught = document.querySelector(
+                        `g.node[data-node-id="${taughtId}"]`);
+                    const taughtShape = taught.querySelector(".node-shape");
+                    const keyline = taught.querySelector(".plate-keyline");
+                    const pattern = document.querySelector("#tx-hatch-concept");
+                    return {
+                        dotRadius: parseFloat(
+                            touched.querySelector(".plate-dot").getAttribute("r")),
+                        keylineInset: parseFloat(taughtShape.getAttribute("r"))
+                            - parseFloat(keyline.getAttribute("r")),
+                        hatchPitch: parseFloat(pattern.getAttribute("width")),
+                        hatchWeight: parseFloat(
+                            pattern.querySelector("line")
+                                .getAttribute("stroke-width")),
+                    };
+                }""",
+                {"touchedId": touched["id"], "taughtId": taught["id"]},
+            )
+
+        native = texture_geometry()
+        self.page.evaluate(
+            """() => {
+                const sheet = [...document.styleSheets].find(
+                    item => item.href?.endsWith("/viewer/viewer.css"));
+                sheet.insertRule(
+                    ":root { --plate-r: 9px; }", sheet.cssRules.length);
+            }""")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.locator("#graph-view").click()
+        self.page.wait_for_selector('#main[data-state="FIELD"]')
+        scaled = texture_geometry()
+        for key in native:
+            with self.subTest(texture_dimension=key):
+                self.assertAlmostEqual(
+                    native[key] / 2, scaled[key], places=2)
+
     def freshness_graph(self):
         fresh = self.concept_node("fresh-example")
         aging = self.concept_node("aging-example")
@@ -1432,6 +1501,45 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(
             1, len({round(height, 2) for height in decided_heights}))
 
+    def test_rail_anchor_clears_auxiliary_kind_marks(self):
+        # The rail begins after the complete drawn glyph, not the primary
+        # plate: question pull rings and node-payload sensitivity dots remain
+        # unobscured when their kinds also admit review-gated state.
+        question_id = "question:demo-when-is-retry-safe"
+        self.open_state("#mode=field", "FIELD")
+        question = self.page.locator(
+            f'g.node[data-node-id="{question_id}"]')
+        question_geometry = question.evaluate(
+            """group => ({
+                ringRight: parseFloat(
+                    group.querySelector(".question-ring").getAttribute("r")),
+                railLeft: parseFloat(
+                    group.querySelector(".rail-slot").getAttribute("x")),
+            })""")
+        self.assertGreater(
+            question_geometry["railLeft"], question_geometry["ringRight"])
+
+        concept = self.concept_node("classed-rail")
+        concept["sensitivity"] = "medical"
+        graph = self.graph_envelope(nodes=[concept])
+        graph["state"][concept["id"]]["sensitivity"] = "medical"
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+        marked = self.page.locator(
+            f'g.node[data-node-id="{concept["id"]}"]')
+        marked_geometry = marked.evaluate(
+            """group => {
+                const dot = group.querySelector(".sensitivity-dot");
+                return {
+                    dotRight: parseFloat(dot.getAttribute("cx"))
+                        + parseFloat(dot.getAttribute("r")),
+                    railLeft: parseFloat(
+                        group.querySelector(".rail-slot").getAttribute("x")),
+                };
+            }""")
+        self.assertGreater(
+            marked_geometry["railLeft"], marked_geometry["dotRight"])
+
     def test_rail_geometry_scales_with_plate_token(self):
         # --plate-r is the one glyph scale control. Re-rendering at half the
         # radius must halve the slot, strike, pitch, and gap with the plate.
@@ -1513,8 +1621,9 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertIn("no decision recorded", legend)
         self.assertIn("no contact", legend)
 
-        # A state-derived class uses the same dot as a node class and therefore
-        # needs its own A8 list column, not only the detail-panel row.
+        # §29 keeps medical-derived state out of the active viewer slice. The
+        # input contract still validates its provenance, but the accepted
+        # projection neither draws nor names state-entry sensitivity.
         concept = self.concept_node("classed-state")
         artifact = self.artifact_node(
             "classed-state-evidence", "noticed", "2026-07-16")
@@ -1530,16 +1639,18 @@ class ViewerBrowserTests(unittest.TestCase):
         })
         self.write_graph(graph)
         self.open_state("#mode=field", "FIELD")
+        field_node = self.page.locator(
+            f'g.node[data-node-id="{concept["id"]}"]')
+        self.assertEqual(0, field_node.locator(".sensitivity-dot").count())
         self.page.locator("#list-view").click()
         self.page.wait_for_selector('#main[data-state="LIST"]')
         row = self.page.locator(
             f'.node-list-row[data-node-id="{concept["id"]}"]')
-        self.assertIn("has-state-sensitivity", row.get_attribute("class"))
-        self.assertIn("state sensitivity: medical", row.inner_text())
+        self.assertNotIn("state sensitivity", row.inner_text().lower())
         row.click()
         self.page.wait_for_selector("#details:not([hidden])")
         self.assertEqual(
-            1,
+            0,
             self.page.locator(
                 '#details .detail-row dt',
                 has_text="state sensitivity",
