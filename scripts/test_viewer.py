@@ -1119,6 +1119,9 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertTrue(self.page.locator("svg .edge-weight").first.is_visible())
         self.assertTrue(self.page.locator("svg .rail").first.is_visible())
         self.assertFalse(self.page.locator("svg .weight-dropped").first.is_visible())
+        edge_label = self.page.locator("svg .edge-label").first
+        edge_label.evaluate("label => label.classList.add('visible')")
+        self.assertTrue(edge_label.is_visible())
         self.assertNotIn("not drawn at this density", self.page.locator("#status-bar").inner_text())
 
         self.zoom_out_until(viewport, minus, "drop-decision")
@@ -1137,6 +1140,7 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertNotIn("drop-state", viewport.get_attribute("class"))
         # The channel drops whole: no label survives, the selection's included.
         self.assertEqual(0, self.page.locator("svg .node-label:visible").count())
+        self.assertFalse(edge_label.is_visible())
         self.assertIn(
             "not drawn at this density: decision rails, edge weight, labels",
             self.page.locator("#status-bar").inner_text(),
@@ -1159,6 +1163,30 @@ class ViewerBrowserTests(unittest.TestCase):
             "getComputedStyle(document.querySelector("
             "'g.node[data-node-id=\"concept:http-methods\"] .node-shape')).fill")
         self.assertNotIn("url", dropped_fill)
+
+    def test_hub_and_spoke_density_uses_nearest_neighbours(self):
+        # Long incident spokes are not spacing: the leaves can overlap while
+        # every hub edge remains long. A11 therefore keys the initial tier to
+        # the cached median nearest-neighbour distance.
+        hub = self.concept_node("hub")
+        leaves = [self.concept_node(f"leaf-{index:02d}") for index in range(48)]
+        edges = [
+            {
+                "source": hub["id"], "target": leaf["id"],
+                "type": "related_to",
+                "provenance": [hub["id"], leaf["id"]],
+                "weight": "unassessed",
+            }
+            for leaf in leaves
+        ]
+        self.write_graph(self.graph_envelope(nodes=[hub, *leaves], edges=edges))
+        self.open_state("#mode=field", "FIELD", timeout=30_000)
+        viewport = self.page.locator("svg .viewport")
+        self.assertIn("drop-decision", viewport.get_attribute("class"))
+        self.assertIn(
+            "not drawn at this density: decision rails, edge weight",
+            self.page.locator("#status-bar").inner_text(),
+        )
 
     def artifact_node(self, slug, strength, observed_at):
         return {
@@ -1339,19 +1367,23 @@ class ViewerBrowserTests(unittest.TestCase):
                     confidence: within(slots[0]).map((mark) => parseFloat(mark.getAttribute("height"))),
                     clarity: within(slots[1]).length,
                     coverage: within(slots[2]).length,
-                    tokens: {high: token("--rail-mark-3")},
+                    tokens: {
+                        high: token("--rail-mark-3") * token("--plate-r") / 7,
+                    },
                 };
             }""",
             concept["id"],
         )
         # confidence high: one struck mark at the top extent.
-        self.assertEqual([drawn["tokens"]["high"]], drawn["confidence"])
+        self.assertEqual(
+            [round(drawn["tokens"]["high"], 2)],
+            [round(height, 2) for height in drawn["confidence"]],
+        )
         # clarity disputed: the fork — a base and two tines, not a rung.
         self.assertEqual(3, drawn["clarity"])
         # coverage undecided: the slot stays drawn and unstruck.
         self.assertEqual(0, drawn["coverage"])
-        # Kinds that admit no gated dimension draw no rail: the artifact, and
-        # a question (its gated status is words in the panel and the list).
+        # A kind that admits no gated dimension draws no rail.
         self.assertEqual(0, self.page.locator(
             f'g.node[data-node-id="{artifact["id"]}"] .rail').count())
         self.open_state(
@@ -1361,6 +1393,98 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertIn("high", panel)
         self.assertIn("disputed", panel)
         self.assertIn("no decision", panel)
+
+    def test_question_status_rail_is_one_nonordinal_slot(self):
+        # §16.2 A1/A2: question status is review-gated, so silence is one
+        # unstruck slot and every confirmed status gets the same strike. The
+        # status value remains in words; mark extent must not rank it.
+        question_id = "question:demo-when-is-retry-safe"
+        decided_heights = []
+        for status in (None, "open", "clarified", "resolved", "stale"):
+            graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+            if status is not None:
+                graph["state"][question_id] = {
+                    "status": status,
+                    "evidence": ["artifact:missing-note"],
+                    "decisions": [{
+                        "dimension": "status",
+                        "date": "2026-07-10",
+                        "evidence": ["artifact:missing-note"],
+                    }],
+                }
+            with self.subTest(status=status or "undecided"):
+                self.write_graph(graph)
+                self.open_state("#mode=field", "FIELD")
+                node = self.page.locator(
+                    f'g.node[data-node-id="{question_id}"]')
+                slots = node.locator(".rail-slot")
+                marks = node.locator(".rail-mark")
+                self.assertEqual(1, node.locator(".rail").count())
+                self.assertEqual(1, slots.count())
+                self.assertEqual(
+                    "status", slots.first.get_attribute("data-dimension"))
+                if status is None:
+                    self.assertEqual(0, marks.count())
+                else:
+                    self.assertEqual(1, marks.count())
+                    decided_heights.append(float(
+                        marks.first.get_attribute("height")))
+        self.assertEqual(
+            1, len({round(height, 2) for height in decided_heights}))
+
+    def test_rail_geometry_scales_with_plate_token(self):
+        # --plate-r is the one glyph scale control. Re-rendering at half the
+        # radius must halve the slot, strike, pitch, and gap with the plate.
+        graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        graph["state"]["concept:idempotency"].update({
+            "confidence": "high",
+            "decisions": [{
+                "dimension": "confidence",
+                "date": "2026-07-10",
+                "evidence": ["artifact:demo-retry-script"],
+            }],
+        })
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+
+        def geometry():
+            return self.page.evaluate(
+                """() => {
+                    const group = document.querySelector(
+                        'g.node[data-node-id="concept:idempotency"]');
+                    const shape = group.querySelector(".node-shape");
+                    const slots = group.querySelectorAll(".rail-slot");
+                    const first = slots[0];
+                    return {
+                        radius: parseFloat(shape.getAttribute("r")),
+                        gap: parseFloat(first.getAttribute("x"))
+                            - parseFloat(shape.getAttribute("r")),
+                        width: parseFloat(first.getAttribute("width")),
+                        height: parseFloat(first.getAttribute("height")),
+                        pitch: parseFloat(slots[1].getAttribute("y"))
+                            - parseFloat(first.getAttribute("y")),
+                        mark: parseFloat(
+                            group.querySelector(".rail-mark")
+                                .getAttribute("height")),
+                    };
+                }""")
+
+        native = geometry()
+        self.page.evaluate(
+            """() => {
+                const sheet = [...document.styleSheets].find(
+                    item => item.href?.endsWith("/viewer/viewer.css"));
+                sheet.insertRule(":root { --plate-r: 9px; }", sheet.cssRules.length);
+            }""")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.locator("#graph-view").click()
+        self.page.wait_for_selector('#main[data-state="FIELD"]')
+        scaled = geometry()
+        for key in native:
+            with self.subTest(dimension=key):
+                self.assertAlmostEqual(
+                    native[key] / 2, scaled[key], places=2)
 
     def test_state_words_share_one_vocabulary_across_surfaces(self):
         # §16.2 A8: field marks, panel words, and list columns speak one
@@ -1389,6 +1513,39 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertIn("no decision recorded", legend)
         self.assertIn("no contact", legend)
 
+        # A state-derived class uses the same dot as a node class and therefore
+        # needs its own A8 list column, not only the detail-panel row.
+        concept = self.concept_node("classed-state")
+        artifact = self.artifact_node(
+            "classed-state-evidence", "noticed", "2026-07-16")
+        artifact["sensitivity"] = "medical"
+        graph = self.graph_envelope(nodes=[concept, artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][concept["id"]].update({
+            "exposure": "touched",
+            "last_seen": "2026-07-16",
+            "freshness": "fresh",
+            "evidence": [artifact["id"]],
+            "sensitivity": "medical",
+        })
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        row = self.page.locator(
+            f'.node-list-row[data-node-id="{concept["id"]}"]')
+        self.assertIn("has-state-sensitivity", row.get_attribute("class"))
+        self.assertIn("state sensitivity: medical", row.inner_text())
+        row.click()
+        self.page.wait_for_selector("#details:not([hidden])")
+        self.assertEqual(
+            1,
+            self.page.locator(
+                '#details .detail-row dt',
+                has_text="state sensitivity",
+            ).count(),
+        )
+
     def test_field_undefined_is_a_cartouche_never_a_boundary_dash(self):
         # §16.2 A4: a dash on a node boundary is always freshness, so the
         # field-undefined flag is a hairline cartouche plus words.
@@ -1409,6 +1566,34 @@ class ViewerBrowserTests(unittest.TestCase):
                     && frame.x + frame.width > shape.x + shape.width
                     && frame.y + frame.height > shape.y + shape.height;
             }"""))
+
+    def test_label_anchor_clears_auxiliary_kind_marks(self):
+        # A label starts after the complete glyph footprint, including a
+        # sensitivity dot, rather than after only the primary plate.
+        artifact = self.artifact_node(
+            "classed-label-anchor", "noticed", "2026-07-16")
+        artifact["fields"] = ["knowledge"]
+        artifact["sensitivity"] = "medical"
+        graph = self.graph_envelope(nodes=[artifact])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+        geometry = self.page.evaluate(
+            """id => {
+                const group = document.querySelector(
+                    `g.node[data-node-id="${id}"]`);
+                const dot = group.querySelector(".sensitivity-dot");
+                return {
+                    dotRight: parseFloat(dot.getAttribute("cx"))
+                        + parseFloat(dot.getAttribute("r")),
+                    labelX: parseFloat(
+                        group.querySelector(".node-label").getAttribute("x")),
+                };
+            }""",
+            artifact["id"],
+        )
+        self.assertAlmostEqual(
+            4, geometry["labelX"] - geometry["dotRight"], places=2)
 
     def test_directed_edges_stop_short_of_their_endpoints(self):
         # An untrimmed stroke would bury its arrowhead under the target
@@ -1438,6 +1623,64 @@ class ViewerBrowserTests(unittest.TestCase):
                 return count;
             }""")
         self.assertEqual(0, untrimmed)
+
+    def test_edges_trim_to_noncircular_circumradii(self):
+        # A diagonal edge between square material parts needs halfExtent*sqrt(2)
+        # of clearance. Coordinates are emitted at three decimals, so compare
+        # the resulting trim at two decimals.
+        graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        visible_ids = {
+            node["id"] for node in graph["nodes"]
+            if "knowledge" in node["fields"] or node["fields"] == []
+        }
+        visible_edges = [
+            edge for edge in graph["edges"]
+            if edge["source"] in visible_ids and edge["target"] in visible_ids
+        ]
+        edge_index = next(
+            index for index, edge in enumerate(visible_edges)
+            if edge["type"] == "supports"
+            and edge["source"].startswith("part:")
+            and edge["target"].startswith("part:")
+        )
+        edge = visible_edges[edge_index]
+        self.open_state("#mode=field", "FIELD")
+        trims = self.page.evaluate(
+            """({index, sourceId, targetId}) => {
+                const centre = (id) => {
+                    const transform = document.querySelector(
+                        `g.node[data-node-id="${id}"]`)
+                        .getAttribute("transform");
+                    const match = transform.match(
+                        /translate\\(([-\\d.]+) ([-\\d.]+)\\)/);
+                    return {x: parseFloat(match[1]), y: parseFloat(match[2])};
+                };
+                const hit = document.querySelectorAll(
+                    "svg .edge-group")[index].querySelector(".edge-hit");
+                const source = centre(sourceId);
+                const target = centre(targetId);
+                return {
+                    source: Math.hypot(
+                        parseFloat(hit.getAttribute("x1")) - source.x,
+                        parseFloat(hit.getAttribute("y1")) - source.y),
+                    target: Math.hypot(
+                        parseFloat(hit.getAttribute("x2")) - target.x,
+                        parseFloat(hit.getAttribute("y2")) - target.y),
+                    expected: Math.hypot(4.5, 4.5)
+                        * parseFloat(getComputedStyle(document.documentElement)
+                            .getPropertyValue("--plate-r")) / 7 + 2,
+                };
+            }""",
+            {
+                "index": edge_index,
+                "sourceId": edge["source"],
+                "targetId": edge["target"],
+            },
+        )
+        self.assertAlmostEqual(
+            trims["expected"], trims["source"], places=2)
+        self.assertAlmostEqual(
+            trims["expected"], trims["target"], places=2)
 
     def test_forced_colors_keeps_state_structural(self):
         # §27.8: every state distinction survives forced colours because the

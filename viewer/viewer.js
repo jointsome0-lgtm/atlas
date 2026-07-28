@@ -42,10 +42,15 @@ const DEPTH_TEXTURES = {"skim": "dot", "read": "hatch", "summarized": "cross", "
 // the decided level, a decided floor is the baseline strike (mark 0), and
 // disputed is the fork, never a rung.
 const RAIL_MARK_TOKENS = ["--rail-mark-0", "--rail-mark-1", "--rail-mark-2", "--rail-mark-3"];
-const RAIL_DIMENSIONS = [
+const CONCEPT_RAIL_DIMENSIONS = [
   {dimension: "confidence", marks: {"unknown": 0, "low": 1, "medium": 2, "high": 3}},
   {dimension: "clarity", marks: {"vague": 0, "rough": 1, "stable": 3}, fork: "disputed"},
   {dimension: "coverage", marks: {"none": 0, "partial": 2, "broad": 3}}
+];
+// Status is gated but not ordinal: every confirmed value uses the same
+// baseline strike, while the panel/list words carry which status was decided.
+const QUESTION_RAIL_DIMENSIONS = [
+  {dimension: "status", uniformMark: 0}
 ];
 // §16.2 A11: the fixed drop order. A tier engages when the typical on-screen
 // node spacing falls under tier × plate radius, so crowding and zooming out
@@ -62,6 +67,17 @@ const KIND_HALF_EXTENT = {
   "direction": 8, "suggested_route": 7, "personal_trail": 7,
   "trail_segment": 7, "artifact": 6.7, "encounter": 4.5,
   "question": 7, "probe": 6.5, "zone": 7, "pattern": 7
+};
+// Conservative radial extents for edge trimming. Circles and polygons whose
+// farthest point already lies on one axis fall back to KIND_HALF_EXTENT; the
+// noncircular kinds below need their circumradius so a diagonal edge cannot
+// finish inside the plate.
+const KIND_RADIAL_EXTENT = {
+  "plan": Math.hypot(8, 5.5),
+  "material": Math.SQRT2 * 6.5,
+  "material_part": Math.SQRT2 * 4.5,
+  "direction": 10,
+  "artifact": Math.hypot(6.7, 2.2)
 };
 const LONG_FIELDS = new Set(["notes", "body", "summary", "reason", "text"]);
 const DETAIL_FIELDS = {
@@ -145,6 +161,10 @@ function plateUnit() {
 
 function halfExtent(type) {
   return (KIND_HALF_EXTENT[type] || 7) * plateUnit();
+}
+
+function radialExtent(type) {
+  return (KIND_RADIAL_EXTENT[type] || KIND_HALF_EXTENT[type] || 7) * plateUnit();
 }
 
 // The full drawn footprint of a node's kind marks — pull ring and
@@ -363,7 +383,9 @@ function makeListRow(node, selected) {
   row.append(htmlElement("span", "node-list-title", displayTitle(node)));
   // §16.2 A8/A11: the list carries the field's state channels as columns.
   if (STATE_TYPES.has(node.type)) {
-    for (const [label, words] of stateWords(node, entry)) {
+    const wordsByChannel = stateWords(node, entry);
+    if (entry && entry.sensitivity) row.classList.add("has-state-sensitivity");
+    for (const [label, words] of wordsByChannel) {
       row.append(htmlElement("span", "node-list-state", label + ": " + words));
     }
   }
@@ -544,24 +566,34 @@ function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
-// A11's density input: the median rendered-edge length approximates the
-// typical node spacing after layout; an edgeless view falls back to the
-// uniform-area estimate.
-function typicalSpacing(nodes, edges, positions) {
-  const lengths = edges
-    .map((edge) => {
-      const source = positions.get(edge.source);
-      const target = positions.get(edge.target);
-      return Math.hypot(target.x - source.x, target.y - source.y);
-    })
-    .filter((length) => length > 0)
-    .sort((left, right) => left - right);
-  if (lengths.length) {
-    const middle = Math.floor(lengths.length / 2);
-    return lengths.length % 2
-      ? lengths[middle]
-      : (lengths[middle - 1] + lengths[middle]) / 2;
+function median(values) {
+  const ordered = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(ordered.length / 2);
+  return ordered.length % 2
+    ? ordered[middle]
+    : (ordered[middle - 1] + ordered[middle]) / 2;
+}
+
+// A11's density input is the median nearest-neighbour distance after layout.
+// It measures crowding even when long spokes join a dense ring of leaves. The
+// O(n²) pass is bounded by §25.8's 2,400-node field ceiling, runs once per
+// completed layout, and its result is cached on currentTransform.
+function typicalSpacing(nodes, positions) {
+  if (nodes.length < 2) {
+    return Math.sqrt(VIEW_WIDTH * VIEW_HEIGHT / Math.max(nodes.length, 1));
   }
+  const nearest = new Array(nodes.length).fill(Number.POSITIVE_INFINITY);
+  for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+    const left = positions.get(nodes[leftIndex].id);
+    for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
+      const right = positions.get(nodes[rightIndex].id);
+      const distance = Math.hypot(right.x - left.x, right.y - left.y);
+      nearest[leftIndex] = Math.min(nearest[leftIndex], distance);
+      nearest[rightIndex] = Math.min(nearest[rightIndex], distance);
+    }
+  }
+  const finite = nearest.filter(Number.isFinite);
+  if (finite.length) return median(finite);
   return Math.sqrt(VIEW_WIDTH * VIEW_HEIGHT / Math.max(nodes.length, 1));
 }
 
@@ -629,7 +661,7 @@ async function renderField(field, nodes, edges, selected, banner) {
     x: focusedPosition ? VIEW_WIDTH / 2 - focusedPosition.x : 0,
     y: focusedPosition ? VIEW_HEIGHT / 2 - focusedPosition.y : 0,
     zoom: 1,
-    spacing: typicalSpacing(nodes, renderedEdges, positions)
+    spacing: typicalSpacing(nodes, positions)
   };
   currentTransform = {svg, viewport, ...transform};
   applyTransform(currentTransform);
@@ -757,8 +789,8 @@ function makeEdge(edge, positions, nodeById) {
   // plate; ends stop at the shapes' extents so direction stays readable.
   const rawAxis = edgeAxis(source, target);
   if (rawAxis) {
-    const sourceTrim = halfExtent(nodeById.get(edge.source).type) + 2;
-    const targetTrim = halfExtent(nodeById.get(edge.target).type) + 2;
+    const sourceTrim = radialExtent(nodeById.get(edge.source).type) + 2;
+    const targetTrim = radialExtent(nodeById.get(edge.target).type) + 2;
     if (rawAxis.length > sourceTrim + targetTrim + 8) {
       source = offsetFrom(source, rawAxis.unit, sourceTrim);
       target = offsetFrom(target, rawAxis.unit, -targetTrim);
@@ -924,25 +956,29 @@ function stateWords(node, entry) {
   const contact = () => entry && entry.freshness
     ? entry.freshness + " — last seen " + entry.last_seen
     : NO_CONTACT;
+  let words = [];
   if (node.type === "concept") {
-    return [
+    words = [
       ["exposure", entry.exposure],
       ["confidence", gated("confidence")],
       ["clarity", gated("clarity")],
       ["coverage", gated("coverage")],
       ["freshness", contact()]
     ];
-  }
-  if (node.type === "material" || node.type === "material_part") {
-    return [
+  } else if (node.type === "material" || node.type === "material_part") {
+    words = [
       ["depth reached", entry ? entry.depth_reached : NO_CONTACT],
       ["freshness", contact()]
     ];
+  } else if (node.type === "question") {
+    // Question status is gated too (§14.6): undecided reads as the unstruck
+    // form, never as a value indistinguishable from a confirmed one.
+    words = [["status", gated("status")]];
   }
-  // Question status is gated too (§14.6): undecided reads as the unstruck
-  // form, never as a value indistinguishable from a confirmed one.
-  if (node.type === "question") return [["status", gated("status")]];
-  return [];
+  if (entry && entry.sensitivity) {
+    words.push(["state sensitivity", entry.sensitivity]);
+  }
+  return words;
 }
 
 function plainRect(className, x, y, width, height, radius) {
@@ -956,27 +992,36 @@ function plainRect(className, x, y, width, height, radius) {
 }
 
 function railGeometry() {
+  const u = plateUnit();
   return {
-    gap: tokenNumber("--rail-gap", 5),
-    width: tokenNumber("--rail-w", 4.5),
-    slotH: tokenNumber("--rail-slot-h", 12),
-    pitch: tokenNumber("--rail-slot-pitch", 13)
+    gap: tokenNumber("--rail-gap", 1.9444) * u,
+    width: tokenNumber("--rail-w", 1.75) * u,
+    slotH: tokenNumber("--rail-slot-h", 4.6667) * u,
+    pitch: tokenNumber("--rail-slot-pitch", 5.0556) * u
   };
+}
+
+function railDimensions(node) {
+  if (node.type === "concept") return CONCEPT_RAIL_DIMENSIONS;
+  if (node.type === "question") return QUESTION_RAIL_DIMENSIONS;
+  return [];
 }
 
 // §16.2 A1/A2: the decision rail — review-gated dimensions only, one drawn
 // slot each in fixed order. Undecided stays an unstruck slot; a decided
-// level is a struck mark whose extent carries it; disputed is the fork.
+// ordinal level is a struck mark whose extent carries it; disputed is the
+// fork. A non-ordinal question status uses one uniform baseline strike.
 // Only kinds that admit gated dimensions call this at all.
-function makeRail(entry) {
+function makeRail(entry, dimensions) {
   const {gap, width, slotH, pitch} = railGeometry();
-  const radius = tokenNumber("--rail-radius", 1.2);
-  const split = tokenNumber("--rail-mark-split", 3.5);
+  const u = plateUnit();
+  const radius = tokenNumber("--rail-radius", 0.4667) * u;
+  const split = tokenNumber("--rail-mark-split", 1.3611) * u;
   const x = plateRadius() + gap;
-  const top = -(slotH + pitch * (RAIL_DIMENSIONS.length - 1)) / 2;
+  const top = -(slotH + pitch * (dimensions.length - 1)) / 2;
   const rail = svgElement("g", "rail");
   const decided = new Set(entry.decided);
-  RAIL_DIMENSIONS.forEach((slot, index) => {
+  dimensions.forEach((slot, index) => {
     const y = top + index * pitch;
     const groove = plainRect("rail-slot", x, y, width, slotH, radius);
     groove.dataset.dimension = slot.dimension;
@@ -985,7 +1030,7 @@ function makeRail(entry) {
     const value = entry[slot.dimension];
     const bottom = y + slotH;
     if (slot.fork === value) {
-      const forkH = tokenNumber("--rail-mark-2", 8);
+      const forkH = tokenNumber("--rail-mark-2", 3.1111) * u;
       const tineW = width / 3;
       rail.append(
         plainRect("rail-mark", x, bottom - forkH + split, width, forkH - split, radius),
@@ -993,7 +1038,9 @@ function makeRail(entry) {
         plainRect("rail-mark", x + width - tineW, bottom - forkH, tineW, split)
       );
     } else {
-      const markH = tokenNumber(RAIL_MARK_TOKENS[slot.marks[value]], 1.5);
+      const markIndex = Number.isInteger(slot.uniformMark)
+        ? slot.uniformMark : slot.marks[value];
+      const markH = tokenNumber(RAIL_MARK_TOKENS[markIndex], 0.5833) * u;
       rail.append(plainRect("rail-mark", x, bottom - markH, width, markH, radius));
     }
   });
@@ -1050,16 +1097,17 @@ function makeNode(node, position, selected) {
   }
   if (texture === "keyline") group.append(keylineShape(node));
   const {gap, width, slotH, pitch} = railGeometry();
-  const hasRail = node.type === "concept" && entry !== undefined;
-  if (hasRail) group.append(makeRail(entry));
-  const rightExtent = hasRail
-    ? plateRadius() + gap + width
-    : halfExtent(node.type);
+  const dimensions = entry === undefined ? [] : railDimensions(node);
+  const hasRail = dimensions.length > 0;
+  if (hasRail) group.append(makeRail(entry, dimensions));
+  const drawnExtent = glyphExtent(marked);
+  const rightExtent = Math.max(
+    drawnExtent,
+    hasRail ? plateRadius() + gap + width : 0);
   if (node.fields.length === 0) {
-    const drawnExtent = glyphExtent(marked);
     const halfHeight = Math.max(
       drawnExtent,
-      hasRail ? (slotH + pitch * (RAIL_DIMENSIONS.length - 1)) / 2 : 0);
+      hasRail ? (slotH + pitch * (dimensions.length - 1)) / 2 : 0);
     group.append(makeCartouche(
       drawnExtent, Math.max(rightExtent, drawnExtent), halfHeight));
   }
@@ -1293,7 +1341,7 @@ function renderLegend() {
   railSection.append(htmlElement("h2", "", "Decision rail"));
   const railRows = [
     ["slot", "open slot = no decision recorded"],
-    ["mark", "struck mark, height = decided level"],
+    ["mark", "struck mark = confirmed; height = decided level where ordinal"],
     ["fork", "split mark = disputed"]
   ];
   for (const [kind, label] of railRows) {
@@ -1312,7 +1360,7 @@ function renderLegend() {
     row.append(htmlElement("span", "", label));
     railSection.append(row);
   }
-  railSection.append(htmlElement("p", "legend-direction", "slots top to bottom: confidence, clarity, coverage; kinds without review-gated dimensions carry no rail; a question's status is words in the panel and the list"));
+  railSection.append(htmlElement("p", "legend-direction", "concept slots top to bottom: confidence, clarity, coverage; a question carries one status slot whose uniform strike means confirmed and whose words carry open, clarified, resolved, or stale; kinds without review-gated dimensions carry no rail"));
 
   legend.append(nodesSection, edgesSection, plateSection, boundarySection, railSection);
 }
@@ -1405,7 +1453,6 @@ function openPanel(node, edges) {
     section.append(htmlElement("h3", "", "state"));
     const stateRows = htmlElement("dl", "detail-rows");
     const spoken = stateWords(node, entry);
-    if (entry && entry.sensitivity) spoken.push(["state sensitivity", entry.sensitivity]);
     for (const [label, words] of spoken) {
       const row = htmlElement("div", "detail-row");
       row.append(htmlElement("dt", "", label), htmlElement("dd", "", words));

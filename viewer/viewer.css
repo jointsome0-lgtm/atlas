@@ -79,22 +79,23 @@
   --halo-r-strong: 17px;
   --halo-o-strong: 0.22;
 
-  /* interior textures and the decision rail (A1, A2) — proportions are the
-     language's at --plate-r: 18px and move with the plate scale. */
+  /* Interior textures and the decision rail (A1, A2). Rail tokens are
+     unitless values on the shapes' 7-unit grid; viewer.js multiplies every
+     slot and mark dimension by the current plate unit (--plate-r / 7). */
   --tx-hatch-pitch: 4px;
   --tx-hatch-weight: 1.5px;
   --tx-dot-r: 3.4px;
   --tx-keyline-inset: 4px;
-  --rail-gap: 5px;
-  --rail-w: 4.5px;
-  --rail-slot-h: 12px;
-  --rail-slot-pitch: 13px;
-  --rail-mark-0: 1.5px; /* a decided floor is a struck baseline, not silence (A2) */
-  --rail-mark-1: 4px;
-  --rail-mark-2: 8px;
-  --rail-mark-3: 12px;
-  --rail-mark-split: 3.5px; /* disputed is a fork, not a rung */
-  --rail-radius: 1.2px;
+  --rail-gap: 1.9444;
+  --rail-w: 1.75;
+  --rail-slot-h: 4.6667;
+  --rail-slot-pitch: 5.0556;
+  --rail-mark-0: 0.5833; /* a decided floor is a struck baseline, not silence (A2) */
+  --rail-mark-1: 1.5556;
+  --rail-mark-2: 3.1111;
+  --rail-mark-3: 4.6667;
+  --rail-mark-split: 1.3611; /* disputed is a fork, not a rung */
+  --rail-radius: 0.4667;
   --zone-stroke: 1.6px;
   --chronic-stripe-pitch: 7px;
   --chronic-stripe-opacity: 0.30; /* on focus only (A6) */
@@ -589,13 +590,26 @@ aside {
   grid-template-columns: 18px minmax(0, 1.4fr) repeat(5, minmax(0, 1fr)) minmax(120px, auto) auto;
 }
 
+.node-list-section[data-node-type="concept"] .node-list-row.has-state-sensitivity {
+  grid-template-columns: 18px minmax(0, 1.4fr) repeat(6, minmax(0, 1fr)) minmax(120px, auto) auto;
+}
+
 .node-list-section[data-node-type="material"] .node-list-row,
 .node-list-section[data-node-type="material_part"] .node-list-row {
   grid-template-columns: 18px minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) minmax(120px, auto) auto;
 }
 
+.node-list-section[data-node-type="material"] .node-list-row.has-state-sensitivity,
+.node-list-section[data-node-type="material_part"] .node-list-row.has-state-sensitivity {
+  grid-template-columns: 18px minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)) minmax(120px, auto) auto;
+}
+
 .node-list-section[data-node-type="question"] .node-list-row {
   grid-template-columns: 18px minmax(0, 1.4fr) minmax(0, 1fr) minmax(120px, auto) auto;
+}
+
+.node-list-section[data-node-type="question"] .node-list-row.has-state-sensitivity {
+  grid-template-columns: 18px minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) minmax(120px, auto) auto;
 }
 
 .graph-stage,
@@ -895,7 +909,8 @@ aside {
 
 /* Labels drop whole — selection included: the status line says the channel
    is not drawn, and the panel and list carry the name (A8, A11). */
-.viewport.drop-labels .node-label {
+.viewport.drop-labels .node-label,
+.viewport.drop-labels .edge-label {
   display: none;
 }
 
