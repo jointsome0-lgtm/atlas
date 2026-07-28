@@ -1204,10 +1204,6 @@ function makeNode(node, position, selected) {
   if (node.fields.length === 0) classes.push("field-undefined");
   if (texture) classes.push("tx-" + texture);
   if (entry && entry.freshness) classes.push("fresh-" + entry.freshness);
-  if (node.type === "question" && entry && entry.status === "stale"
-      && entry.decided.includes("status")) {
-    classes.push("status-stale");
-  }
   const group = svgElement("g", classes.join(" "));
   group.setAttribute("transform", "translate(" + position.x.toFixed(3) + " " + position.y.toFixed(3) + ")");
   group.setAttribute("role", "button");
@@ -1302,12 +1298,20 @@ function applyTransform(transform) {
   const spacing = (transform.spacing ?? Number.POSITIVE_INFINITY)
     * transform.zoom * renderedSvgScale(transform.svg);
   const plateR = plateRadius();
-  const dropped = [];
-  for (const tier of DENSITY_TIERS) {
-    const engaged = spacing < plateR * tokenNumber(tier.token, tier.fallbackX);
-    transform.viewport.classList.toggle(tier.className, engaged);
-    if (engaged) dropped.push(tier.copy);
+  const independentlyEngaged = DENSITY_TIERS.map(
+    (tier) => spacing < plateR * tokenNumber(tier.token, tier.fallbackX),
+  );
+  const engaged = new Array(DENSITY_TIERS.length);
+  let deeperTierEngaged = false;
+  for (let index = DENSITY_TIERS.length - 1; index >= 0; index -= 1) {
+    deeperTierEngaged = deeperTierEngaged || independentlyEngaged[index];
+    engaged[index] = deeperTierEngaged;
   }
+  const dropped = [];
+  DENSITY_TIERS.forEach((tier, index) => {
+    transform.viewport.classList.toggle(tier.className, engaged[index]);
+    if (engaged[index]) dropped.push(tier.copy);
+  });
   transform.dropped = dropped;
   renderStatus();
 }

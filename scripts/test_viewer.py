@@ -1235,6 +1235,28 @@ class ViewerBrowserTests(unittest.TestCase):
             self.page.locator("#status-bar").inner_text(),
         )
 
+    def test_density_token_overrides_cannot_invert_drop_order(self):
+        # Tier values are tunable, but A11's order is not. A later threshold
+        # that engages first must carry every preceding omission with it.
+        self.open_state("#mode=field", "FIELD")
+        self.page.evaluate(
+            """() => {
+                const sheet = [...document.styleSheets].find(
+                    item => item.href?.endsWith("/viewer/viewer.css"));
+                sheet.insertRule(
+                    ":root { --tier-decision-x: 0.01; "
+                    + "--tier-label-x: 100; --tier-state-x: 0.01; }",
+                    sheet.cssRules.length);
+            }""")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.page.locator("#graph-view").click()
+        self.page.wait_for_selector('#main[data-state="FIELD"]')
+        classes = self.page.locator("svg .viewport").get_attribute("class")
+        self.assertIn("drop-decision", classes)
+        self.assertIn("drop-labels", classes)
+        self.assertNotIn("drop-state", classes)
+
     def artifact_node(self, slug, strength, observed_at):
         return {
             "id": f"artifact:{slug}", "type": "artifact", "title": "",
@@ -1518,9 +1540,8 @@ class ViewerBrowserTests(unittest.TestCase):
                     self.assertEqual(1, marks.count())
                     decided_heights.append(float(
                         marks.first.get_attribute("height")))
-                expected_animation = "none" if status == "stale" else "question-pull"
                 self.assertEqual(
-                    expected_animation,
+                    "none",
                     node.locator(".question-ring").evaluate(
                         "ring => getComputedStyle(ring).animationName"),
                 )

@@ -110,9 +110,8 @@
   --tier-label-x: 3;
   --tier-state-x: 2;
 
-  /* motion — one loop, one transition (A9) */
-  --m-pull-dur: 2.4s;
-  --m-pull-scale: 1.22;
+  /* motion — the question pull is a static kind mark; focus is the one
+     transition, and never carries state (A9). */
   --m-pull-static-scale: 1.14;
   --m-focus: 120ms;
   --m-ease: cubic-bezier(0.4, 0, 0.2, 1);
@@ -880,26 +879,9 @@ aside {
   stroke-width: 1.5;
   transform-box: fill-box;
   transform-origin: center;
-  animation: question-pull var(--m-pull-dur) ease-in-out infinite;
-  vector-effect: non-scaling-stroke;
-}
-
-/* A6: a confirmed stale question recedes; stale state never drives motion. */
-.node-question.status-stale .question-ring {
-  animation: none;
   opacity: 1;
-  transform: scale(1);
-}
-
-@keyframes question-pull {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0;
-    transform: scale(1.25);
-  }
+  transform: scale(var(--m-pull-static-scale));
+  vector-effect: non-scaling-stroke;
 }
 
 .node-label {
@@ -1099,12 +1081,6 @@ aside {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .question-ring {
-    animation: none;
-    opacity: 1;
-    transform: scale(var(--m-pull-static-scale));
-  }
-
   * {
     scroll-behavior: auto;
     transition-duration: 0s;
