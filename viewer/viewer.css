@@ -58,9 +58,12 @@
   --pull: oklch(0.56 0.105 46);
   --halo: oklch(0.55 0.045 250);
 
-  /* geometry consumed by the current node-link renderer, calibrated to its
-     7-unit plates; the language's proportions are preserved (A3, A4, A10) */
-  --plate-r: 7px;
+  /* plate geometry at the language's native scale (#98): every shape in the
+     renderer is drawn in units of --plate-r, so the scale moves here alone.
+     18px is where the texture ladder stays legible — at the old 7-unit plate
+     the hatch pitch fell under two device pixels and the ladder read as
+     indistinguishable grey, which A8's greyscale rule forbids. */
+  --plate-r: 18px;
   --w-stroke: 1.5px; /* one stroke for every weight — extent carries it */
   --w-tick-low: 5px;
   --w-tick-medium: 8.5px;
@@ -76,9 +79,8 @@
   --halo-r-strong: 17px;
   --halo-o-strong: 0.22;
 
-  /* geometry reserved for the plate rebuild — interior textures and the
-     decision rail (A1, A2). Proportions are the language's at --plate-r:
-     18px; the rebuild sets the plate scale and these move with it. */
+  /* interior textures and the decision rail (A1, A2) — proportions are the
+     language's at --plate-r: 18px and move with the plate scale. */
   --tx-hatch-pitch: 4px;
   --tx-hatch-weight: 1.5px;
   --tx-dot-r: 3.4px;
@@ -87,6 +89,7 @@
   --rail-w: 4.5px;
   --rail-slot-h: 12px;
   --rail-slot-pitch: 13px;
+  --rail-mark-0: 1.5px; /* a decided floor is a struck baseline, not silence (A2) */
   --rail-mark-1: 4px;
   --rail-mark-2: 8px;
   --rail-mark-3: 12px;
@@ -95,6 +98,16 @@
   --zone-stroke: 1.6px;
   --chronic-stripe-pitch: 7px;
   --chronic-stripe-opacity: 0.30; /* on focus only (A6) */
+  --hairline: 0.75px;
+  --cartouche-pad: 4px; /* field-undefined frame — a dash on a boundary is freshness (A4) */
+
+  /* §16.2 A11 density tiers, as multiples of --plate-r: a channel drops when
+     the typical on-screen node spacing falls under tier × plate radius. The
+     order is canon (rails+weight, labels, texture+boundary); the values are
+     tokens. */
+  --tier-decision-x: 4;
+  --tier-label-x: 3;
+  --tier-state-x: 2;
 
   /* motion — one loop, one transition (A9) */
   --m-pull-dur: 2.4s;
@@ -564,6 +577,27 @@ aside {
   overflow-wrap: anywhere;
 }
 
+/* §16.2 A8: every state drawn in the field is its own column in the list,
+   in the same vocabulary as the plate, the rail, and the panel. */
+.node-list-state {
+  color: var(--ink-2);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.node-list-section[data-node-type="concept"] .node-list-row {
+  grid-template-columns: 18px minmax(0, 1.4fr) repeat(5, minmax(0, 1fr)) minmax(120px, auto) auto;
+}
+
+.node-list-section[data-node-type="material"] .node-list-row,
+.node-list-section[data-node-type="material_part"] .node-list-row {
+  grid-template-columns: 18px minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) minmax(120px, auto) auto;
+}
+
+.node-list-section[data-node-type="question"] .node-list-row {
+  grid-template-columns: 18px minmax(0, 1.4fr) minmax(0, 1fr) minmax(120px, auto) auto;
+}
+
 .graph-stage,
 .graph-svg {
   width: 100%;
@@ -688,53 +722,102 @@ aside {
   cursor: pointer;
 }
 
+/* One hue per kind (A7), carried by a custom property so the plate fill,
+   the touched dot, and the legend samples all read the same token. */
+.node-concept { --plate-hue: var(--k-concept); }
+.node-material { --plate-hue: var(--k-material); }
+.node-material_part { --plate-hue: var(--k-part); }
+.node-suggested_route { --plate-hue: var(--k-route); }
+.node-direction { --plate-hue: var(--k-direction); }
+.node-question { --plate-hue: var(--k-question); }
+.node-probe { --plate-hue: var(--k-probe); }
+.node-artifact,
+.node-encounter,
+.node-trail_segment,
+.node-personal_trail { --plate-hue: var(--k-record); }
+.node-plan { --plate-hue: var(--k-plan); }
+.node-pattern { --plate-hue: var(--k-pattern); }
+.node-zone { --plate-hue: var(--k-zone); }
+
 .node-shape {
-  fill: var(--k-concept);
+  fill: var(--plate-hue, var(--k-concept));
   stroke: var(--node-stroke);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
 
-.node-material .node-shape {
-  fill: var(--k-material);
+/* §16.2 A1: interior texture is the monotone contact ladder. The two open
+   rungs empty the plate; hatch and cross-hatch reference the per-kind
+   patterns from the defs (SVG pattern content cannot inherit the referencing
+   element's colour, hence tx-{texture}-{kind} ids); solid is the kind hue;
+   taught adds the inner keyline element. */
+.tx-plain .node-shape,
+.tx-dot .node-shape {
+  fill: var(--ground);
 }
 
-.node-material_part .node-shape {
-  fill: var(--k-part);
+.node-concept.tx-hatch .node-shape { fill: url(#tx-hatch-concept); }
+.node-concept.tx-cross .node-shape { fill: url(#tx-cross-concept); }
+.node-material.tx-hatch .node-shape { fill: url(#tx-hatch-material); }
+.node-material.tx-cross .node-shape { fill: url(#tx-cross-material); }
+.node-material_part.tx-hatch .node-shape { fill: url(#tx-hatch-material_part); }
+.node-material_part.tx-cross .node-shape { fill: url(#tx-cross-material_part); }
+
+.tx-ground {
+  fill: var(--ground);
 }
 
-.node-suggested_route .node-shape {
-  fill: var(--k-route);
+.tx-ink-concept { stroke: var(--k-concept); }
+.tx-ink-material { stroke: var(--k-material); }
+.tx-ink-material_part { stroke: var(--k-part); }
+
+.tx-ink-concept,
+.tx-ink-material,
+.tx-ink-material_part {
+  stroke-width: var(--tx-hatch-weight);
 }
 
-.node-direction .node-shape {
-  fill: var(--k-direction);
+.plate-dot {
+  fill: var(--plate-hue, var(--k-concept));
 }
 
-.node-question .node-shape {
-  fill: var(--k-question);
+.plate-keyline {
+  fill: none;
+  stroke: var(--ground);
+  stroke-width: var(--w-stroke);
 }
 
-.node-probe .node-shape {
-  fill: var(--k-probe);
+/* §16.2 A4: the three freshness classes are three boundary continuities; a
+   dash on a node boundary is always freshness. No freshness class (no
+   contact) keeps the same solid boundary as fresh — the empty plate already
+   says no contact, and the panel and list say it in words (A8). */
+.fresh-fresh .node-shape { stroke-dasharray: var(--fresh-dash); }
+.fresh-aging .node-shape { stroke-dasharray: var(--aging-dash); }
+.fresh-stale .node-shape { stroke-dasharray: var(--stale-dash); }
+
+/* A6: stale recedes — the label mutes, nothing enlarges or alarms. */
+.fresh-stale .node-label {
+  fill: var(--ink-3);
 }
 
-.node-artifact .node-shape,
-.node-encounter .node-shape,
-.node-trail_segment .node-shape,
-.node-personal_trail .node-shape {
-  fill: var(--k-record);
+/* §16.2 A2: the decision rail. An open slot is drawn (silence is visible), a
+   struck mark's extent carries the decided level, the fork carries disputed. */
+.rail-slot {
+  fill: var(--slot);
 }
 
-.node-plan .node-shape {
-  fill: var(--k-plan);
+.rail-mark {
+  fill: var(--struck);
 }
 
-/* §16.2 A4 reserves a dashed node boundary for freshness; this treatment moves
-   to a hairline cartouche when the plates land (#98). The flag is also a word
-   in the panel and the list, so the reading never depends on the dash. */
-.node.field-undefined .node-shape {
-  stroke-dasharray: 3 2;
+/* The field-undefined flag left the node boundary for this hairline frame —
+   A4 reserves boundary dashes for freshness. The flag is also a word in the
+   panel and the list, so the reading never depends on the frame. */
+.cartouche {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: var(--hairline);
+  vector-effect: non-scaling-stroke;
 }
 
 .selection-ring,
@@ -796,24 +879,41 @@ aside {
   display: none;
 }
 
-/* §16.2 A11: as density rises the weight channel goes first and goes whole —
-   ticks and the unassessed gap together — and labels only after it. */
-.viewport.drop-weight .weight-detail,
-.viewport.drop-weight .edge-weight {
+/* §16.2 A11: as density rises the channels drop whole and in the canon's
+   fixed order — decision rails and weight marks together, then labels, then
+   interior texture and boundary continuity — never a cluster, average,
+   count, or heat in their place. */
+.viewport.drop-decision .weight-detail,
+.viewport.drop-decision .edge-weight,
+.viewport.drop-decision .rail {
   display: none;
 }
 
-.viewport.drop-weight .weight-dropped {
+.viewport.drop-decision .weight-dropped {
   display: inline;
 }
 
-.viewport.zoom-low .node-label {
+/* Labels drop whole — selection included: the status line says the channel
+   is not drawn, and the panel and list carry the name (A8, A11). */
+.viewport.drop-labels .node-label {
   display: none;
 }
 
-.viewport.zoom-low .node.selected .node-label,
-.viewport.zoom-low .node:hover .node-label {
-  display: block;
+/* The last tier: a node drawn without a boundary is drawn without state —
+   the plate falls back to its plain kind reading, and the status line names
+   what is not drawn. */
+.viewport.drop-state .node-shape {
+  fill: var(--plate-hue, var(--k-concept));
+  stroke-dasharray: none;
+}
+
+.viewport.drop-state .plate-dot,
+.viewport.drop-state .plate-keyline {
+  display: none;
+}
+
+.viewport.drop-state .fresh-stale .node-label {
+  fill: var(--ink);
 }
 
 #detail-content h2 {
@@ -861,7 +961,8 @@ aside {
 }
 
 .detail-row dt,
-.edge-groups h3 {
+.edge-groups h3,
+.state-groups h3 {
   color: var(--ink-2);
   font-size: 0.72rem;
   font-weight: 600;
@@ -929,11 +1030,13 @@ aside {
     width: min(360px, calc(100vw - 20px));
   }
 
-  .node-list-row {
+  .node-list-row,
+  .node-list-section[data-node-type] .node-list-row {
     grid-template-columns: 18px minmax(0, 1fr);
   }
 
   .node-list-id,
+  .node-list-state,
   .node-list-row .badge {
     grid-column: 2;
   }
@@ -964,5 +1067,53 @@ aside {
   * {
     scroll-behavior: auto;
     transition-duration: 0s;
+  }
+}
+
+/* §27.8: every state distinction is structural — texture, boundary
+   continuity, mark presence, mark extent — so under forced colours the
+   system palette replaces the tokens and the structure keeps carrying the
+   reading. Hue stops naming kinds (shape still does, A8); the trail keeps
+   the one emphasis role via Highlight (A7). */
+@media (forced-colors: active) {
+  :root {
+    --page: Canvas;
+    --ground: Canvas;
+    --ground-sunk: Canvas;
+    --ink: CanvasText;
+    --ink-2: CanvasText;
+    --ink-3: GrayText;
+    --rule: CanvasText;
+    --rule-soft: GrayText;
+    --focus: Highlight;
+    --select: Highlight;
+    --k-concept: CanvasText;
+    --k-material: CanvasText;
+    --k-part: CanvasText;
+    --k-route: CanvasText;
+    --k-direction: CanvasText;
+    --k-question: CanvasText;
+    --k-probe: CanvasText;
+    --k-record: CanvasText;
+    --k-plan: CanvasText;
+    --k-pattern: CanvasText;
+    --k-zone: CanvasText;
+    --e-authored: CanvasText;
+    --e-derived: CanvasText;
+    --e-route: GrayText;
+    --trail: Highlight;
+    --slot: GrayText;
+    --struck: CanvasText;
+    --pull: CanvasText;
+    --halo: CanvasText;
+    --node-stroke: CanvasText;
+    --shadow: transparent;
+  }
+
+  .graph-svg,
+  .node-glyph,
+  .legend-edge-sample,
+  .legend-state-sample {
+    forced-color-adjust: none;
   }
 }
