@@ -849,15 +849,75 @@ function offsetFrom(point, vector, distance) {
   return {x: point.x + vector.x * distance, y: point.y + vector.y * distance};
 }
 
+function rayCircleExit(direction, centerX, centerY, radius) {
+  const projection = centerX * direction.x + centerY * direction.y;
+  if (projection < 0) return null;
+  const perpendicularSquared = centerX * centerX + centerY * centerY
+    - projection * projection;
+  if (perpendicularSquared > radius * radius) return null;
+  return projection + Math.sqrt(Math.max(radius * radius - perpendicularSquared, 0));
+}
+
+function rayRectExit(direction, left, top, right, bottom) {
+  let entry = Number.NEGATIVE_INFINITY;
+  let exit = Number.POSITIVE_INFINITY;
+  for (const [component, minimum, maximum] of [
+    [direction.x, left, right],
+    [direction.y, top, bottom],
+  ]) {
+    if (Math.abs(component) < 1e-9) {
+      if (minimum > 0 || maximum < 0) return null;
+      continue;
+    }
+    const first = minimum / component;
+    const second = maximum / component;
+    entry = Math.max(entry, Math.min(first, second));
+    exit = Math.min(exit, Math.max(first, second));
+  }
+  if (exit < Math.max(entry, 0)) return null;
+  return exit >= 0 ? exit : null;
+}
+
+// Direction-sensitive distance from a node centre to the outermost kind/state
+// mark on that ray. The primary shape keeps its conservative circumradius;
+// asymmetric payload dots and decision rails extend only the approaches that
+// actually cross them.
+function completeGlyphExtent(node, direction) {
+  const u = plateUnit();
+  let extent = radialExtent(node.type);
+  if (node.type === "question") extent = Math.max(extent, glyphExtent(node));
+  if (node.sensitivity) {
+    const dotExit = rayCircleExit(direction, 8 * u, -8 * u, 2.5 * u);
+    if (dotExit !== null) extent = Math.max(extent, dotExit);
+  }
+  const entry = STATE_TYPES.has(node.type)
+    ? accepted.graph.state[node.id] : undefined;
+  const dimensions = entry === undefined ? [] : railDimensions(node);
+  if (dimensions.length) {
+    const bounds = railBounds(node, dimensions);
+    const railExit = rayRectExit(
+      direction, bounds.left, bounds.top, bounds.right, bounds.bottom,
+    );
+    if (railExit !== null) extent = Math.max(extent, railExit);
+  }
+  return extent;
+}
+
 function makeEdge(edge, positions, nodeById) {
   let source = positions.get(edge.source);
   let target = positions.get(edge.target);
   // At plate scale an untrimmed stroke buries its arrowhead under the target
-  // plate; ends stop at the shapes' extents so direction stays readable.
+  // glyph; ends stop at every mark on their approach ray so direction stays
+  // readable without leaving rail-sized gaps on the opposite side.
   const rawAxis = edgeAxis(source, target);
   if (rawAxis) {
-    const sourceTrim = radialExtent(nodeById.get(edge.source).type) + 2;
-    const targetTrim = radialExtent(nodeById.get(edge.target).type) + 2;
+    const sourceTrim = completeGlyphExtent(
+      nodeById.get(edge.source), rawAxis.unit,
+    ) + 2;
+    const targetTrim = completeGlyphExtent(
+      nodeById.get(edge.target),
+      {x: -rawAxis.unit.x, y: -rawAxis.unit.y},
+    ) + 2;
     if (rawAxis.length > sourceTrim + targetTrim + 8) {
       source = offsetFrom(source, rawAxis.unit, sourceTrim);
       target = offsetFrom(target, rawAxis.unit, -targetTrim);
@@ -1071,19 +1131,32 @@ function railDimensions(node) {
   return [];
 }
 
+function railBounds(node, dimensions) {
+  const {gap, width, slotH, pitch} = railGeometry();
+  const left = glyphExtent(node) + gap;
+  const top = -(slotH + pitch * (dimensions.length - 1)) / 2;
+  return {
+    left,
+    right: left + width,
+    top,
+    bottom: top + slotH + pitch * (dimensions.length - 1),
+    width,
+    slotH,
+    pitch,
+  };
+}
+
 // §16.2 A1/A2: the decision rail — review-gated dimensions only, one drawn
 // slot each in fixed order. Undecided stays an unstruck slot; a decided
 // ordinal level is a struck mark whose extent carries it; disputed is the
-// fork. A non-ordinal question status uses one uniform baseline strike. The
-// caller anchors it beyond the complete kind-mark footprint. Only kinds that
-// admit gated dimensions call this at all.
-function makeRail(entry, dimensions, anchorExtent) {
-  const {gap, width, slotH, pitch} = railGeometry();
+// fork. A non-ordinal question status uses one uniform baseline strike. Shared
+// bounds anchor it beyond the complete kind-mark footprint and also drive edge
+// trimming. Only kinds that admit gated dimensions call this at all.
+function makeRail(entry, dimensions, bounds) {
+  const {left: x, top, width, slotH, pitch} = bounds;
   const u = plateUnit();
   const radius = tokenNumber("--rail-radius", 0.4667) * u;
   const split = tokenNumber("--rail-mark-split", 1.3611) * u;
-  const x = anchorExtent + gap;
-  const top = -(slotH + pitch * (dimensions.length - 1)) / 2;
   const rail = svgElement("g", "rail");
   const decided = new Set(entry.decided);
   dimensions.forEach((slot, index) => {
@@ -1161,18 +1234,18 @@ function makeNode(node, position, selected) {
     group.append(dot);
   }
   if (texture === "keyline") group.append(keylineShape(node));
-  const {gap, width, slotH, pitch} = railGeometry();
   const dimensions = entry === undefined ? [] : railDimensions(node);
   const hasRail = dimensions.length > 0;
   const drawnExtent = glyphExtent(node);
-  if (hasRail) group.append(makeRail(entry, dimensions, drawnExtent));
+  const bounds = hasRail ? railBounds(node, dimensions) : null;
+  if (bounds) group.append(makeRail(entry, dimensions, bounds));
   const rightExtent = Math.max(
     drawnExtent,
-    hasRail ? drawnExtent + gap + width : 0);
+    bounds ? bounds.right : 0);
   if (node.fields.length === 0) {
     const halfHeight = Math.max(
       drawnExtent,
-      hasRail ? (slotH + pitch * (dimensions.length - 1)) / 2 : 0);
+      bounds ? Math.max(-bounds.top, bounds.bottom) : 0);
     group.append(makeCartouche(
       drawnExtent, Math.max(rightExtent, drawnExtent), halfHeight));
   }

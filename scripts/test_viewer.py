@@ -1826,6 +1826,77 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertAlmostEqual(
             trims["expected"], trims["target"], places=2)
 
+    def test_edges_trim_past_target_rail_on_its_approach_ray(self):
+        # A right-side incoming arrow must stop outside the target's complete
+        # glyph, not under the decision rail painted over it. The trim stays
+        # direction-sensitive rather than reserving rail width on every side.
+        source = self.concept_node("a-source")
+        target = self.concept_node("b-target")
+        target["sensitivity"] = "medical"
+        edge = {
+            "source": source["id"], "target": target["id"],
+            "type": "prerequisite_of",
+            "provenance": [source["id"], target["id"]],
+            "weight": "low",
+        }
+        graph = self.graph_envelope(nodes=[source, target], edges=[edge])
+        graph["state"][target["id"]]["sensitivity"] = "medical"
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+        geometry = self.page.evaluate(
+            """({sourceId, targetId}) => {
+                const centre = (id) => {
+                    const transform = document.querySelector(
+                        `g.node[data-node-id="${id}"]`)
+                        .getAttribute("transform");
+                    const match = transform.match(
+                        /translate\\(([-\\d.]+) ([-\\d.]+)\\)/);
+                    return {x: Number(match[1]), y: Number(match[2])};
+                };
+                const source = centre(sourceId);
+                const target = centre(targetId);
+                const dx = source.x - target.x;
+                const dy = source.y - target.y;
+                const length = Math.hypot(dx, dy);
+                const direction = {x: dx / length, y: dy / length};
+                const line = document.querySelector(
+                    ".edge-group .edge-line[marker-end]");
+                const lineEnd = {
+                    x: Number(line.getAttribute("x2")),
+                    y: Number(line.getAttribute("y2")),
+                };
+                const slots = [...document.querySelectorAll(
+                    `g.node[data-node-id="${targetId}"] .rail-slot`)];
+                const left = Math.min(...slots.map(
+                    slot => Number(slot.getAttribute("x"))));
+                const right = Math.max(...slots.map(
+                    slot => Number(slot.getAttribute("x"))
+                        + Number(slot.getAttribute("width"))));
+                const top = Math.min(...slots.map(
+                    slot => Number(slot.getAttribute("y"))));
+                const bottom = Math.max(...slots.map(
+                    slot => Number(slot.getAttribute("y"))
+                        + Number(slot.getAttribute("height"))));
+                const slab = (component, minimum, maximum) => {
+                    const first = minimum / component;
+                    const second = maximum / component;
+                    return [Math.min(first, second), Math.max(first, second)];
+                };
+                const [xEntry, xExit] = slab(direction.x, left, right);
+                const [yEntry, yExit] = slab(direction.y, top, bottom);
+                return {
+                    trim: Math.hypot(
+                        lineEnd.x - target.x, lineEnd.y - target.y),
+                    railExit: Math.min(xExit, yExit),
+                    railEntry: Math.max(xEntry, yEntry),
+                };
+            }""",
+            {"sourceId": source["id"], "targetId": target["id"]},
+        )
+        self.assertGreater(geometry["railExit"], geometry["railEntry"])
+        self.assertGreaterEqual(
+            geometry["trim"], geometry["railExit"] + 1.9)
+
     def test_forced_colors_keeps_state_structural(self):
         # §27.8: every state distinction survives forced colours because the
         # channels are texture, continuity, and mark extent — not hue.
