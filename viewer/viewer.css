@@ -1,54 +1,151 @@
+/* Atlas visual language — §16.2 aesthetics rev 1 (#92).
+   Every §16.2 A-rule names a channel and every channel names a token here,
+   so the amendment stays checkable while the sheet stays tunable. Self-hosted
+   only: no token references an external font, image, or origin (§16.5 CSP).
+   A palette variant is a token swap and inherits every A-rule (A7, A8). */
 :root {
   color-scheme: light dark;
-  --page: #f7f7f4;
-  --surface: #ffffff;
-  --surface-soft: #efefeb;
-  --ink: #20242a;
-  --muted: #626973;
-  --line: #c8ccd0;
-  --accent: #426b8f;
-  --focus: #174f78;
-  --edge: #6b7280;
-  --route-edge: #9aa0a6;
-  --trail: #d97706;
-  --n-concept: #5b7ba6;
-  --n-material: #8a7a5c;
-  --n-route: #9a8fb8;
-  --n-direction: #6d9a8a;
-  --n-question: #b8875b;
-  --n-probe: #7d8a99;
-  --n-journal: #a06a6a;
-  --n-plan: #77738c;
-  --node-stroke: #20242a;
-  --banner: #426b8f;
-  --shadow: rgba(18, 24, 32, 0.12);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* type */
+  --f-ui: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, system-ui, sans-serif;
+  --f-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --t-01: 10px;
+  --t-02: 11px;
+  --t-03: 12px;
+  --t-04: 13px;
+  --t-05: 15px;
+  --t-06: 19px;
+  --t-07: 25px;
+  --t-08: 34px;
+  --lh-tight: 1.28;
+  --lh: 1.5;
+  --tr-caps: 0.09em;
+
+  /* ground & ink */
+  --page: oklch(0.972 0.004 85);
+  --ground: oklch(1 0 0);
+  --ground-sunk: oklch(0.945 0.005 85);
+  --ink: oklch(0.245 0.008 250);
+  --ink-2: oklch(0.475 0.008 250);
+  --ink-3: oklch(0.645 0.007 250); /* recessive — stale labels (A6) */
+  --rule: oklch(0.875 0.005 85);
+  --rule-soft: oklch(0.925 0.004 85);
+  --focus: oklch(0.46 0.075 245);
+  --select: oklch(0.36 0.07 245);
+
+  /* node kinds — one lightness, one chroma, hue only (A7) */
+  --k-concept: oklch(0.52 0.06 252);
+  --k-material: oklch(0.52 0.06 72);
+  --k-part: oklch(0.52 0.06 96);
+  --k-route: oklch(0.52 0.06 305);
+  --k-direction: oklch(0.52 0.06 162);
+  --k-question: oklch(0.52 0.06 46);
+  --k-probe: oklch(0.52 0.06 225);
+  --k-record: oklch(0.52 0.06 22);
+  --k-plan: oklch(0.52 0.06 288);
+  --k-pattern: oklch(0.52 0.06 140);
+  --k-zone: oklch(0.52 0.06 196);
+
+  /* edge families — colour, dash, and width carry family only (A3) */
+  --e-authored: oklch(0.45 0.012 250);
+  --e-derived: oklch(0.66 0.01 250);
+  --e-route: oklch(0.755 0.008 250);
+  --trail: oklch(0.60 0.155 58); /* the one role at full chroma (A7) */
+
+  /* state, silence, pull, influence */
+  --slot: oklch(0.815 0.006 85); /* open slot = no decision (A2) */
+  --struck: var(--ink);
+  --pull: oklch(0.56 0.105 46);
+  --halo: oklch(0.55 0.045 250);
+
+  /* geometry consumed by the current node-link renderer, calibrated to its
+     7-unit plates; the language's proportions are preserved (A3, A4, A10) */
+  --plate-r: 7px;
+  --w-stroke: 1.5px; /* one stroke for every weight — extent carries it */
+  --w-tick-low: 5px;
+  --w-tick-medium: 8.5px;
+  --w-tick-high: 12.5px;
+  --w-gap: 8px; /* unassessed — the open gap, no mark (A2, A3) */
+  --fresh-dash: none;
+  --aging-dash: 7 3;
+  --stale-dash: 1.5 3.5;
+  --halo-r-weak: 6px;
+  --halo-o-weak: 0.10;
+  --halo-r-medium: 11px;
+  --halo-o-medium: 0.16;
+  --halo-r-strong: 17px;
+  --halo-o-strong: 0.22;
+
+  /* geometry reserved for the plate rebuild — interior textures and the
+     decision rail (A1, A2). Proportions are the language's at --plate-r:
+     18px; the rebuild sets the plate scale and these move with it. */
+  --tx-hatch-pitch: 4px;
+  --tx-hatch-weight: 1.5px;
+  --tx-dot-r: 3.4px;
+  --tx-keyline-inset: 4px;
+  --rail-gap: 5px;
+  --rail-w: 4.5px;
+  --rail-slot-h: 12px;
+  --rail-slot-pitch: 13px;
+  --rail-mark-1: 4px;
+  --rail-mark-2: 8px;
+  --rail-mark-3: 12px;
+  --rail-mark-split: 3.5px; /* disputed is a fork, not a rung */
+  --rail-radius: 1.2px;
+  --zone-stroke: 1.6px;
+  --chronic-stripe-pitch: 7px;
+  --chronic-stripe-opacity: 0.30; /* on focus only (A6) */
+
+  /* motion — one loop, one transition (A9) */
+  --m-pull-dur: 2.4s;
+  --m-pull-scale: 1.22;
+  --m-pull-static-scale: 1.14;
+  --m-focus: 120ms;
+  --m-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* renderer-local surfaces, derived from the sheet above */
+  --accent: var(--focus);
+  --banner: var(--focus);
+  --node-stroke: var(--ink);
+  --shadow: oklch(0.245 0.008 250 / 0.12);
+
+  font-family: var(--f-ui);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --page: #16191d;
-    --surface: #20242a;
-    --surface-soft: #292e35;
-    --ink: #eef1f4;
-    --muted: #aeb5be;
-    --line: #444b54;
-    --accent: #8fb6d8;
-    --focus: #9ac6ea;
-    --edge: #9aa2ad;
-    --route-edge: #aeb4bb;
-    --trail: #f59e42;
-    --n-concept: #7898c3;
-    --n-material: #a69676;
-    --n-route: #a79bc8;
-    --n-direction: #82af9f;
-    --n-question: #d0a173;
-    --n-probe: #98a5b3;
-    --n-journal: #c48686;
-    --n-plan: #9a96ad;
-    --node-stroke: #f1f3f5;
-    --banner: #8fb6d8;
-    --shadow: rgba(0, 0, 0, 0.3);
+    --page: oklch(0.185 0.008 250);
+    --ground: oklch(0.225 0.009 250);
+    --ground-sunk: oklch(0.265 0.01 250);
+    --ink: oklch(0.935 0.005 250);
+    --ink-2: oklch(0.735 0.01 250);
+    --ink-3: oklch(0.555 0.012 250);
+    --rule: oklch(0.325 0.012 250);
+    --rule-soft: oklch(0.275 0.01 250);
+    --focus: oklch(0.78 0.075 245);
+    --select: oklch(0.86 0.06 245);
+    --k-concept: oklch(0.74 0.075 252);
+    --k-material: oklch(0.74 0.075 72);
+    --k-part: oklch(0.74 0.075 96);
+    --k-route: oklch(0.74 0.075 305);
+    --k-direction: oklch(0.74 0.075 162);
+    --k-question: oklch(0.74 0.075 46);
+    --k-probe: oklch(0.74 0.075 225);
+    --k-record: oklch(0.74 0.075 22);
+    --k-plan: oklch(0.74 0.075 288);
+    --k-pattern: oklch(0.74 0.075 140);
+    --k-zone: oklch(0.74 0.075 196);
+    --e-authored: oklch(0.70 0.014 250);
+    --e-derived: oklch(0.50 0.014 250);
+    --e-route: oklch(0.42 0.012 250);
+    --trail: oklch(0.78 0.155 64);
+    /* silence lightens against its ground rather than darkening, so an open
+       slot stays a visible groove instead of a hole in the paper (A2) */
+    --slot: oklch(0.395 0.013 250);
+    --pull: oklch(0.79 0.105 52);
+    --halo: oklch(0.75 0.05 250);
+    --node-stroke: var(--ink);
+    --shadow: oklch(0 0 0 / 0.3);
   }
 }
 
@@ -89,8 +186,8 @@ button {
   gap: 6px 20px;
   min-height: 58px;
   padding: 6px 20px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  background: var(--ground);
 }
 
 .identity,
@@ -121,16 +218,16 @@ button {
   align-items: center;
   min-height: 24px;
   padding: 2px 9px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--rule);
   border-radius: 999px;
-  color: var(--muted);
-  background: var(--surface-soft);
+  color: var(--ink-2);
+  background: var(--ground-sunk);
   font-size: 0.78rem;
 }
 
 .toggle-control {
   gap: 7px;
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 0.88rem;
   cursor: pointer;
 }
@@ -147,9 +244,9 @@ button {
 .legend-toggle {
   min-height: 32px;
   padding: 4px 10px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  background: var(--surface);
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+  background: var(--ground);
   cursor: pointer;
 }
 
@@ -165,12 +262,12 @@ button {
 .segmented-control button[aria-pressed="true"] {
   position: relative;
   color: var(--ink);
-  background: var(--surface-soft);
+  background: var(--ground-sunk);
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .segmented-control button:disabled {
-  color: var(--muted);
+  color: var(--ink-2);
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -202,9 +299,9 @@ button {
   max-height: calc(100% - 18px);
   padding: 16px 18px;
   overflow: auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--rule);
   border-radius: 0 0 8px 8px;
-  background: var(--surface);
+  background: var(--ground);
   box-shadow: 0 8px 22px var(--shadow);
 }
 
@@ -220,7 +317,7 @@ button {
 .list-show-all {
   margin: 6px 0 0;
   padding: 7px 10px;
-  border: 1px dashed var(--line);
+  border: 1px dashed var(--rule);
   border-radius: 5px;
   color: var(--accent);
   background: transparent;
@@ -229,7 +326,7 @@ button {
 }
 
 .list-show-all:hover {
-  background: var(--surface);
+  background: var(--ground);
 }
 
 .list-show-all:focus-visible {
@@ -249,7 +346,7 @@ button {
   min-height: 24px;
   align-items: center;
   gap: 9px;
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 0.8rem;
 }
 
@@ -275,7 +372,7 @@ button {
 
 .legend-direction {
   margin: 9px 0 0;
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 0.76rem;
   line-height: 1.35;
 }
@@ -305,8 +402,8 @@ aside {
   min-height: 0;
   padding: 24px 20px 36px;
   overflow: auto;
-  border-left: 1px solid var(--line);
-  background: var(--surface);
+  border-left: 1px solid var(--rule);
+  background: var(--ground);
   box-shadow: -8px 0 20px var(--shadow);
 }
 
@@ -327,7 +424,7 @@ aside {
 
 .close-details:hover,
 .close-details:focus-visible {
-  background: var(--surface-soft);
+  background: var(--ground-sunk);
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
@@ -339,9 +436,9 @@ aside {
   min-height: 30px;
   padding: 0 18px;
   overflow: hidden;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  background: var(--surface);
+  border-top: 1px solid var(--rule);
+  color: var(--ink-2);
+  background: var(--ground);
   font-size: 0.76rem;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -357,7 +454,7 @@ aside {
   justify-content: center;
   flex-direction: column;
   gap: 10px;
-  color: var(--muted);
+  color: var(--ink-2);
   text-align: center;
   line-height: 1.55;
 }
@@ -379,11 +476,11 @@ aside {
   right: 18px;
   min-height: 36px;
   padding: 8px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--rule);
   border-left: 4px solid var(--banner);
   border-radius: 3px;
   color: var(--ink);
-  background: var(--surface);
+  background: var(--ground);
   box-shadow: 0 3px 12px var(--shadow);
   font-size: 0.86rem;
   line-height: 1.35;
@@ -404,8 +501,8 @@ aside {
   margin-bottom: 20px;
   padding: 10px 12px;
   border-left: 4px solid var(--banner);
-  color: var(--muted);
-  background: var(--surface-soft);
+  color: var(--ink-2);
+  background: var(--ground-sunk);
   font-size: 0.86rem;
   line-height: 1.4;
 }
@@ -417,7 +514,7 @@ aside {
 
 .node-list-section h2 {
   margin: 0 0 8px;
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 0.82rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -445,13 +542,13 @@ aside {
 }
 
 .node-list-row:hover {
-  border-color: var(--line);
-  background: var(--surface);
+  border-color: var(--rule);
+  background: var(--ground);
 }
 
 .node-list-row.selected {
   border-color: var(--accent);
-  background: var(--surface-soft);
+  background: var(--ground-sunk);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
@@ -461,7 +558,7 @@ aside {
 }
 
 .node-list-id {
-  color: var(--muted);
+  color: var(--ink-2);
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 0.76rem;
   overflow-wrap: anywhere;
@@ -505,10 +602,10 @@ aside {
 .zoom-controls button {
   width: 36px;
   height: 36px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--rule);
   border-radius: 6px;
   color: var(--ink);
-  background: var(--surface);
+  background: var(--ground);
   box-shadow: 0 2px 8px var(--shadow);
   cursor: pointer;
 }
@@ -520,13 +617,13 @@ aside {
 
 .edge-line {
   fill: none;
-  stroke: var(--edge);
+  stroke: var(--e-authored);
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
 }
 
 .edge-route {
-  stroke: var(--route-edge);
+  stroke: var(--e-route);
   stroke-width: 1;
   stroke-dasharray: 4 3;
 }
@@ -537,17 +634,29 @@ aside {
 }
 
 .edge-authored {
-  stroke-width: 1.5;
+  stroke-width: var(--w-stroke);
 }
 
 .edge-structural {
+  stroke: var(--e-derived);
   stroke-width: 1;
   stroke-dasharray: 1 3;
 }
 
 .edge-journal {
+  stroke: var(--e-derived);
   stroke-width: 1.25;
   stroke-dasharray: 6 2 1 2;
+}
+
+/* §16.2 A3: an asserted weight is a mark in the margin of the stroke, so the
+   stroke keeps carrying family alone and unassessed can read as a hole. */
+.edge-weight {
+  fill: none;
+  stroke: var(--struck);
+  stroke-width: var(--w-stroke);
+  stroke-linecap: butt;
+  vector-effect: non-scaling-stroke;
 }
 
 .edge-hit {
@@ -564,10 +673,10 @@ aside {
 .edge-label {
   display: none;
   fill: var(--ink);
-  stroke: var(--surface);
+  stroke: var(--ground);
   stroke-width: 3px;
   paint-order: stroke;
-  font-size: 10px;
+  font-size: var(--t-01);
   pointer-events: none;
 }
 
@@ -580,44 +689,50 @@ aside {
 }
 
 .node-shape {
-  fill: var(--n-concept);
+  fill: var(--k-concept);
   stroke: var(--node-stroke);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
 
-.node-material .node-shape,
+.node-material .node-shape {
+  fill: var(--k-material);
+}
+
 .node-material_part .node-shape {
-  fill: var(--n-material);
+  fill: var(--k-part);
 }
 
 .node-suggested_route .node-shape {
-  fill: var(--n-route);
+  fill: var(--k-route);
 }
 
 .node-direction .node-shape {
-  fill: var(--n-direction);
+  fill: var(--k-direction);
 }
 
 .node-question .node-shape {
-  fill: var(--n-question);
+  fill: var(--k-question);
 }
 
 .node-probe .node-shape {
-  fill: var(--n-probe);
+  fill: var(--k-probe);
 }
 
 .node-artifact .node-shape,
 .node-encounter .node-shape,
 .node-trail_segment .node-shape,
 .node-personal_trail .node-shape {
-  fill: var(--n-journal);
+  fill: var(--k-record);
 }
 
 .node-plan .node-shape {
-  fill: var(--n-plan);
+  fill: var(--k-plan);
 }
 
+/* §16.2 A4 reserves a dashed node boundary for freshness; this treatment moves
+   to a hairline cartouche when the plates land (#98). The flag is also a word
+   in the panel and the list, so the reading never depends on the dash. */
 .node.field-undefined .node-shape {
   stroke-dasharray: 3 2;
 }
@@ -642,18 +757,18 @@ aside {
 
 .sensitivity-dot {
   fill: var(--ink);
-  stroke: var(--surface);
+  stroke: var(--ground);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .question-ring {
   fill: none;
-  stroke: var(--n-question);
+  stroke: var(--k-question);
   stroke-width: 1.5;
   transform-box: fill-box;
   transform-origin: center;
-  animation: question-pull 2.4s ease-in-out infinite;
+  animation: question-pull var(--m-pull-dur) ease-in-out infinite;
   vector-effect: non-scaling-stroke;
 }
 
@@ -673,8 +788,23 @@ aside {
   stroke: var(--page);
   stroke-width: 3px;
   paint-order: stroke;
-  font-size: 11px;
+  font-size: var(--t-02);
   pointer-events: none;
+}
+
+.weight-dropped {
+  display: none;
+}
+
+/* §16.2 A11: as density rises the weight channel goes first and goes whole —
+   ticks and the unassessed gap together — and labels only after it. */
+.viewport.drop-weight .weight-detail,
+.viewport.drop-weight .edge-weight {
+  display: none;
+}
+
+.viewport.drop-weight .weight-dropped {
+  display: inline;
 }
 
 .viewport.zoom-low .node-label {
@@ -704,7 +834,7 @@ aside {
 
 .detail-id {
   margin: 10px 0;
-  color: var(--muted);
+  color: var(--ink-2);
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 0.78rem;
   overflow-wrap: anywhere;
@@ -713,7 +843,7 @@ aside {
 .detail-fields,
 .detail-formerly {
   margin: 7px 0;
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 0.84rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -732,7 +862,7 @@ aside {
 
 .detail-row dt,
 .edge-groups h3 {
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -776,7 +906,7 @@ aside {
 }
 
 .edge-meta {
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 0.76rem;
 }
 
@@ -828,7 +958,7 @@ aside {
   .question-ring {
     animation: none;
     opacity: 1;
-    transform: scale(1.15);
+    transform: scale(var(--m-pull-static-scale));
   }
 
   * {

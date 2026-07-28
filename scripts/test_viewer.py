@@ -886,7 +886,7 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual("true", button.get_attribute("aria-expanded"))
         self.assertTrue(self.page.locator('.legend[role="note"]').is_visible())
         self.assertEqual(
-            ["routes (hideable)", "trail", "authored (opacity shows weight)", "structure",
+            ["routes (hideable)", "trail", "authored (tick length = weight)", "structure",
              "journal-derived"],
             self.page.locator(".legend-edges .legend-row span").all_inner_texts(),
         )
@@ -953,7 +953,7 @@ class ViewerBrowserTests(unittest.TestCase):
         ]
         self.open_state("#mode=field", "FIELD")
         self.assertEqual(len(visible_ids), self.page.locator("svg .node").count())
-        self.assertEqual(len(visible_edges), self.page.locator("svg .edge-line").count())
+        self.assertEqual(len(visible_edges), self.page.locator("svg .edge-group").count())
         self.assertIn(
             f"{len(visible_ids)} nodes · {len(visible_edges)} edges in view",
             self.page.locator("#status-bar").inner_text(),
@@ -962,13 +962,124 @@ class ViewerBrowserTests(unittest.TestCase):
         initial_hash = self.page.evaluate("location.hash")
         self.page.locator("#routes-toggle").uncheck()
         self.page.wait_for_selector('#main[data-state="FIELD"]')
-        rendered_edge_count = self.page.locator("svg .edge-line").count()
+        rendered_edge_count = self.page.locator("svg .edge-group").count()
         self.assertLess(rendered_edge_count, len(visible_edges))
         self.assertIn(
             f"{len(visible_ids)} nodes · {rendered_edge_count} edges in view",
             self.page.locator("#status-bar").inner_text(),
         )
         self.assertEqual(initial_hash, self.page.evaluate("location.hash"))
+
+    def test_edge_weight_marks_never_ride_the_stroke(self):
+        # §16.2 A2/A3: an asserted weight is a midpoint tick whose extent
+        # carries the level; unassessed opens the stroke and draws no tick, so
+        # silence cannot read as an asserted medium; a type that admits no
+        # weight keeps one unbroken stroke.
+        graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))
+        visible_ids = {
+            node["id"] for node in graph["nodes"]
+            if "knowledge" in node["fields"] or node["fields"] == []
+        }
+        visible_edges = [
+            edge for edge in graph["edges"]
+            if edge["source"] in visible_ids and edge["target"] in visible_ids
+        ]
+        asserted = [edge for edge in visible_edges if edge.get("weight") in {"low", "medium", "high"}]
+        unassessed = [edge for edge in visible_edges if edge.get("weight") == "unassessed"]
+        self.assertTrue(asserted and unassessed, "fixture must exercise both readings")
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual(0, self.page.locator("svg .edge-line[stroke-opacity]").count())
+        drawn = self.page.evaluate(
+            """() => {
+                const token = (name) => parseFloat(
+                    getComputedStyle(document.documentElement).getPropertyValue(name));
+                const ends = (el) => ["x1", "y1", "x2", "y2"].map((a) => parseFloat(el.getAttribute(a)));
+                const marked = [];
+                const opened = [];
+                for (const group of document.querySelectorAll("svg .edge-group")) {
+                    const tick = group.querySelector(".edge-weight");
+                    const detail = [...group.querySelectorAll(".weight-detail")];
+                    if (tick) {
+                        const [x1, y1, x2, y2] = ends(group.querySelector(".edge-line"));
+                        const [tx1, ty1, tx2, ty2] = ends(tick);
+                        const ex = x2 - x1, ey = y2 - y1;
+                        const dx = tx2 - tx1, dy = ty2 - ty1;
+                        const extent = Math.hypot(dx, dy);
+                        marked.push({
+                            extent,
+                            alignment: Math.abs((ex * dx + ey * dy) / (Math.hypot(ex, ey) * extent)),
+                            offCentre: Math.hypot(
+                                (tx1 + tx2) / 2 - (x1 + x2) / 2, (ty1 + ty2) / 2 - (y1 + y2) / 2)
+                        });
+                    }
+                    if (detail.length) {
+                        const [, , ax2, ay2] = ends(detail[0]);
+                        const [bx1, by1] = ends(detail[1]);
+                        opened.push({
+                            segments: detail.length,
+                            gap: Math.hypot(bx1 - ax2, by1 - ay2),
+                            tick: Boolean(tick),
+                            dropped: group.querySelectorAll(".weight-dropped").length
+                        });
+                    }
+                }
+                return {marked, opened, tokens: {
+                    low: token("--w-tick-low"),
+                    medium: token("--w-tick-medium"),
+                    high: token("--w-tick-high"),
+                    gap: token("--w-gap")
+                }};
+            }"""
+        )
+        tokens = drawn["tokens"]
+        # extent is the channel, so the three levels must stay ordered and apart
+        self.assertLess(tokens["low"], tokens["medium"])
+        self.assertLess(tokens["medium"], tokens["high"])
+        self.assertGreater(tokens["gap"], 0)
+        self.assertEqual(len(asserted), len(drawn["marked"]))
+        self.assertEqual(
+            sorted(round(tokens[edge["weight"]], 3) for edge in asserted),
+            sorted(round(mark["extent"], 3) for mark in drawn["marked"]),
+        )
+        for mark in drawn["marked"]:
+            # a tick that lay along its edge would vanish into the stroke
+            # (coordinates are emitted at three decimals, hence the tolerance)
+            self.assertAlmostEqual(0, mark["alignment"], places=3)
+            self.assertAlmostEqual(0, mark["offCentre"], places=3)
+        self.assertEqual(len(unassessed), len(drawn["opened"]))
+        for opening in drawn["opened"]:
+            self.assertEqual(2, opening["segments"])
+            self.assertFalse(opening["tick"])
+            self.assertEqual(1, opening["dropped"])
+            self.assertGreater(opening["gap"], 0)
+            self.assertLessEqual(round(opening["gap"], 3), tokens["gap"])
+
+    def test_density_drops_the_weight_channel_before_labels(self):
+        # §16.2 A11: channels drop whole and in a fixed order — weight marks
+        # (tick and gap together) before labels — and the status line names
+        # what is not drawn, so the omission is never silent.
+        self.open_state("#mode=field", "FIELD")
+        minus = self.page.get_by_role("button", name="Zoom out")
+        self.assertTrue(self.page.locator("svg .edge-weight").first.is_visible())
+        self.assertFalse(self.page.locator("svg .weight-dropped").first.is_visible())
+        self.assertNotIn("not drawn at this density", self.page.locator("#status-bar").inner_text())
+
+        minus.click()
+        self.assertFalse(self.page.locator("svg .edge-weight").first.is_visible())
+        self.assertFalse(self.page.locator("svg .weight-detail").first.is_visible())
+        self.assertTrue(self.page.locator("svg .weight-dropped").first.is_visible())
+        self.assertTrue(self.page.locator("svg .node-label").first.is_visible())
+        self.assertIn(
+            "not drawn at this density: edge weight",
+            self.page.locator("#status-bar").inner_text(),
+        )
+
+        minus.click()
+        self.assertFalse(self.page.locator("svg .node-label").first.is_visible())
+        self.assertIn(
+            "not drawn at this density: edge weight, labels",
+            self.page.locator("#status-bar").inner_text(),
+        )
 
     def test_focus_opens_panel_for_each_rendered_kind(self):
         graph = json.loads(DEMO_GRAPH.read_text(encoding="utf-8"))

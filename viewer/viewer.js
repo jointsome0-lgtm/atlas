@@ -24,11 +24,13 @@ const STRUCTURAL_TYPES = new Set(["has_part", "overall_concept", "part_of_direct
 const EDGE_FAMILIES = [
   {key: "route", className: "edge-route", label: "routes (hideable)"},
   {key: "trail", className: "edge-trail", label: "trail"},
-  {key: "authored", className: "edge-authored", label: "authored (opacity shows weight)"},
+  {key: "authored", className: "edge-authored", label: "authored (tick length = weight)"},
   {key: "structural", className: "edge-structural", label: "structure"},
   {key: "journal", className: "edge-journal", label: "journal-derived"}
 ];
 const EDGE_FAMILY_CLASSES = Object.fromEntries(EDGE_FAMILIES.map((family) => [family.key, family.className]));
+// §16.2 A3: the asserted weights differ by mark extent, never by stroke.
+const WEIGHT_TICK_TOKENS = {"low": "--w-tick-low", "medium": "--w-tick-medium", "high": "--w-tick-high"};
 const LONG_FIELDS = new Set(["notes", "body", "summary", "reason", "text"]);
 const DETAIL_FIELDS = {
   "concept": ["aliases"],
@@ -89,6 +91,16 @@ function svgElement(tag, className) {
   return element;
 }
 
+// Geometry the renderer computes in script still comes from the token sheet:
+// §16.2's aesthetics name channels and tokens, never numbers, so a value moves
+// in viewer.css alone.
+let rootStyle = null;
+function tokenNumber(name, fallback) {
+  if (!rootStyle) rootStyle = getComputedStyle(document.documentElement);
+  const value = Number.parseFloat(rootStyle.getPropertyValue(name));
+  return Number.isFinite(value) ? value : fallback;
+}
+
 function setMainState(name) {
   main.dataset.state = name;
 }
@@ -102,6 +114,7 @@ function closePanel() {
 function resetScreen(field = DEFAULT_FIELD) {
   renderGeneration += 1;
   currentTransform = null;
+  statusCounts = null;
   main.replaceChildren();
   statusBar.textContent = "";
   fieldChip.textContent = "Field: " + field;
@@ -535,10 +548,22 @@ function visibleEdges(edges) {
   return edges.filter((edge) => !isRouteEdge(edge, nodeById));
 }
 
-function setStatus(nodeCount, edgeCount) {
-  let copy = nodeCount + " nodes · " + edgeCount + " edges in view";
+let statusCounts = null;
+
+function renderStatus() {
+  if (!statusCounts) return;
+  let copy = statusCounts.nodes + " nodes · " + statusCounts.edges + " edges in view";
   if (accepted.graph.generated_at) copy += " · as of " + accepted.graph.generated_at.slice(0, 10);
+  const dropped = [];
+  if (currentTransform && currentTransform.zoom < 1) dropped.push("edge weight");
+  if (currentTransform && currentTransform.zoom < 0.8) dropped.push("labels");
+  if (dropped.length) copy += " · not drawn at this density: " + dropped.join(", ") + " — open a node to read them";
   statusBar.textContent = copy;
+}
+
+function setStatus(nodeCount, edgeCount) {
+  statusCounts = {nodes: nodeCount, edges: edgeCount};
+  renderStatus();
 }
 
 function makeDefinitions() {
@@ -574,28 +599,80 @@ function edgeClass(edge, nodeById) {
   return EDGE_FAMILY_CLASSES.journal;
 }
 
+function setEnds(item, from, to) {
+  item.setAttribute("x1", from.x.toFixed(3));
+  item.setAttribute("y1", from.y.toFixed(3));
+  item.setAttribute("x2", to.x.toFixed(3));
+  item.setAttribute("y2", to.y.toFixed(3));
+}
+
+// §16.2 A3: an edge's own geometry, so the stroke stays free to carry family.
+function edgeAxis(source, target) {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const length = Math.hypot(dx, dy);
+  if (!length) return null;
+  return {
+    length,
+    mid: {x: (source.x + target.x) / 2, y: (source.y + target.y) / 2},
+    unit: {x: dx / length, y: dy / length}
+  };
+}
+
+function offsetFrom(point, vector, distance) {
+  return {x: point.x + vector.x * distance, y: point.y + vector.y * distance};
+}
+
 function makeEdge(edge, positions, nodeById) {
   const source = positions.get(edge.source);
   const target = positions.get(edge.target);
   const group = svgElement("g", "edge-group");
-  const line = svgElement("line", "edge-line " + edgeClass(edge, nodeById));
+  const lineClass = "edge-line " + edgeClass(edge, nodeById);
   const hit = svgElement("line", "edge-hit");
-  for (const item of [line, hit]) {
-    item.setAttribute("x1", source.x.toFixed(3));
-    item.setAttribute("y1", source.y.toFixed(3));
-    item.setAttribute("x2", target.x.toFixed(3));
-    item.setAttribute("y2", target.y.toFixed(3));
+  setEnds(hit, source, target);
+  const directed = !SYMMETRIC_TYPES.has(edge.type);
+  const axis = edgeAxis(source, target);
+  // §14.9 weight leaves the stroke entirely (§16.2 A3): an asserted weight is
+  // a midpoint tick whose extent carries the level, unassessed opens the
+  // stroke where the claim would have been — silence reads as a hole, never
+  // as a middling line — and a type that admits no weight keeps an unbroken
+  // stroke, so "no claim to make" stays distinct from "none recorded".
+  const strokes = [];
+  if (edge.weight === "unassessed" && axis) {
+    const gap = Math.min(tokenNumber("--w-gap", 8), axis.length * 0.4);
+    const before = svgElement("line", lineClass + " weight-detail");
+    setEnds(before, source, offsetFrom(axis.mid, axis.unit, -gap / 2));
+    const after = svgElement("line", lineClass + " weight-detail");
+    setEnds(after, offsetFrom(axis.mid, axis.unit, gap / 2), target);
+    // §16.2 A11: the weight channel drops whole, so the gap closes with the
+    // ticks rather than surviving as the only weight mark left on screen.
+    const dropped = svgElement("line", lineClass + " weight-dropped");
+    setEnds(dropped, source, target);
+    if (directed) {
+      after.setAttribute("marker-end", "url(#arrow)");
+      dropped.setAttribute("marker-end", "url(#arrow)");
+    }
+    strokes.push(before, after, dropped);
+  } else {
+    const line = svgElement("line", lineClass);
+    setEnds(line, source, target);
+    if (directed) line.setAttribute("marker-end", "url(#arrow)");
+    strokes.push(line);
+    if (axis && WEIGHT_TICK_TOKENS[edge.weight]) {
+      const extent = tokenNumber(WEIGHT_TICK_TOKENS[edge.weight], 8);
+      const normal = {x: -axis.unit.y, y: axis.unit.x};
+      const tick = svgElement("line", "edge-weight");
+      setEnds(tick, offsetFrom(axis.mid, normal, -extent / 2), offsetFrom(axis.mid, normal, extent / 2));
+      strokes.push(tick);
+    }
   }
-  if (!SYMMETRIC_TYPES.has(edge.type)) line.setAttribute("marker-end", "url(#arrow)");
-  const opacity = {"low": 0.45, "medium": 0.7, "high": 1, "unassessed": 0.7}[edge.weight] || 0.7;
-  line.setAttribute("stroke-opacity", String(opacity));
   const label = svgElement("text", "edge-label");
   label.setAttribute("x", ((source.x + target.x) / 2).toFixed(3));
   label.setAttribute("y", ((source.y + target.y) / 2 - 6).toFixed(3));
   label.textContent = edge.type;
   group.addEventListener("mouseenter", () => label.classList.add("visible"));
   group.addEventListener("mouseleave", () => label.classList.remove("visible"));
-  group.append(line, hit, label);
+  group.append(...strokes, hit, label);
   return group;
 }
 
@@ -744,7 +821,12 @@ function clampZoom(value) {
 
 function applyTransform(transform) {
   transform.viewport.setAttribute("transform", "translate(" + transform.x.toFixed(3) + " " + transform.y.toFixed(3) + ") scale(" + transform.zoom.toFixed(5) + ")");
+  // §16.2 A11: channels drop whole and in a fixed order as density rises —
+  // the weight marks first, then the labels — and the status line names what
+  // is not being drawn, so an omission is never silent.
+  transform.viewport.classList.toggle("drop-weight", transform.zoom < 1);
   transform.viewport.classList.toggle("zoom-low", transform.zoom < 0.8);
+  renderStatus();
 }
 
 function zoomAt(factor, x, y) {
@@ -852,6 +934,9 @@ function renderLegend() {
     edgesSection.append(row);
   }
   edgesSection.append(htmlElement("p", "legend-direction", "arrowhead = direction; related_to and alternative_to have none"));
+  // §16.2 A2/A8: the open gap is spoken as well as drawn, and the panel says
+  // the same words for the same state.
+  edgesSection.append(htmlElement("p", "legend-direction", "weight: tick length is low, medium, or high; an open gap means no decision recorded; edge types that carry no weight stay unbroken"));
   legend.append(nodesSection, edgesSection);
 }
 

@@ -108,6 +108,82 @@ patterns stay node-link beside the silhouette, joined
 by their loads edges (§32.1)
 ```
 
+Aesthetics (rev 1) — the channel assignments that satisfy the rules above. Each sentence is checkable against a render; none carries a pixel value, because every value is a viewer token (`viewer/viewer.css`) and a token moves without a canon edit. A palette variant is a token-level choice and inherits every rule here.
+
+```text
+A1  Two registers, no crossing. A node's interior texture and
+    boundary continuity carry monotone dimensions only (§14.1,
+    §14.7, §14.8, §32.2–§32.3); a rail of slots beside the node
+    carries its review-gated ones only (§14.6). No dimension
+    appears in both registers. Edge weight is review-gated too
+    and rides its own edge, never the node's rail (A3).
+A2  Silence is a drawn slot. A gated dimension with no confirmed
+    decision renders as an unstruck slot — never a position,
+    step, tint, width, or opacity on the scale that carries
+    decided values — and the slot itself is drawn, so the
+    absence of a claim is visible. A node kind that admits no
+    gated dimension draws no rail, so "no claim recorded" and
+    "no claim possible" stay distinct.
+A3  Weight is a mark, not a stroke. Edge weight (§14.9) renders
+    as a midpoint mark whose extent carries low/medium/high,
+    and unassessed renders as an open gap with no mark; stroke
+    colour, dash, and width carry edge family only; an edge type
+    that admits no weight renders neither mark nor gap, so "no
+    claim to make" stays distinct from "none recorded".
+A4  Freshness is three boundary continuities. The §14.7 classes
+    render as three discrete node-boundary continuities with no
+    interpolated state between them, and add no badge, day
+    count, ring, streak, or warning (§31.6). A dash on a node
+    boundary is always freshness; a dash on an edge stroke is
+    always family.
+A5  No mark aggregates. The State block's no-aggregate rule
+    binds the marks as well as the values: per-node marks never
+    combine into a group reading, and no mark carries a rank or
+    a score.
+A6  Severity recedes. Negative-valence state — stale, disputed,
+    restricted, chronic — never renders more prominently than
+    the node's own kind mark and may only thin, mute, or shade; it
+    never saturates, enlarges, pulses, badges, or takes an alarm
+    colour, and chronic renders only while its region is focused
+    or selected (§32.2).
+A7  Only the trail is bright. Full chroma is reserved for the
+    personal trail; every node-kind hue shares one lightness and
+    one chroma, so hue names a kind and never ranks one; a
+    suggested route never renders brighter, heavier, or more
+    continuous than the trail it parallels, and stays hideable.
+A8  Colour is never the only channel. Every state distinction is
+    legible in greyscale through texture, boundary continuity,
+    mark presence, or mark extent (§27.8); every state drawn in
+    the field is also present as words in the detail panel and
+    as its own column in the list fallback, in one vocabulary.
+A9  Motion is two things. The question pull is the only looping
+    animation and focus feedback the only transition; under
+    reduced motion the pull renders as a static offset ring and
+    transitions collapse to zero (§27.8). No state distinction
+    is carried by motion, and nothing animates on account of
+    freshness, severity, or elapsed time (§31.6).
+A10 Position and size are geometry, never state. Node size is
+    fixed per kind class and position derives from authored
+    order or seeded free layout only; the sole size-bearing
+    channel is the influence halo (§9.10), whose radius is the
+    primary channel and opacity the secondary.
+A11 Detail degrades by omission, never by summary. As density
+    rises the renderer drops whole channels in one fixed order —
+    decision rails and weight marks together, then labels, then
+    interior texture and boundary continuity — and never
+    substitutes a cluster, average, count, or heat for a dropped
+    channel; a node drawn without a boundary is drawn without
+    state; the viewer names the channels it is not drawing; past
+    §25.8's fallback threshold the list carries the same
+    channels as columns.
+A12 Nesting never inherits. A region or material that contains
+    others renders only its own key's state and stays silent
+    when nothing was recorded or decided for that key, however
+    much its children carry (§14.8); no parent mark is derived
+    from a child, and a sub-region exists on the figure only
+    where curated content authored it (§32).
+```
+
 ## §16.3 Required UI Behavior
 
 The viewer should let the user answer:
