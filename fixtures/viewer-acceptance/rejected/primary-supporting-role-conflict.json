@@ -1,6 +1,7 @@
 {
   "format": "atlas-graph",
   "version": 1,
+  "generated_at": "2026-07-10T00:00:00Z",
   "nodes": [
     {
       "id": "concept:alone",
@@ -68,7 +69,21 @@
     }
   ],
   "trails": [],
-  "state": {},
+  "state": {
+    "concept:alone": {
+      "exposure": "unseen",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [],
+      "decisions": []
+    },
+    "question:q": {
+      "status": "open",
+      "evidence": [],
+      "decisions": []
+    }
+  },
   "influence": {},
   "frontier": [],
   "projections": {}

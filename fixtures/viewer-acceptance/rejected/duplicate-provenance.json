@@ -34,7 +34,24 @@
     }
   ],
   "trails": [],
-  "state": {},
+  "state": {
+    "concept:alone": {
+      "exposure": "unseen",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [],
+      "decisions": []
+    },
+    "concept:other": {
+      "exposure": "unseen",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "evidence": [],
+      "decisions": []
+    }
+  },
   "influence": {},
   "frontier": [],
   "projections": {}

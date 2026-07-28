@@ -31,36 +31,66 @@ VIEWER_ACCEPTANCE = ROOT / "fixtures" / "viewer-acceptance"
 UNSUPPORTED_VERSION_FIXTURE = VIEWER_ACCEPTANCE / "unsupported-version.json"
 REJECTED_ACCEPTANCE = VIEWER_ACCEPTANCE / "rejected"
 EXPECTED_REJECTED_FIXTURES = {
-    "dangling-provenance.json",
-    "discriminant-on-wrong-edge-type.json",
-    "duplicate-edge-identity.json",
-    "duplicate-node-id.json",
-    "duplicate-provenance.json",
-    "formerly-on-journal-backed-kind.json",
-    "impossible-generated-at-date.json",
-    "impossible-edge-date.json",
-    "impossible-node-date.json",
-    "impossible-state-decision-date.json",
-    "impossible-state-last-seen-date.json",
-    "kind-changing-formerly-redirect.json",
-    "living-formerly-redirect.json",
-    "material-part-parent-mismatch.json",
-    "non-canonical-edge-array-order.json",
-    "one-to-n-formerly-redirect.json",
-    "payload-on-wrong-node-kind.json",
-    "primary-supporting-role-conflict.json",
-    "projection-key-not-zone-id.json",
-    "reversed-related-to-pair.json",
-    "self-referential-edge.json",
-    "state-entry-missing-required.json",
-    "state-entry-not-an-object.json",
-    "state-entry-unknown-property.json",
-    "state-entry-wrong-node-kind.json",
-    "state-key-without-node.json",
-    "state-missing-default-entry.json",
-    "step-on-non-route-material-role.json",
-    "unsorted-provenance.json",
-    "zone-without-projection.json",
+    "dangling-provenance.json": {
+        "path": "/edges/0/provenance", "rule": "danglingRef"},
+    "discriminant-on-wrong-edge-type.json": {
+        "path": "/edges/0/order", "rule": "forbiddenDiscriminant"},
+    "duplicate-edge-identity.json": {
+        "path": "/edges/1", "rule": "duplicateIdentity"},
+    "duplicate-node-id.json": {
+        "path": "/nodes/1/id", "rule": "duplicateId"},
+    "duplicate-provenance.json": {
+        "path": "/edges/0/provenance", "rule": "canonicalSet"},
+    "formerly-on-journal-backed-kind.json": {
+        "path": "/nodes/1/formerly", "rule": "noRedirectMachinery"},
+    "impossible-edge-date.json": {
+        "path": "/edges/0/created_at", "rule": "date"},
+    "impossible-generated-at-date.json": {
+        "path": "/generated_at", "rule": "shape"},
+    "impossible-node-date.json": {
+        "path": "/nodes/0/observed_at", "rule": "shape"},
+    "impossible-state-decision-date.json": {
+        "path": "/state", "rule": "date"},
+    "impossible-state-last-seen-date.json": {
+        "path": "/state", "rule": "contactDates"},
+    "kind-changing-formerly-redirect.json": {
+        "path": "/nodes/0/formerly", "rule": "kindChange"},
+    "living-formerly-redirect.json": {
+        "path": "/nodes/1/formerly", "rule": "livingRedirect"},
+    "material-part-parent-mismatch.json": {
+        "path": "/nodes/2/material", "rule": "partParent"},
+    "non-canonical-edge-array-order.json": {
+        "path": "/edges/1", "rule": "canonicalOrder"},
+    "one-to-n-formerly-redirect.json": {
+        "path": "/nodes/1/formerly", "rule": "duplicateRedirect"},
+    "payload-on-wrong-node-kind.json": {
+        "path": "/nodes/0/url", "rule": "kindProperty"},
+    "primary-supporting-role-conflict.json": {
+        "path": "/edges/1", "rule": "roleConflict"},
+    "projection-key-not-zone-id.json": {
+        "path": "/projections", "rule": "zoneKey"},
+    "reversed-related-to-pair.json": {
+        "path": "/edges/0", "rule": "canonicalOrder"},
+    "self-referential-edge.json": {
+        "path": "/edges/0/target", "rule": "selfEdge"},
+    "state-entry-missing-required.json": {
+        "path": "/state", "rule": "required"},
+    "state-entry-not-an-object.json": {
+        "path": "/state", "rule": "entryShape"},
+    "state-entry-unknown-property.json": {
+        "path": "/state", "rule": "additionalProperties"},
+    "state-entry-wrong-node-kind.json": {
+        "path": "/state", "rule": "additionalProperties"},
+    "state-key-without-node.json": {
+        "path": "/state", "rule": "danglingKey"},
+    "state-missing-default-entry.json": {
+        "path": "/state", "rule": "missingDefault"},
+    "step-on-non-route-material-role.json": {
+        "path": "/edges/0/step", "rule": "forbiddenDiscriminant"},
+    "unsorted-provenance.json": {
+        "path": "/edges/0/provenance", "rule": "canonicalSet"},
+    "zone-without-projection.json": {
+        "path": "/projections", "rule": "zoneWithoutProjection"},
 }
 NODE_TYPE_ORDER = [
     "plan", "concept", "material", "material_part", "direction",
@@ -255,8 +285,19 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(sorted(EXPECTED_REJECTED_FIXTURES), fixture_names)
         for name in fixture_names:
             with self.subTest(fixture=name):
-                shutil.copyfile(REJECTED_ACCEPTANCE / name, self.graph_path)
+                fixture_path = REJECTED_ACCEPTANCE / name
+                fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+                shutil.copyfile(fixture_path, self.graph_path)
                 self.open_state("#mode=field", "REJECTED")
+                diagnostic = self.page.evaluate(
+                    """async graph => {
+                        const {validateGraph} = await import("./contract.js");
+                        return validateGraph(graph);
+                    }""",
+                    fixture,
+                )
+                self.assertEqual(
+                    EXPECTED_REJECTED_FIXTURES[name], diagnostic)
 
     def test_state_semantic_gates_reject_builder_impossible_graphs(self):
         concept = {
