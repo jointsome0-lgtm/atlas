@@ -849,6 +849,9 @@ function projectStateEntry(entry, node, asOf) {
   projected.decided = Array.isArray(entry.decisions)
     ? entry.decisions.map((reference) => reference.dimension)
     : [];
+  // §29/#107 boundary: state-entry sensitivity stays validation-only during
+  // the freeze. The §14 knowledge-state values remain visible as #98 requires;
+  // withholding a whole tainted entry is #38 redaction policy, still deferred.
   return projected;
 }
 

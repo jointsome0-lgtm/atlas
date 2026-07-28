@@ -1646,9 +1646,16 @@ class ViewerBrowserTests(unittest.TestCase):
         self.page.wait_for_selector('#main[data-state="LIST"]')
         row = self.page.locator(
             f'.node-list-row[data-node-id="{concept["id"]}"]')
-        self.assertNotIn("state sensitivity", row.inner_text().lower())
+        row_words = row.inner_text()
+        self.assertIn("exposure: touched", row_words)
+        self.assertIn(
+            "freshness: fresh — last seen 2026-07-16", row_words)
+        self.assertNotIn("state sensitivity", row_words.lower())
         row.click()
         self.page.wait_for_selector("#details:not([hidden])")
+        panel_words = self.page.locator("#details").inner_text()
+        self.assertIn("touched", panel_words)
+        self.assertIn("fresh — last seen 2026-07-16", panel_words)
         self.assertEqual(
             0,
             self.page.locator(
