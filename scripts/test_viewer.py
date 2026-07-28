@@ -1215,6 +1215,26 @@ class ViewerBrowserTests(unittest.TestCase):
             self.page.locator("#status-bar").inner_text(),
         )
 
+    def test_density_recomputes_when_panel_rescales_the_svg(self):
+        # A11 consumes actual on-screen spacing. At this embed width the field
+        # has room for the full language until the 320px detail panel opens;
+        # the SVG ResizeObserver must then engage the omission tiers.
+        self.page.set_viewport_size({"width": 800, "height": 800})
+        self.open_state("#mode=field", "FIELD")
+        viewport = self.page.locator("svg .viewport")
+        self.assertNotIn(
+            "drop-decision", viewport.get_attribute("class") or "")
+        self.page.locator(
+            'g.node[data-node-id="concept:http-methods"]').dispatch_event("click")
+        self.page.wait_for_selector("#details:not([hidden])")
+        self.page.wait_for_function(
+            "() => document.querySelector('svg .viewport')"
+            ".classList.contains('drop-decision')")
+        self.assertIn(
+            "not drawn at this density: decision rails, edge weight",
+            self.page.locator("#status-bar").inner_text(),
+        )
+
     def artifact_node(self, slug, strength, observed_at):
         return {
             "id": f"artifact:{slug}", "type": "artifact", "title": "",
@@ -1498,6 +1518,12 @@ class ViewerBrowserTests(unittest.TestCase):
                     self.assertEqual(1, marks.count())
                     decided_heights.append(float(
                         marks.first.get_attribute("height")))
+                expected_animation = "none" if status == "stale" else "question-pull"
+                self.assertEqual(
+                    expected_animation,
+                    node.locator(".question-ring").evaluate(
+                        "ring => getComputedStyle(ring).animationName"),
+                )
         self.assertEqual(
             1, len({round(height, 2) for height in decided_heights}))
 

@@ -884,6 +884,13 @@ aside {
   vector-effect: non-scaling-stroke;
 }
 
+/* A6: a confirmed stale question recedes; stale state never drives motion. */
+.node-question.status-stale .question-ring {
+  animation: none;
+  opacity: 1;
+  transform: scale(1);
+}
+
 @keyframes question-pull {
   0%, 100% {
     opacity: 1;

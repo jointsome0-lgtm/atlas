@@ -124,6 +124,7 @@ let loadState = "LOADING";
 let unsupportedVersion = null;
 let renderGeneration = 0;
 let currentTransform = null;
+let densityResizeObserver = null;
 let viewMode = "graph";
 
 function htmlElement(tag, className, text) {
@@ -200,6 +201,10 @@ function closePanel() {
 
 function resetScreen(field = DEFAULT_FIELD) {
   renderGeneration += 1;
+  if (densityResizeObserver) {
+    densityResizeObserver.disconnect();
+    densityResizeObserver = null;
+  }
   currentTransform = null;
   statusCounts = null;
   main.replaceChildren();
@@ -722,6 +727,7 @@ async function renderField(field, nodes, edges, selected, banner) {
   };
   currentTransform = {svg, viewport, ...transform};
   applyTransform(currentTransform);
+  installDensityResize(currentTransform);
   installPanZoom(currentTransform);
   installKeyboardPanZoom(stage, currentTransform);
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
@@ -1123,6 +1129,10 @@ function makeNode(node, position, selected) {
   if (node.fields.length === 0) classes.push("field-undefined");
   if (texture) classes.push("tx-" + texture);
   if (entry && entry.freshness) classes.push("fresh-" + entry.freshness);
+  if (node.type === "question" && entry && entry.status === "stale"
+      && entry.decided.includes("status")) {
+    classes.push("status-stale");
+  }
   const group = svgElement("g", classes.join(" "));
   group.setAttribute("transform", "translate(" + position.x.toFixed(3) + " " + position.y.toFixed(3) + ")");
   group.setAttribute("role", "button");
@@ -1202,14 +1212,20 @@ function clampZoom(value) {
   return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, value));
 }
 
+function renderedSvgScale(svg) {
+  const bounds = svg.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) return 1;
+  return Math.min(bounds.width / VIEW_WIDTH, bounds.height / VIEW_HEIGHT);
+}
+
 function applyTransform(transform) {
   transform.viewport.setAttribute("transform", "translate(" + transform.x.toFixed(3) + " " + transform.y.toFixed(3) + ") scale(" + transform.zoom.toFixed(5) + ")");
   // §16.2 A11: channels drop whole and in the fixed order as density rises.
-  // Density is the typical on-screen spacing — layout spacing × zoom — so a
-  // crowded graph and a zoomed-out one degrade identically, and a sparse
-  // field keeps every channel at every zoom. The status line names what is
-  // not being drawn, so an omission is never silent.
-  const spacing = (transform.spacing ?? Number.POSITIVE_INFINITY) * transform.zoom;
+  // Density is the typical on-screen spacing — layout spacing × zoom × the
+  // rendered-to-viewBox scale — so crowding, zoom, a narrow embed, and an open
+  // panel degrade identically. The status line names every omission.
+  const spacing = (transform.spacing ?? Number.POSITIVE_INFINITY)
+    * transform.zoom * renderedSvgScale(transform.svg);
   const plateR = plateRadius();
   const dropped = [];
   for (const tier of DENSITY_TIERS) {
@@ -1219,6 +1235,15 @@ function applyTransform(transform) {
   }
   transform.dropped = dropped;
   renderStatus();
+}
+
+function installDensityResize(transform) {
+  densityResizeObserver = new ResizeObserver(() => {
+    if (currentTransform === transform && transform.svg.isConnected) {
+      applyTransform(transform);
+    }
+  });
+  densityResizeObserver.observe(transform.svg);
 }
 
 function zoomAt(factor, x, y) {
