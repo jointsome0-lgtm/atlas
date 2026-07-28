@@ -1744,6 +1744,10 @@ class ViewerBrowserTests(unittest.TestCase):
         # plate; every demo edge is long enough to trim, so no rendered line
         # may end at a node centre.
         self.open_state("#mode=field", "FIELD")
+        marker = self.page.locator("svg marker#arrow")
+        self.assertEqual("10", marker.get_attribute("refX"))
+        self.assertEqual(
+            "10", marker.get_attribute("viewBox").split()[-2])
         untrimmed = self.page.evaluate(
             """() => {
                 const centres = [];

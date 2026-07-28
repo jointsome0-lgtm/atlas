@@ -764,7 +764,9 @@ function makeDefinitions() {
   const marker = svgElement("marker");
   marker.setAttribute("id", "arrow");
   marker.setAttribute("viewBox", "0 0 10 10");
-  marker.setAttribute("refX", "9");
+  // The tip is the endpoint reference: the complete stroke-scaled triangle
+  // extends back toward the source, outside the target's glyph clearance.
+  marker.setAttribute("refX", "10");
   marker.setAttribute("refY", "5");
   marker.setAttribute("markerWidth", "6");
   marker.setAttribute("markerHeight", "6");
