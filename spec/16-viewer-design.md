@@ -71,9 +71,12 @@ continuous decay: the picture asserts no more than the data,
 and §14.7's invitation reading survives the render (§25.4). Its
 severity treatment is §32.2's, and its channel obeys §27.8's
 colour-independence requirement, so opacity alone is not the
-encoding. Aging against the viewer's own as-of
-(§14.7) stays out: acceptance pins freshness to the build's
-as-of, and changing that is its own decision.
+encoding. Every class is read from the emission, concept and
+material alike — the render derives none of its own, so a
+field's tuned thresholds (§14.7, §20.1) cannot reach half the
+picture and miss the other half (#105). Aging against the
+viewer's own as-of (§14.7) stays out: acceptance pins freshness
+to the build's as-of, and changing that is its own decision.
 No route- or field-level aggregate: per-node state only — no
 counts, no proportions, and never understanding as measurement
 (§4). A course's completion is activity semantics and belongs

@@ -55,10 +55,11 @@
             "properties": {
               "depth_reached": {"type": "string", "enum": ["skim", "read", "summarized", "applied", "taught"], "description": "Material encounter depths transcribed verbatim from §9.7 and §14.8."},
               "last_seen": {"$ref": "#/$defs/date"},
+              "freshness": {"type": "string", "enum": ["fresh", "aging", "stale"], "description": "Freshness values transcribed verbatim from §14.7. Material state exists only because an encounter created it, so contact — and its class — is unconditional here, unlike the concept row's exposure-gated pair (#105)."},
               "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^encounter:[a-z0-9]+(?:-[a-z0-9]+)*$"}, "uniqueItems": true},
               "sensitivity": {"type": "string", "enum": ["medical"], "description": "The §32.6 provenance union on this folded value."}
             },
-            "required": ["depth_reached", "last_seen", "evidence"],
+            "required": ["depth_reached", "last_seen", "freshness", "evidence"],
             "additionalProperties": false
           },
           {

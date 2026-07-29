@@ -2731,6 +2731,7 @@ class StateFoldTests(unittest.TestCase):
             {
                 "depth_reached": "taught",
                 "last_seen": "2026-01-10",
+                "freshness": "fresh",
                 "evidence": [
                     "encounter:2026-01-01-001",
                     "encounter:2026-01-10-001",
@@ -2742,6 +2743,7 @@ class StateFoldTests(unittest.TestCase):
             {
                 "depth_reached": "applied",
                 "last_seen": "2026-01-05",
+                "freshness": "fresh",
                 "evidence": ["encounter:2026-01-05-001"],
             },
             state["part:m/p"],
@@ -2812,6 +2814,48 @@ class StateFoldTests(unittest.TestCase):
                 entry = graph["state"][f"concept:{slug}"]
                 self.assertEqual(date, entry["last_seen"])
                 self.assertEqual(freshness, entry["freshness"])
+
+    def test_material_freshness_is_classified_against_the_same_as_of(self):
+        # §14.7 (#105): material contact is classified by the fold, on the
+        # same as-of and the same boundaries as concept contact — so the two
+        # boundaries can never disagree in one render, and no consumer needs
+        # thresholds of its own to read a material plate.
+        cases = {
+            "thirty": ("2026-03-02", "fresh"),
+            "thirty-one": ("2026-03-01", "aging"),
+            "ninety": ("2026-01-01", "aging"),
+            "ninety-one": ("2025-12-31", "stale"),
+        }
+        tree = {"concepts/c.md": _CONCEPT % ("c", "C")}
+        rows = []
+        for position, (slug, (date, _)) in enumerate(cases.items(), 1):
+            tree[f"materials/{slug}.md"] = _MATERIAL % (slug, slug.title())
+            rows.append({
+                "id": f"encounter:{date}-{position:03d}",
+                "date": date,
+                "target": f"material:{slug}",
+                "depth": "read",
+                "mode": "background",
+            })
+        tree["state/encounters.jsonl"] = self._jsonl(rows)
+
+        with _materialize(tree) as directory:
+            graph, errors, warnings = build_atlas_graph.build(
+                Path(directory), "2026-04-01")
+
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertEqual("2026-04-01T00:00:00Z", graph["generated_at"])
+        for slug, (date, freshness) in cases.items():
+            with self.subTest(age=slug):
+                entry = graph["state"][f"material:{slug}"]
+                self.assertEqual(date, entry["last_seen"])
+                self.assertEqual(freshness, entry["freshness"])
+                # The pair reads as a pair: class beside the date it rests on.
+                self.assertEqual(
+                    ["depth_reached", "last_seen", "freshness", "evidence"],
+                    list(entry),
+                )
 
     def test_confirmed_decisions_use_date_then_position_and_rejections_do_not_move(self):
         evidence = [

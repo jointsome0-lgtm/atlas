@@ -905,6 +905,10 @@ def _review_gate_errors(entry: dict, path: Path, position: int,
     # is measured against, and freshness is recomputed from the two. The
     # caller only passes a calendar-valid as-of — an unparsable stamp is
     # already an error and must not become a traceback here.
+    # Keyed on the pair, not on the node kind (#105): a material entry now
+    # carries the class too, and an emitted class is input, not proof that
+    # anything was classified — it is recomputed here for every kind that
+    # carries one, against the single §20 definition of the thresholds.
     last_seen = entry.get("last_seen")
     if isinstance(last_seen, str) and as_of is not None:
         if last_seen > as_of:

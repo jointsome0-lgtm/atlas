@@ -291,7 +291,7 @@ function validateEdge(edge, index) {
 }
 
 const CONCEPT_STATE_KEYS = ["exposure", "confidence", "clarity", "coverage", "freshness", "last_seen", "evidence", "decisions", "sensitivity"];
-const MATERIAL_STATE_KEYS = ["depth_reached", "last_seen", "evidence", "sensitivity"];
+const MATERIAL_STATE_KEYS = ["depth_reached", "last_seen", "freshness", "evidence", "sensitivity"];
 const QUESTION_STATE_KEYS = ["status", "evidence", "decisions", "sensitivity"];
 const DECISION_REFERENCE_KEYS = ["dimension", "date", "evidence"];
 const CONCEPT_GATED_DEFAULTS = {
@@ -548,9 +548,10 @@ function validateStateEntry(entry, node, nodesById, asOf) {
     if (gateFailure) return gateFailure;
   } else if (nodeType === "material" || nodeType === "material_part") {
     if (!hasOnlyKeys(entry, MATERIAL_STATE_KEYS)) return diagnostic(path, "additionalProperties");
-    if (!hasKeys(entry, ["depth_reached", "last_seen", "evidence"])) return diagnostic(path, "required");
+    if (!hasKeys(entry, ["depth_reached", "last_seen", "freshness", "evidence"])) return diagnostic(path, "required");
     if (!ENCOUNTER_DEPTHS.includes(entry.depth_reached)) return diagnostic(path, "depth");
     if (!isCalendarDate(entry.last_seen)) return diagnostic(path, "lastSeen");
+    if (!FRESHNESS_VALUES.includes(entry.freshness)) return diagnostic(path, "freshness");
     if (!isEvidenceArray(entry.evidence, ["encounter"], 1)) return diagnostic(path, "evidence");
     if (ENCOUNTER_DEPTHS.indexOf(entry.depth_reached)
         > depthCeiling(entry.evidence, nodesById)) {
@@ -580,8 +581,11 @@ function validateStateEntry(entry, node, nodesById, asOf) {
   if (provenanceFailure) return provenanceFailure;
   const asOfFailure = validateStateAsOf(entry, asOf, path);
   if (asOfFailure) return asOfFailure;
-  if (nodeType === "concept"
-      && Object.prototype.hasOwnProperty.call(entry, "freshness")
+  // §14.7 (#105): an emitted class is input, not proof that the producer
+  // classified anything — every entry carrying one is recomputed against the
+  // fold's as-of, materials included. validateStateAsOf has already refused a
+  // dated entry with no as-of, so asOf is a date here.
+  if (Object.prototype.hasOwnProperty.call(entry, "freshness")
       && entry.freshness !== freshnessOf(entry.last_seen, asOf)) {
     return diagnostic(path + "/freshness", "derivedFreshness");
   }
@@ -826,7 +830,7 @@ function projectNode(node) {
 // carries it — the dimension values, the contact pair, and which gated
 // dimensions a confirmed decision moved, because A2 renders the undecided
 // ones as an open slot, never as their fold-default value on the scale.
-function projectStateEntry(entry, node, asOf) {
+function projectStateEntry(entry, node) {
   const projected = {};
   if (node.type === "concept") {
     projected.exposure = entry.exposure;
@@ -840,9 +844,11 @@ function projectStateEntry(entry, node, asOf) {
   } else if (node.type === "material" || node.type === "material_part") {
     projected.depth_reached = entry.depth_reached;
     projected.last_seen = entry.last_seen;
-    // §14.7 against the fold's as-of, never the viewer's clock; a material
-    // entry always carries last_seen, so validateStateAsOf guarantees asOf.
-    projected.freshness = freshnessOf(entry.last_seen, asOf);
+    // §14.7 (#105): the class the §20 fold emitted, exactly as for a concept.
+    // The viewer never reclassifies for the render — it holds no thresholds,
+    // and a field that tunes them would otherwise move the concept boundaries
+    // and the material boundaries apart in one picture.
+    projected.freshness = entry.freshness;
   } else if (node.type === "question") {
     projected.status = entry.status;
   }
@@ -913,11 +919,9 @@ export function acceptGraphBuffer(buffer) {
     }
   }
   const sourceById = new Map(value.nodes.map((node) => [node.id, node]));
-  const graphAsOf = Object.prototype.hasOwnProperty.call(value, "generated_at")
-    ? value.generated_at.slice(0, 10) : null;
   const state = {};
   for (const [key, entry] of Object.entries(value.state)) {
-    state[key] = projectStateEntry(entry, sourceById.get(key), graphAsOf);
+    state[key] = projectStateEntry(entry, sourceById.get(key));
   }
   return {
     kind: "ACCEPTED",

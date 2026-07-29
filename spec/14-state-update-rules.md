@@ -98,7 +98,7 @@ never direct writes.
 
 ## §14.7 Freshness Decay
 
-Freshness is derived from `last_seen`, computed at build/view time against the fold's as-of date (§20.1) — never the wall clock, so rebuilding unchanged inputs on a later day changes nothing; the viewer may compute against its own as-of for honest aging. Never stored by hand:
+Freshness is derived from `last_seen` against the fold's as-of date (§20.1) — never the wall clock, so rebuilding unchanged inputs on a later day changes nothing. Never stored by hand:
 
 ```text
 fresh  ≤ 30 days
@@ -106,7 +106,7 @@ aging  ≤ 90 days
 stale  > 90 days
 ```
 
-Thresholds are config defaults, tunable per field. Staleness feeds the Frontier input (§15.1) with adjacency wording only — a stale node is an invitation, never an obligation (§25.4).
+Thresholds are config defaults, tunable per field, and the §20 fold is the one classifier: every contact-carrying state entry — concept understanding and material/part contact alike — is classified there, against the one as-of, and the emitted graph carries the class, never the thresholds (#105). A consumer renders the class it was given rather than deriving a second one, so a field's tuning moves every boundary in a picture together instead of splitting it in half — and aging against a consumer's own as-of, rather than the build's, is no longer a free reading: it needs the thresholds the graph deliberately withholds, which is why §16.2 keeps it out of the viewer. Staleness feeds the Frontier input (§15.1) with adjacency wording only — a stale node is an invitation, never an obligation (§25.4).
 
 ## §14.8 Material State
 
@@ -117,9 +117,11 @@ Material state is derived by the §20 fold from the encounters journal (§9.7), 
 material:fastapi-tutorial:
   depth_reached: summarized   # max encounter depth so far (§9.7 scale)
   last_seen: 2026-06-05
+  freshness: fresh            # §14.7, classified by the same fold (#105)
 part:fastapi-tutorial/path-operations:
   depth_reached: read
   last_seen: 2026-06-05
+  freshness: fresh
 ```
 
 `depth_reached` is monotone like exposure. The `status: active` field on the Material file (§9.2) is lifecycle (active/archived), not understanding.
