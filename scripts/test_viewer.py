@@ -520,6 +520,7 @@ class ViewerBrowserTests(unittest.TestCase):
         graph["state"][material["id"]] = {
             "depth_reached": "taught",
             "last_seen": "2026-07-16",
+            "freshness": "fresh",
             "evidence": [encounter["id"]],
         }
         cases["depth-exceeds-encounter"] = graph
@@ -529,6 +530,7 @@ class ViewerBrowserTests(unittest.TestCase):
         graph["state"][material["id"]] = {
             "depth_reached": "applied",
             "last_seen": "2026-07-15",
+            "freshness": "fresh",
             "evidence": [encounter["id"]],
         }
         cases["material-last-seen-predates-cited-encounter"] = graph
@@ -538,6 +540,7 @@ class ViewerBrowserTests(unittest.TestCase):
         graph["state"][material["id"]] = {
             "depth_reached": "skim",
             "last_seen": "2026-07-16",
+            "freshness": "fresh",
             "evidence": ["encounter:missing"],
         }
         cases["material-cites-no-emitted-encounter"] = graph
@@ -547,9 +550,37 @@ class ViewerBrowserTests(unittest.TestCase):
         graph["state"][material["id"]] = {
             "depth_reached": "applied",
             "last_seen": "2026-07-16",
+            "freshness": "fresh",
             "evidence": [encounter["id"], "encounter:missing"],
         }
         cases["material-cites-partially-dangling-encounters"] = graph
+
+        # #105: the material contact pair is emitted, so the viewer holds it
+        # to the same §14.7 derivation as the concept pair — an absent class
+        # is not a licensed omission, and a supplied one is not proof.
+        graph = self.graph_envelope(nodes=[material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "applied",
+            "last_seen": "2026-07-16",
+            "evidence": [encounter["id"]],
+        }
+        cases["material-freshness-missing"] = graph
+
+        stale_encounter = {
+            **encounter,
+            "id": "encounter:stale-example",
+            "date": "2026-01-01",
+        }
+        graph = self.graph_envelope(nodes=[material, stale_encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "applied",
+            "last_seen": "2026-01-01",
+            "freshness": "fresh",
+            "evidence": [stale_encounter["id"]],
+        }
+        cases["material-freshness-not-derived"] = graph
 
         explained = {
             **artifact,
@@ -651,6 +682,7 @@ class ViewerBrowserTests(unittest.TestCase):
         graph["state"][material["id"]] = {
             "depth_reached": "applied",
             "last_seen": "2026-07-16",
+            "freshness": "fresh",
             "evidence": [encounter["id"]],
         }
         self.write_graph(graph)
@@ -1325,7 +1357,7 @@ class ViewerBrowserTests(unittest.TestCase):
         })
         graph["state"][material["id"]] = {
             "depth_reached": "skim", "last_seen": "2026-07-16",
-            "evidence": [encounter["id"]],
+            "freshness": "fresh", "evidence": [encounter["id"]],
         }
         self.write_graph(graph)
         self.open_state("#mode=field", "FIELD")
@@ -1432,6 +1464,58 @@ class ViewerBrowserTests(unittest.TestCase):
         # A6: the stale label recedes; nothing else changes register.
         self.assertNotEqual(labels["fresh"], labels["stale"])
         self.assertEqual(labels["fresh"], labels["aging"])
+
+    def test_material_boundary_reads_the_emitted_freshness_class(self):
+        # §14.7 (#105): a material plate's boundary and its panel words come
+        # from the class the §20 fold emitted. The render alone cannot prove
+        # that — the acceptance boundary rejects any emitted class the §14.7
+        # derivation would not produce, so a viewer that re-derived would draw
+        # the same picture. What separates the two is the entry with no class:
+        # deriving one needs only last_seen, reading one needs the field. So
+        # the same graph is asserted twice, drawn and then stripped.
+        material = {
+            "id": "material:stale-example", "type": "material",
+            "title": "Stale material (Vera Example)", "fields": [],
+            "kind": "docs", "url": "", "status": "active",
+        }
+        encounter = {
+            "id": "encounter:stale-contact", "type": "encounter", "title": "",
+            "fields": [], "date": "2026-04-01", "target": material["id"],
+            "depth": "read", "mode": "background",
+        }
+        graph = self.graph_envelope(nodes=[material, encounter])
+        graph["generated_at"] = "2026-07-16T00:00:00Z"
+        graph["state"][material["id"]] = {
+            "depth_reached": "read",
+            "last_seen": "2026-04-01",
+            "freshness": "stale",
+            "evidence": [encounter["id"]],
+        }
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+        self.assertIn("fresh-stale", self.node_class(material["id"]))
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        row = self.page.locator(
+            f'.node-list-row[data-node-id="{material["id"]}"]')
+        self.assertIn(
+            "freshness: stale — last seen 2026-04-01", row.inner_text())
+
+        # Same contact, class removed: last_seen alone would have been enough
+        # for the old derivation, and is now a rejection.
+        del graph["state"][material["id"]]["freshness"]
+        self.write_graph(graph)
+        self.open_state("#mode=field", "REJECTED")
+        self.assertEqual(
+            {"path": "/state", "rule": "required"},
+            self.page.evaluate(
+                """async graph => {
+                    const {validateGraph} = await import("./contract.js");
+                    return validateGraph(graph);
+                }""",
+                graph,
+            ),
+        )
 
     def test_rail_carries_gated_dimensions_only(self):
         # §16.2 A2: a drawn open slot for silence, a struck mark whose extent

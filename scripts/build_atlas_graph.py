@@ -2147,11 +2147,19 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
 
     for target in sorted(material_work):
         current = material_work[target]
+        last_seen = current["last_seen"]
         entry = {
             "depth_reached": material_depth[current["depth_rank"]],
-            "last_seen": current["last_seen"],
-            "evidence": sorted(current["evidence"]),
+            "last_seen": last_seen,
         }
+        # §14.7 (#105): the fold classifies material contact against the same
+        # as-of it classifies concept contact against, so a field that tunes
+        # the thresholds moves both boundaries at once. The graph carries the
+        # class, never the thresholds — no consumer reclassifies. A build
+        # missing either input is already an error; emit no invented class.
+        if last_seen is not None and effective_as_of is not None:
+            entry["freshness"] = freshness_of(last_seen, effective_as_of)
+        entry["evidence"] = sorted(current["evidence"])
         if current["sensitivity"] is not None:
             entry["sensitivity"] = current["sensitivity"]
         state[target] = entry

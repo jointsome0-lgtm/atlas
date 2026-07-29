@@ -2495,6 +2495,7 @@ class SchemaValidatorTests(unittest.TestCase):
                 entry = {
                     "depth_reached": "read",
                     "last_seen": "2026-07-16",
+                    "freshness": "fresh",
                     "evidence": [malformed],
                 }
             graph = json.loads(VALID_EMPTY_GRAPH)
@@ -2930,6 +2931,7 @@ class SchemaValidatorTests(unittest.TestCase):
                 material["id"]: {
                     "depth_reached": "skim",
                     "last_seen": "2026-07-16",
+                    "freshness": "fresh",
                     "evidence": evidence,
                 },
             }
@@ -2990,6 +2992,7 @@ class SchemaValidatorTests(unittest.TestCase):
                 material["id"]: {
                     "depth_reached": "applied",
                     "last_seen": last_seen,
+                    "freshness": "fresh",
                     "evidence": [item["id"] for item in encounters],
                 },
             }
@@ -3004,6 +3007,67 @@ class SchemaValidatorTests(unittest.TestCase):
                 self.assertIn(
                     "last_seen other than its latest cited encounter", stderr
                 )
+
+    def test_material_freshness_is_recomputed_and_never_optional(self):
+        # §14.7 (#105): the material contact pair is emitted, so the boundary
+        # treats it exactly like the concept pair — an emitted class is input,
+        # not proof, and its absence is a rejection, not a licensed omission
+        # that leaves a consumer free to classify with defaults of its own.
+        material = {
+            "id": "material:example",
+            "type": "material",
+            "title": "Example material (Vera Example)",
+            "fields": [],
+            "kind": "docs",
+            "url": "",
+            "status": "active",
+        }
+        encounter = {
+            "id": "encounter:example",
+            "type": "encounter",
+            "title": "",
+            "fields": [],
+            "date": "2026-01-01",
+            "target": material["id"],
+            "depth": "read",
+            "mode": "background",
+        }
+        entries = {
+            # 2026-01-01 is 196 days before the as-of: stale, not fresh.
+            "not-derived": (
+                {"freshness": "fresh"},
+                "the §14.7 derivation does not produce",
+            ),
+            "absent": ({}, "expected exactly one oneOf match"),
+            "derived": ({"freshness": "stale"}, None),
+        }
+        for name, (override, expected) in entries.items():
+            graph = json.loads(VALID_EMPTY_GRAPH)
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["nodes"] = [material, encounter]
+            graph["edges"] = [{
+                "source": encounter["id"],
+                "target": material["id"],
+                "type": "visited",
+                "provenance": [encounter["id"]],
+            }]
+            graph["state"] = {
+                material["id"]: {
+                    "depth_reached": "read",
+                    "last_seen": encounter["date"],
+                    **override,
+                    "evidence": [encounter["id"]],
+                },
+            }
+            with self.subTest(case=name), \
+                    tempfile.TemporaryDirectory() as directory:
+                materialize({
+                    "graph/atlas-graph.json": json.dumps(graph) + "\n",
+                }, Path(directory))
+                code, _, stderr = self.run_cli("validate", directory)
+                self.assertEqual(0 if expected is None else 1, code, stderr)
+                if expected is not None:
+                    self.assertIn(expected, stderr)
 
     def test_state_requires_observable_sensitivity_union(self):
         concept = {
@@ -3090,6 +3154,7 @@ class SchemaValidatorTests(unittest.TestCase):
             material["id"]: {
                 "depth_reached": "applied",
                 "last_seen": "2026-07-16",
+                "freshness": "fresh",
                 "evidence": [encounter["id"]],
             },
         }

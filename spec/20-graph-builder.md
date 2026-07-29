@@ -61,9 +61,13 @@ no-op; an explicit earlier as-of is §25.3's "state at date X",
 executable.
 Freshness derives against as-of (§14.7), never the wall clock;
 the emitted graph carries generated_at = as-of at UTC midnight
-(2026-07-15T00:00:00Z — the §10/§33.4 shape). Empty inputs
-still build: with no dated record and no flag, generated_at
-and the freshness fields are absent, not invented.
+(2026-07-15T00:00:00Z — the §10/§33.4 shape). This fold is the
+only place the §14.7 thresholds are read: concept and
+material/part contact are classified together, and the emission
+carries the class beside its last_seen, never the thresholds
+(#105). Empty inputs still build: with no dated record and no
+flag, generated_at and the freshness fields are absent, not
+invented.
 Determinism: same inputs + same as-of ⇒ byte-identical output.
 ```
 

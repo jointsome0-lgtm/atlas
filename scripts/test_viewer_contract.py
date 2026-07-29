@@ -81,7 +81,14 @@ class ViewerContractTests(unittest.TestCase):
         state_shapes = self.schema["properties"]["state"][
             "additionalProperties"]["oneOf"]
         concept_state = state_shapes[0]["properties"]
+        material_state = state_shapes[1]["properties"]
         question_state = state_shapes[2]["properties"]
+        # §14.7 (#105): one class vocabulary across both contact shapes, so
+        # the single FRESHNESS_VALUES transcription below covers both.
+        self.assertEqual(
+            concept_state["freshness"]["enum"],
+            material_state["freshness"]["enum"],
+        )
         comparisons = {
             "ENVELOPE_KEYS": list(self.schema["properties"]),
             "NODE_KEYS": list(self.defs["node"]["properties"]),

@@ -532,6 +532,7 @@
     "part:mdn-http-methods/idempotency": {
       "depth_reached": "applied",
       "last_seen": "2026-07-09",
+      "freshness": "fresh",
       "evidence": [
         "encounter:demo-mdn-idempotency-read"
       ]
