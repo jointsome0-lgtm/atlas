@@ -30,6 +30,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # ephemeris#108), so the port is a published default, never incidental.
 DEFAULT_PORT = 8138
 
+# The port an http client leaves out of its Host header.
+HTTP_DEFAULT_PORT = 80
+
 # Response bodies leave the server in chunks of this size, never whole.
 BODY_CHUNK_BYTES = 65536
 
@@ -129,7 +132,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--port", type=port_number, default=DEFAULT_PORT,
         help=f"loopback port (default {DEFAULT_PORT}); the embed's fixed origin")
-    return parser.parse_args(argv)
+    args, unrecognized = parser.parse_known_args(argv)
+    if unrecognized:
+        # argparse would quote the rejected arguments verbatim, and a
+        # mistyped option can carry a token: the count is the diagnostic
+        # (§24.4), the usage line says what was expected.
+        parser.error(f"{len(unrecognized)} unrecognized argument(s); values "
+                     f"withheld")
+    return args
 
 
 def build_routes(
@@ -147,6 +157,21 @@ def build_routes(
     routes[GRAPH_ROUTE] = Route(
         instance_reader, GRAPH_RELATIVE_PATH, CONTENT_TYPES[".json"])
     return routes
+
+
+def origins_for(port: int) -> frozenset[str]:
+    """The Host values that address this server — and no others.
+
+    The origin atlas announces, plus the name a person is as likely to type;
+    both resolve to loopback and neither is attacker-choosable. On port 80 a
+    client leaves the port out of Host, so the bare names address it too.
+    """
+
+    names = ("127.0.0.1", "localhost")
+    origins = [f"{name}:{port}" for name in names]
+    if port == HTTP_DEFAULT_PORT:
+        origins.extend(names)
+    return frozenset(origins)
 
 
 class InstanceViewerHandler(http.server.BaseHTTPRequestHandler):
@@ -241,11 +266,7 @@ class InstanceViewerServer(http.server.ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], routes: dict[str, Route]):
         self.routes = routes
         super().__init__(address, InstanceViewerHandler)
-        port = self.server_address[1]
-        # The origin atlas announces, plus the name a person is as likely to
-        # type; both resolve to loopback and neither is attacker-choosable.
-        self.origins = frozenset(
-            {f"127.0.0.1:{port}", f"localhost:{port}"})
+        self.origins = origins_for(self.server_address[1])
 
     def handle_error(self, request, client_address):
         # The inherited handler prints a traceback with absolute paths and

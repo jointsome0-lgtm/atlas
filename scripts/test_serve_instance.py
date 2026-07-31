@@ -59,10 +59,14 @@ def make_instance(root: Path) -> Path:
     (root / "graph").mkdir(parents=True)
     shutil.copyfile(DEMO_GRAPH, root / "graph" / "atlas-graph.json")
     (root / "atlas" / "concepts").mkdir(parents=True)
+    # Invented content in the shape of private instance data, marked as the
+    # synthetic persona's the way committed fixtures are (AGENTS.md).
     (root / "atlas" / "concepts" / "idempotency.md").write_text(
-        "private curated content\n", encoding="utf-8")
+        "curated content authored by Vera Example, never real\n",
+        encoding="utf-8")
     (root / "state").mkdir()
-    (root / "state" / "encounters.jsonl").write_text("{}\n", encoding="utf-8")
+    (root / "state" / "encounters.jsonl").write_text(
+        '{"note": "Vera Example"}\n', encoding="utf-8")
     return root
 
 
@@ -89,10 +93,16 @@ class UsageContractTest(unittest.TestCase):
         self.assertIn("INSTANCE_DIR", stderr)
         self.assertIn("ERROR: usage:", stderr)
 
-    def test_second_positional_is_a_usage_error(self):
-        code, stderr = self.invoke(["/tmp/one", "/tmp/two"])
+    def test_unrecognized_arguments_are_counted_never_quoted(self):
+        # §24.4: a mistyped option can carry a token, and argparse would
+        # print it verbatim.
+        code, stderr = self.invoke(
+            ["/tmp/one", "/tmp/two", "--unknown=private-token"])
         self.assertEqual(2, code)
         self.assert_prefixed(stderr)
+        self.assertIn("2 unrecognized argument(s); values withheld", stderr)
+        self.assertNotIn("private-token", stderr)
+        self.assertNotIn("/tmp/two", stderr)
 
     def test_bad_port_exits_2_with_prefixed_lines(self):
         code, stderr = self.invoke(["/tmp/instance", "--port", "nope"])
@@ -117,6 +127,19 @@ class UsageContractTest(unittest.TestCase):
         args = serve_instance.parse_args(["/tmp/instance"])
         self.assertEqual(serve_instance.DEFAULT_PORT, args.port)
         self.assertEqual(8138, serve_instance.DEFAULT_PORT)
+
+
+class AddressedHostTest(unittest.TestCase):
+    def test_a_named_port_is_part_of_every_accepted_host(self):
+        self.assertEqual({"127.0.0.1:8138", "localhost:8138"},
+                         set(serve_instance.origins_for(8138)))
+
+    def test_port_80_also_accepts_the_bare_host_clients_send(self):
+        # An http client omits :80 from Host, so refusing the bare form would
+        # reject every request the viewer makes on that port.
+        self.assertEqual(
+            {"127.0.0.1:80", "localhost:80", "127.0.0.1", "localhost"},
+            set(serve_instance.origins_for(80)))
 
 
 class StartupContractTest(unittest.TestCase):
@@ -511,7 +534,7 @@ class FailureDiagnosticTest(unittest.TestCase):
         self.assertEqual(2, caught.exception.code)
         for line in stderr.getvalue().splitlines():
             self.assertTrue(line.startswith("ERROR: "), line)
-        self.assertIn("SECOND-LINE", stderr.getvalue())
+        self.assertNotIn("SECOND-LINE", stderr.getvalue())
 
 
 class AddressInUse(Exception):
