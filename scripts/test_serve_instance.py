@@ -514,6 +514,18 @@ class FailureDiagnosticTest(unittest.TestCase):
                 connection.sendall(b"GET /viewer/index.html")  # no line end
                 self.assertEqual(b"", connection.recv(65536))
 
+    def test_an_enormous_path_is_cut_not_printed_whole(self):
+        # §24.4 wants the path named and the line bounded; a caller can hand
+        # the command an argument far longer than any real path.
+        captured = io.StringIO()
+        with contextlib.redirect_stderr(captured):
+            code = serve_instance.main(["/" + "p" * 200_000])
+        self.assertEqual(1, code)
+        for line in captured.getvalue().splitlines():
+            self.assertLess(len(line), serve_instance.PATH_DIAGNOSTIC_LIMIT
+                            + 200)
+        self.assertIn("…", captured.getvalue())
+
     def test_a_path_with_a_newline_cannot_split_a_diagnostic(self):
         captured = io.StringIO()
         with contextlib.redirect_stderr(captured):

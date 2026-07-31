@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parents[1]
 # ephemeris#108), so the port is a published default, never incidental.
 DEFAULT_PORT = 8138
 
+# A displayed path is cut here: long enough for any real instance path,
+# short enough that one ERROR: line stays a line.
+PATH_DIAGNOSTIC_LIMIT = 512
+
 # The port an http client leaves out of its Host header.
 HTTP_DEFAULT_PORT = 80
 
@@ -58,12 +62,24 @@ _UNRESERVED = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._")
 
 
-def printable(value: object) -> str:
-    """Render a value with every non-printable character folded to `?`."""
+def printable(value: object, limit: int | None = None) -> str:
+    """Render a value with non-printables folded to `?`, optionally bounded.
 
-    return "".join(
+    §24.4 wants the path in the diagnostic and the diagnostic bounded: a
+    caller can hand this command a megabyte-long argument, so a displayed
+    path is cut with a visible ellipsis rather than withheld.
+    """
+
+    text = "".join(
         character if character.isprintable() else "?"
         for character in str(value))
+    if limit is not None and len(text) > limit:
+        return text[:limit] + "…"
+    return text
+
+
+def shown_path(value: object) -> str:
+    return printable(value, limit=PATH_DIAGNOSTIC_LIMIT)
 
 
 def diagnose(message: object) -> None:
@@ -284,10 +300,10 @@ def open_readers(instance: Path) -> tuple[AtlasReader, AtlasReader] | None:
         instance_reader = AtlasReader(instance)
         graph = instance_reader.optional_file(GRAPH_RELATIVE_PATH)
     except ReaderError as exc:
-        diagnose(f"{printable(instance)}: {exc}")
+        diagnose(f"{shown_path(instance)}: {exc}")
         return None
     if graph is None:
-        shown = printable(instance)
+        shown = shown_path(instance)
         diagnose(f"{shown}/{GRAPH_RELATIVE_PATH}: not found; build it "
                  f"first with scripts/build_atlas_graph.py {shown}/atlas "
                  f"{shown}/{GRAPH_RELATIVE_PATH}")
@@ -321,10 +337,10 @@ def main(argv: list[str] | None = None) -> int:
         # 0.0.0.0 would offer it to the network the moment one exists.
         server = InstanceViewerServer(("127.0.0.1", args.port), routes)
     except OSError as exc:
-        diagnose(f"cannot serve {printable(instance)}: {exc}")
+        diagnose(f"cannot serve {shown_path(instance)}: {exc}")
         return 1
     print(f"serving http://127.0.0.1:{args.port}{INDEX_ROUTE}#mode=field "
-          f"— read-only view of {printable(instance)} — Ctrl-C stops",
+          f"— read-only view of {shown_path(instance)} — Ctrl-C stops",
           flush=True)
     try:
         server.serve_forever()
