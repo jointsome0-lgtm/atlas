@@ -352,13 +352,22 @@ def depth_ceiling(evidence_ids, nodes) -> int:
     return ceiling
 
 
+# §14.7 owns these numbers; this transcribes them, as viewer/contract.js
+# transcribes them for its acceptance recompute. Two transcriptions of one
+# canon, not two policies — tuning them is a version bump there, never a
+# config edit here (#108), so the parity test reads the § and checks both.
+FRESHNESS_DAYS = {"fresh": 30, "aging": 90}
+
+
 def freshness_of(last_seen: str, as_of: str) -> str:
     """§14.7: freshness is a derivation, not a stored judgement — the age of
-    the last contact against the fold's as-of, in inclusive 30/90-day
-    buckets. The boundary recomputes it from this one definition."""
+    the last contact against the fold's as-of, in inclusive buckets. Every
+    boundary recomputes it from this one definition."""
     age = (datetime.date.fromisoformat(as_of)
            - datetime.date.fromisoformat(last_seen)).days
-    return "fresh" if age <= 30 else "aging" if age <= 90 else "stale"
+    if age <= FRESHNESS_DAYS["fresh"]:
+        return "fresh"
+    return "aging" if age <= FRESHNESS_DAYS["aging"] else "stale"
 
 
 # §14.6/§9.8: the review-gated values and the value each one holds until a
@@ -2153,10 +2162,12 @@ def build(curated: Path, as_of: str | None = None) -> tuple[
             "last_seen": last_seen,
         }
         # §14.7 (#105): the fold classifies material contact against the same
-        # as-of it classifies concept contact against, so a field that tunes
-        # the thresholds moves both boundaries at once. The graph carries the
-        # class, never the thresholds — no consumer reclassifies. A build
-        # missing either input is already an error; emit no invented class.
+        # as-of it classifies concept contact against, so one render never
+        # mixes two classifiers. The graph carries the class, never the
+        # thresholds — those are canon each implementation transcribes, and a
+        # consumer recomputes only to refuse a class this fold would not have
+        # produced (§16.5, #108). A build missing either input is already an
+        # error; emit no invented class.
         if last_seen is not None and effective_as_of is not None:
             entry["freshness"] = freshness_of(last_seen, effective_as_of)
         entry["evidence"] = sorted(current["evidence"])

@@ -11,6 +11,17 @@ export const CEILINGS = {
   "parameter_decoded_bytes": 512
 };
 
+// §14.7 owns these boundaries; this transcribes them, as the §20 fold does
+// (build_atlas_graph.py FRESHNESS_DAYS). The viewer holds its own copy because
+// it has no config channel to receive one (§16.5) and needs them only to refuse
+// a class the derivation does not produce — never to draw one (#108). Tuning is
+// a version bump in canon, so a disagreement here is a defect: the parity test
+// checks both transcriptions against the § itself.
+export const FRESHNESS_DAYS = {
+  "fresh": 30,
+  "aging": 90
+};
+
 // Canonical JSON blocks below transcribe the closed atlas-graph schema sets.
 export const ENVELOPE_KEYS = ["format", "version", "generated_at", "nodes", "edges", "trails", "state", "influence", "frontier", "projections", "withheld"];
 export const NODE_KEYS = ["id", "type", "title", "fields", "formerly", "sensitivity", "aliases", "notes", "material", "kind", "url", "status", "source_plan", "attractor", "stable_while", "text", "created_at", "source", "body", "path", "observed_at", "summary", "evidence_strength", "probe", "date", "target", "depth", "mode", "context", "direction", "from", "to", "via", "reason", "resulting_questions"];
@@ -443,7 +454,8 @@ function calendarDay(value) {
 
 function freshnessOf(lastSeen, asOf) {
   const age = calendarDay(asOf) - calendarDay(lastSeen);
-  return age <= 30 ? "fresh" : age <= 90 ? "aging" : "stale";
+  if (age <= FRESHNESS_DAYS.fresh) return "fresh";
+  return age <= FRESHNESS_DAYS.aging ? "aging" : "stale";
 }
 
 function validateStateProvenance(entry, node, nodesById, path) {
@@ -584,7 +596,10 @@ function validateStateEntry(entry, node, nodesById, asOf) {
   // §14.7 (#105): an emitted class is input, not proof that the producer
   // classified anything — every entry carrying one is recomputed against the
   // fold's as-of, materials included. validateStateAsOf has already refused a
-  // dated entry with no as-of, so asOf is a date here.
+  // dated entry with no as-of, so asOf is a date here. Exact, not approximate:
+  // the boundaries are shared canon rather than per-instance config (#108), so
+  // a graph the derivation disagrees with is a defect on one side or the other
+  // and there is nothing weaker left worth checking.
   if (Object.prototype.hasOwnProperty.call(entry, "freshness")
       && entry.freshness !== freshnessOf(entry.last_seen, asOf)) {
     return diagnostic(path + "/freshness", "derivedFreshness");

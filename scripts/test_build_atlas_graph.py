@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import io
 import json
 import tempfile
@@ -13,6 +14,26 @@ from frontmatter import parse_frontmatter
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO = ROOT / "fixtures" / "demo-instance"
+
+
+def _boundary_cases(as_of: str) -> dict[str, tuple[str, str]]:
+    """§14.7's buckets are inclusive: the boundary day itself still reads as
+    the fresher class, the day after does not. The dates derive from the
+    canonical FRESHNESS_DAYS rather than a hand-computed table (#108), so
+    these tests pin the inclusivity the fold owns and leave the numbers to
+    the § — a tuning is a version bump there, never a red test here."""
+    anchor = datetime.date.fromisoformat(as_of)
+    days = build_atlas_graph.FRESHNESS_DAYS
+
+    def date(offset: int) -> str:
+        return (anchor - datetime.timedelta(days=offset)).isoformat()
+
+    return {
+        "fresh-edge": (date(days["fresh"]), "fresh"),
+        "past-fresh-edge": (date(days["fresh"] + 1), "aging"),
+        "aging-edge": (date(days["aging"]), "aging"),
+        "past-aging-edge": (date(days["aging"] + 1), "stale"),
+    }
 
 
 class BuilderIntegrationTests(unittest.TestCase):
@@ -2786,13 +2807,8 @@ class StateFoldTests(unittest.TestCase):
             graph["state"]["question:q"],
         )
 
-    def test_freshness_uses_inclusive_30_and_90_day_boundaries(self):
-        cases = {
-            "thirty": ("2026-03-02", "fresh"),
-            "thirty-one": ("2026-03-01", "aging"),
-            "ninety": ("2026-01-01", "aging"),
-            "ninety-one": ("2025-12-31", "stale"),
-        }
+    def test_freshness_uses_inclusive_boundaries(self):
+        cases = _boundary_cases("2026-04-01")
         tree = {}
         rows = []
         for position, (slug, (date, _)) in enumerate(cases.items(), 1):
@@ -2820,12 +2836,7 @@ class StateFoldTests(unittest.TestCase):
         # same as-of and the same boundaries as concept contact — so the two
         # boundaries can never disagree in one render, and no consumer needs
         # thresholds of its own to read a material plate.
-        cases = {
-            "thirty": ("2026-03-02", "fresh"),
-            "thirty-one": ("2026-03-01", "aging"),
-            "ninety": ("2026-01-01", "aging"),
-            "ninety-one": ("2025-12-31", "stale"),
-        }
+        cases = _boundary_cases("2026-04-01")
         tree = {"concepts/c.md": _CONCEPT % ("c", "C")}
         rows = []
         for position, (slug, (date, _)) in enumerate(cases.items(), 1):

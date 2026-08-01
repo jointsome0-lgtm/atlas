@@ -121,8 +121,11 @@ Under the cap: kind priority, then within a kind by date —
 open_question newest created first, adjacent_concept newest head
 segment first, stale_concept longest-unseen first — then target
 id.
-Cap: 7 items (a config default, tunable like the §14.7
-thresholds; changing the default is a Decision Log entry).
+Cap: 7 items (a config default; changing it is a Decision Log
+entry). Unlike the §14.7 boundaries, which no instance tunes
+because no consumer could learn a tuning (#108), this one is
+the builder's alone: the cap decides how long a list to write,
+never what a written value means.
 The emitted array is sorted by target id: selection order is
 internal and never surfaces as a ranking (§4).
 ```

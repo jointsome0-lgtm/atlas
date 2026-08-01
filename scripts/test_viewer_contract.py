@@ -4,12 +4,15 @@ import unittest
 from html.parser import HTMLParser
 from pathlib import Path
 
+import build_atlas_graph
+
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 CONTRACT = VIEWER / "contract.js"
 SCHEMA = ROOT / "spec" / "schemas" / "atlas-graph.schema.json"
 NFR = ROOT / "spec" / "25-non-functional-requirements.md"
+STATE_RULES = ROOT / "spec" / "14-state-update-rules.md"
 
 
 def json_constant(source: str, name: str):
@@ -76,6 +79,47 @@ class ViewerContractTests(unittest.TestCase):
             "parameter_decoded_bytes": number(r"decoded parameter value\s*\n?\s*≤\s*([0-9,]+) bytes"),
         }
         self.assertEqual(expected, json_constant(self.source, "CEILINGS"))
+
+    def test_freshness_boundaries_transcribe_section_14_7(self):
+        """§14.7 owns the numbers; the fold and the viewer each transcribe
+        them (#108). Neither copy is canon, so checking them against each
+        other would let a matched pair drift away from the § together —
+        both are read against the prose instead. Tuning is a version bump
+        in canon, which starts here and fails both transcriptions at once."""
+        block = re.search(
+            r"## §14\.7 Freshness Decay.*?```text\n(.*?)```",
+            STATE_RULES.read_text(encoding="utf-8"),
+            re.DOTALL,
+        )
+        self.assertIsNotNone(block)
+        # Every line is consumed and every class named once: a block that
+        # grew a fourth boundary, lost one, or repeated a class must not
+        # reach the comparison below with three lucky matches. A regex that
+        # merely finds what it expects would agree with a canon that had
+        # stopped being a partition.
+        lines = [line for line in block.group(1).splitlines() if line.strip()]
+        parsed = [
+            re.fullmatch(r"(fresh|aging|stale)\s+([≤>]) (\d+) days", line)
+            for line in lines
+        ]
+        self.assertNotIn(None, parsed, lines)
+        self.assertEqual(
+            [("fresh", "≤"), ("aging", "≤"), ("stale", ">")],
+            [(m.group(1), m.group(2)) for m in parsed],
+        )
+        # Names, not values: pinning the numbers here would be a third copy
+        # of what the § is supposed to own. This only proves the prose was
+        # actually read, so an unparsed block cannot pass as agreement.
+        fresh, aging, stale = (int(m.group(3)) for m in parsed)
+        # The three lines are one partition, so `stale` opens where `aging`
+        # closes. Nothing outside the § can catch a tuning that moved one
+        # line and not the other — both transcriptions would faithfully copy
+        # a canon that had stopped covering the days between them.
+        self.assertEqual(aging, stale)
+        self.assertLess(fresh, aging)
+        boundaries = {"fresh": fresh, "aging": aging}
+        self.assertEqual(boundaries, json_constant(self.source, "FRESHNESS_DAYS"))
+        self.assertEqual(boundaries, build_atlas_graph.FRESHNESS_DAYS)
 
     def test_closed_keys_and_enums_transcribe_schema(self):
         state_shapes = self.schema["properties"]["state"][

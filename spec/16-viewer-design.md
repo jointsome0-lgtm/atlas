@@ -72,11 +72,12 @@ and §14.7's invitation reading survives the render (§25.4). Its
 severity treatment is §32.2's, and its channel obeys §27.8's
 colour-independence requirement, so opacity alone is not the
 encoding. Every class is read from the emission, concept and
-material alike — the render derives none of its own, so a
-field's tuned thresholds (§14.7, §20.1) cannot reach half the
-picture and miss the other half (#105). Aging against the
-viewer's own as-of (§14.7) stays out: acceptance pins freshness
-to the build's as-of, and changing that is its own decision.
+material alike — the render derives none of its own, so one
+picture never mixes two classifiers (#105); what the viewer
+derives it derives to refuse, never to draw (§16.5). Aging
+against the viewer's own as-of (§14.7) stays out: acceptance
+pins freshness to the build's as-of, and changing that is its
+own decision.
 No route- or field-level aggregate: per-node state only — no
 counts, no proportions, and never understanding as measurement
 (§4). A course's completion is activity semantics and belongs
@@ -258,10 +259,18 @@ entries via the measured-floor process (#56/#61); a breach is
 the same generic rejection. Within bounds, the viewer validates
 the whole file against the §25.7 atlas-graph schema and rejects
 the file on the first error — a visible generic failure, never
-a partial render. It projects the known fields of known shapes
-and never iterates unknown input properties; past the §25.8
-fallback threshold it renders the list fallback — a rendering
-mode, never the acceptance bound.
+a partial render. Past the schema it recomputes what the
+emission claims to have derived: every freshness class, against
+the §14.7 boundaries it transcribes and the graph's own as-of —
+an emitted class is input, not proof (#97), and one the
+derivation does not produce is that same rejection. Those
+boundaries are canon, not a channel: they arrive by shipping
+the viewer, never in the graph or the fragment (§14.7, #108) —
+a graph that supplied its own would be checked against itself,
+which is the #97 defect one layer up. It projects the known
+fields of known shapes and never iterates unknown input
+properties; past the §25.8 fallback threshold it renders the
+list fallback — a rendering mode, never the acceptance bound.
 Fragment: the raw fragment and each decoded parameter value
 carry dedicated byte ceilings — §25.8 entries via the
 measured-floor process, never a borrowed grammar constant —

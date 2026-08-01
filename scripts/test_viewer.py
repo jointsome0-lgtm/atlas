@@ -1,3 +1,4 @@
+import datetime
 import functools
 import http.server
 import json
@@ -9,6 +10,8 @@ import time
 import unittest
 from pathlib import Path
 from urllib.parse import quote, urlsplit
+
+import build_atlas_graph
 
 try:
     from playwright.sync_api import sync_playwright
@@ -73,6 +76,12 @@ EXPECTED_REJECTED_FIXTURES = {
         "path": "/edges/0", "rule": "canonicalOrder"},
     "self-referential-edge.json": {
         "path": "/edges/0/target", "rule": "selfEdge"},
+    # §14.7/#108: last_seen equals the as-of, so the derivation says fresh and
+    # the file says stale. Everything else about the entry is valid, which is
+    # the point — the class is the only defect, and an exact recompute is the
+    # only check that can see it (a monotonicity rule has one entry to compare).
+    "state-freshness-not-derived.json": {
+        "path": "/state/freshness", "rule": "derivedFreshness"},
     "state-entry-missing-required.json": {
         "path": "/state", "rule": "required"},
     "state-entry-not-an-object.json": {
@@ -1516,6 +1525,76 @@ class ViewerBrowserTests(unittest.TestCase):
                 graph,
             ),
         )
+
+    def test_freshness_classes_match_the_fold_on_every_boundary_day(self):
+        # §14.7/#108: the parity test pins the numbers both implementations
+        # carry, but not the comparison that uses them — flipping either `<=`
+        # to `<` in freshnessOf leaves FRESHNESS_DAYS untouched and
+        # misclassifies exactly one day, which no other viewer case visits.
+        # So every age across both boundaries is labelled by the §20 fold and
+        # offered to the acceptance check: the two transcriptions have to
+        # agree on all of them, not merely carry the same integers.
+        as_of = datetime.date.fromisoformat("2026-07-16")
+        span = build_atlas_graph.FRESHNESS_DAYS["aging"] + 2
+        graphs = []
+        for age in range(span + 1):
+            last_seen = (as_of - datetime.timedelta(days=age)).isoformat()
+            concept = {
+                "id": f"concept:day-{age}", "type": "concept",
+                "title": f"Day {age} (Vera Example)",
+                "fields": ["knowledge"], "aliases": [],
+            }
+            artifact = {
+                "id": f"artifact:day-{age}", "type": "artifact", "title": "",
+                "fields": [], "kind": "note", "path": "notes/example.md",
+                "observed_at": last_seen,
+                "summary": "Synthetic viewer fixture (Vera Example).",
+                "evidence_strength": "noticed",
+            }
+            graph = self.graph_envelope(nodes=[concept, artifact])
+            graph["generated_at"] = "2026-07-16T00:00:00Z"
+            graph["state"][concept["id"]].update({
+                "exposure": "touched",
+                "last_seen": last_seen,
+                "freshness": build_atlas_graph.freshness_of(
+                    last_seen, as_of.isoformat()),
+                "evidence": [artifact["id"]],
+            })
+            graphs.append(graph)
+
+        # One real load puts the acceptance module on the viewer's own origin;
+        # the batch below then runs the shipped contract, not a copy of it.
+        self.write_graph(graphs[0])
+        self.open_state("#mode=field", "FIELD")
+        diagnostics = self.page.evaluate(
+            """async graphs => {
+                const {validateGraph} = await import("./contract.js");
+                return graphs.map(graph => validateGraph(graph));
+            }""",
+            graphs,
+        )
+        self.assertEqual([None] * (span + 1), diagnostics)
+
+        # The other direction: accepting everything would also pass the loop
+        # above, so each boundary day is offered its neighbour's class too.
+        for boundary, wrong in (
+            (build_atlas_graph.FRESHNESS_DAYS["fresh"], "aging"),
+            (build_atlas_graph.FRESHNESS_DAYS["aging"], "stale"),
+        ):
+            graph = json.loads(json.dumps(graphs[boundary]))
+            entry = graph["state"][f"concept:day-{boundary}"]
+            self.assertNotEqual(wrong, entry["freshness"])
+            entry["freshness"] = wrong
+            self.assertEqual(
+                {"path": f"/state/freshness", "rule": "derivedFreshness"},
+                self.page.evaluate(
+                    """async graph => {
+                        const {validateGraph} = await import("./contract.js");
+                        return validateGraph(graph);
+                    }""",
+                    graph,
+                ),
+            )
 
     def test_rail_carries_gated_dimensions_only(self):
         # §16.2 A2: a drawn open slot for silence, a struck mark whose extent

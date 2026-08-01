@@ -1,0 +1,48 @@
+{
+  "format": "atlas-graph",
+  "version": 1,
+  "generated_at": "2026-07-26T00:00:00Z",
+  "nodes": [
+    {
+      "id": "artifact:vera-note",
+      "type": "artifact",
+      "title": "",
+      "kind": "note",
+      "path": "projects/demo/note.md",
+      "observed_at": "2026-07-26",
+      "summary": "Read the section again on the day of the build. Demo fixture authored by Vera Example.",
+      "evidence_strength": "read",
+      "fields": [
+        "knowledge"
+      ]
+    },
+    {
+      "id": "concept:alone",
+      "type": "concept",
+      "title": "Alone (Vera Example)",
+      "fields": [
+        "knowledge"
+      ],
+      "aliases": []
+    }
+  ],
+  "edges": [],
+  "trails": [],
+  "state": {
+    "concept:alone": {
+      "exposure": "touched",
+      "confidence": "unknown",
+      "clarity": "vague",
+      "coverage": "none",
+      "freshness": "stale",
+      "last_seen": "2026-07-26",
+      "evidence": [
+        "artifact:vera-note"
+      ],
+      "decisions": []
+    }
+  },
+  "influence": {},
+  "frontier": [],
+  "projections": {}
+}
