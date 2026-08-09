@@ -370,10 +370,13 @@ async function dispatch() {
   const pastCeiling = view.nodes.length > RENDER_NODE_LINK_CEILING;
   const listing = pastCeiling || viewMode === "list";
   setLensControls(pastCeiling);
-  // Stood down only for a list the reader asked for. Past the ceiling the
-  // radius is the one control that can bring the field back under it, so a
-  // forced fallback must not be the state that takes it away.
-  setHorizonControl(selected !== null, viewMode === "list");
+  // Stood down only for a list the reader asked for *and can leave*. Past the
+  // ceiling the radius is the one control that can bring the field back under
+  // it, so neither the forced fallback nor a list asked for on top of one may
+  // be the state that takes it away — the second is how the reader reaches a
+  // list with the graph shut and the radius gone.
+  setHorizonControl(
+    selected !== null, viewMode === "list" && !pastCeiling, pastCeiling);
   if (listing) {
     // §16.3 bounds the node-link view alone. The list is A11's fallback and
     // carries the field's own channels as columns, so a hop radius must not
@@ -401,11 +404,12 @@ function setLensControls(pastCeiling) {
 
 // A reader control, not an address: §16.4's fragment carries mode, focus and
 // field, and an extra key there would be a contract edit.
-function setHorizonControl(focused, listing) {
+function setHorizonControl(focused, listing, pastCeiling) {
   horizonSelect.disabled = !focused || listing;
   if (listing) horizonSelect.title = "The list carries the whole field";
-  else if (focused) horizonSelect.removeAttribute("title");
-  else horizonSelect.title = "Open a node to look around it";
+  else if (!focused) horizonSelect.title = "Open a node to look around it";
+  else if (pastCeiling) horizonSelect.title = "Narrow the field to draw it";
+  else horizonSelect.removeAttribute("title");
 }
 
 function horizonHops() {

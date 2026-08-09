@@ -355,11 +355,7 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertNotIn("past the focus horizon",
                          self.page.locator("#status-bar").inner_text())
 
-    def test_a_horizon_can_bring_an_oversized_field_back_into_the_picture(self):
-        # Past the ceiling the list is forced, and the radius is the one
-        # control that can bring the field back under it. Standing it down
-        # there would shut the reader out of the node-link view for exactly
-        # the fields a bounded one serves best.
+    def oversized_focused_field(self):
         nodes = [
             {"id": f"concept:n-{index}", "type": "concept",
              "title": f"Node {index}", "fields": ["knowledge"], "aliases": []}
@@ -373,12 +369,38 @@ class ViewerBrowserTests(unittest.TestCase):
         ]
         self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
         self.open_state("#mode=field&focus=concept:n-0", "LIST")
+
+    def test_a_horizon_can_bring_an_oversized_field_back_into_the_picture(self):
+        # Past the ceiling the list is forced, and the radius is the one
+        # control that can bring the field back under it. Standing it down
+        # there would shut the reader out of the node-link view for exactly
+        # the fields a bounded one serves best.
+        self.oversized_focused_field()
         horizon = self.page.locator("#horizon-select")
         self.assertFalse(horizon.is_disabled())
         horizon.select_option("1")
         self.page.wait_for_selector("#main[data-state='FIELD']")
         self.assertEqual(4, len(self.drawn_ids()))
         self.assertFalse(self.page.locator("#graph-view").is_disabled())
+
+    def test_asking_for_the_list_the_ceiling_forced_is_not_a_locked_door(self):
+        # The forced fallback already reads as the list, so the reader may well
+        # press the list again — and that press is a lens the reader chose,
+        # which is the state the radius stands down for. With the graph shut by
+        # the ceiling and the radius shut by the press, there would be no way
+        # back to the picture at all.
+        self.oversized_focused_field()
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector("#main[data-state='LIST']")
+        horizon = self.page.locator("#horizon-select")
+        self.assertFalse(horizon.is_disabled())
+        horizon.select_option("1")
+        # The reader is still in the list they asked for, but the field under
+        # the radius fits the picture again and the way back is open.
+        self.page.wait_for_selector("#graph-view:not([disabled])")
+        self.page.locator("#graph-view").click()
+        self.page.wait_for_selector("#main[data-state='FIELD']")
+        self.assertEqual(4, len(self.drawn_ids()))
 
     def test_focus_horizon_walks_only_the_edges_in_view(self):
         # Hops are counted over what the reader can see: with routes hidden a
