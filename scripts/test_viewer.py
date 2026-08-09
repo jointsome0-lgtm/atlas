@@ -493,7 +493,7 @@ class ViewerBrowserTests(unittest.TestCase):
                         : "--recede-derived";
                     out[family] = [
                         getComputedStyle(
-                            group.querySelector(".edge-line")).strokeOpacity,
+                            group.querySelector(".edge-line")).opacity,
                         String(Number(root.getPropertyValue(token)))];
                 }
                 return out;
@@ -539,7 +539,7 @@ class ViewerBrowserTests(unittest.TestCase):
             ["1"] * trails.count(),
             trails.evaluate_all(
                 """groups => groups.map((g) => getComputedStyle(
-                    g.querySelector(".edge-line")).strokeOpacity)"""))
+                    g.querySelector(".edge-line")).opacity)"""))
 
     def test_a_receded_relation_is_still_a_drawn_relation(self):
         # The recession is bounded by the sheet's own hairline: no family may
@@ -581,7 +581,7 @@ class ViewerBrowserTests(unittest.TestCase):
                 }"""))
         opacities = self.page.locator("svg .edge-group .edge-line").evaluate_all(
             "lines => [...new Set(lines.map("
-            "(l) => getComputedStyle(l).strokeOpacity))]")
+            "(l) => getComputedStyle(l).opacity))]")
         self.assertEqual(["1"], opacities)
 
     def test_a_reciprocal_pair_of_relations_takes_two_lanes(self):
@@ -676,6 +676,129 @@ class ViewerBrowserTests(unittest.TestCase):
     def drag_ground(self, dx, dy):
         """Drag from the middle of the canvas; answer how far the camera went."""
         return self.page.evaluate(self.DRAG_JS, [dx, dy])
+
+    def test_a_relation_recedes_arrowhead_and_all(self):
+        # An arrowhead is a marker filled with context-stroke, which copies the
+        # stroke's paint but not its opacity, so a recession spent on
+        # stroke-opacity leaves bright heads scattered through the quiet.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        marked = self.page.evaluate(
+            """() => {
+                const group = [...document.querySelectorAll(
+                    "svg .edge-group:not(.incident)")].find(
+                    (g) => g.dataset.family !== "trail"
+                        && g.querySelector(".edge-line").getAttribute("marker-end"));
+                if (!group) return null;
+                const style = getComputedStyle(group.querySelector(".edge-line"));
+                return {opacity: Number(style.opacity),
+                        strokeOpacity: Number(style.strokeOpacity)};
+            }""")
+        self.assertIsNotNone(marked, "no receding directed relation to measure")
+        self.assertLess(marked["opacity"], 1)
+        self.assertEqual(1, marked["strokeOpacity"])
+
+    def test_a_field_fitted_by_zoom_keeps_a_reachable_hit_band(self):
+        # Opening a field larger than the frame drops the zoom floor to the fit
+        # (#99/§16.3), and a hit band that scaled with it would be a fraction of
+        # a pixel wide — a drawn relation that no hand can reach.
+        nodes = [
+            {"id": f"concept:n{index:03d}", "type": "concept",
+             "title": f"N{index:03d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(140)
+        ]
+        edges = [
+            {"source": f"concept:n{index:03d}",
+             "target": f"concept:n{index + 1:03d}",
+             "type": "related_to", "provenance": [f"concept:n{index:03d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+        reach = self.page.evaluate(
+            """() => {
+                const viewport = document.querySelector(".viewport");
+                const zoom = Number(viewport.getAttribute("transform")
+                    .match(/scale\\(([-\\d.]+)\\)/)[1]);
+                const hit = document.querySelector("svg .edge-hit");
+                const group = hit.closest(".edge-group");
+                const ctm = hit.getScreenCTM();
+                const at = (ux, uy) => new DOMPoint(ux, uy).matrixTransform(ctm);
+                const a = at(hit.x1.baseVal.value, hit.y1.baseVal.value);
+                const b = at(hit.x2.baseVal.value, hit.y2.baseVal.value);
+                const mid = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2};
+                const span = Math.hypot(b.x - a.x, b.y - a.y);
+                const normal = {x: -(b.y - a.y) / span, y: (b.x - a.x) / span};
+                // Walk out along the normal: the last offset that still answers
+                // for this relation is the half-band the hand actually has.
+                const lands = (offset) => document
+                    .elementsFromPoint(mid.x + normal.x * offset,
+                                       mid.y + normal.y * offset)
+                    .some((el) => el.closest && el.closest(".edge-group") === group);
+                const half = () => {
+                    let out = 0;
+                    while (out < 40 && lands(out + 1)) out += 1;
+                    return out;
+                };
+                const withFloor = half();
+                // Neutralise the compensation and measure the same relation
+                // again: what a stroke that scaled with the picture would leave.
+                const written = viewport.style.getPropertyValue("--dash-scale");
+                viewport.style.setProperty("--dash-scale", "1");
+                const scaled = half();
+                viewport.style.setProperty("--dash-scale", written);
+                return {zoom, withFloor, scaled, onEdge: lands(0)};
+            }""")
+        self.assertLess(reach["zoom"], 1, "expected a field fitted by zoom")
+        self.assertTrue(reach["onEdge"], "the middle of a drawn relation is not on it")
+        self.assertGreaterEqual(reach["withFloor"], 4)
+        self.assertGreater(reach["withFloor"], reach["scaled"])
+
+    def test_a_cancelled_drag_does_not_eat_the_next_click(self):
+        # A cancelled pointer sequence synthesises no click, so the suppression
+        # a completed pan arms has nothing to clear it — and the reader's next
+        # ordinary click is swallowed instead.
+        self.open_state("#mode=field", "FIELD")
+        self.page.evaluate(
+            """() => {
+                const svg = document.querySelector("svg.graph-svg");
+                const box = svg.getBoundingClientRect();
+                const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+                const send = (kind, x, y, extra) => svg.dispatchEvent(
+                    new PointerEvent(kind, Object.assign({
+                        pointerId: 1, clientX: x, clientY: y,
+                        bubbles: true, buttons: 1}, extra || {})));
+                send("pointerdown", cx, cy);
+                for (let step = 1; step <= 4; step += 1) {
+                    send("pointermove", cx + step * 20, cy + step * 10);
+                }
+                send("pointercancel", cx + 80, cy + 40, {buttons: 0});
+            }""")
+        self.page.locator(
+            'svg .node[data-node-id="concept:idempotency"]').click()
+        self.page.wait_for_selector("svg .node.selected")
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+
+    def test_a_press_released_off_the_canvas_does_not_follow_the_hand_back(self):
+        # Below the slop the gesture is not yet captured, so a press that
+        # leaves the element never gets its pointerup — and the drag would
+        # still be standing when the pointer wanders back with no button held.
+        self.open_state("#mode=field", "FIELD")
+        box = self.page.locator("svg.graph-svg").bounding_box()
+        middle = box["y"] + box["height"] / 2
+        before = self.viewport_transform()
+        self.page.mouse.move(box["x"] + 6, middle)
+        self.page.mouse.down()
+        self.page.mouse.move(box["x"] - 40, middle)
+        self.page.mouse.up()
+        self.page.mouse.move(box["x"] + 200, middle)
+        self.page.mouse.move(box["x"] + 400, middle)
+        self.page.wait_for_timeout(150)
+        self.assertEqual(before, self.viewport_transform())
+
+    def viewport_transform(self):
+        return self.page.evaluate(
+            """() => document.querySelector(".viewport").getAttribute("transform")""")
 
     # A layout is the one thing on this screen that costs real time, so the
     # tests below watch for it directly: every LAYOUT the viewer enters is

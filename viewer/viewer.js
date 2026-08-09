@@ -1976,6 +1976,14 @@ function installPanZoom(transform) {
   });
   svg.addEventListener("pointermove", (event) => {
     if (!drag || drag.pointerId !== event.pointerId) return;
+    // A press released outside the element never delivers its pointerup here,
+    // so the drag would still be standing when the pointer wanders back and
+    // would pan the field with no button held.
+    if (event.buttons === 0) {
+      drag = null;
+      svg.classList.remove("dragging");
+      return;
+    }
     const screenDx = event.clientX - drag.x;
     const screenDy = event.clientY - drag.y;
     drag.travel = (drag.travel || 0) + Math.abs(screenDx) + Math.abs(screenDy);
@@ -2000,6 +2008,9 @@ function installPanZoom(transform) {
     if (!drag || drag.pointerId !== event.pointerId) return;
     drag = null;
     svg.classList.remove("dragging");
+    // A cancelled sequence synthesises no click, so the suppression below
+    // would still be armed and would eat the reader's next one.
+    if (event.type === "pointercancel") moved = false;
   };
   svg.addEventListener("pointerup", stopDrag);
   svg.addEventListener("pointercancel", stopDrag);

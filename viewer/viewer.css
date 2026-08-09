@@ -784,7 +784,11 @@ aside {
 .edge-hit {
   fill: none;
   stroke: transparent;
-  stroke-width: 12;
+  /* A floor of screen presence, on the same --dash-scale the dash rides: a
+     field fitted by zoom would otherwise leave a hit band under a pixel wide.
+     Written into the width rather than as non-scaling-stroke, which Chromium
+     honours when painting but not when hit-testing. */
+  stroke-width: calc(12px * var(--dash-scale));
   pointer-events: stroke;
 }
 
@@ -792,10 +796,12 @@ aside {
   filter: drop-shadow(0 0 2px var(--focus));
 }
 
-/* §16.2 A9 focus feedback (§16.3). stroke-opacity on the leaf strokes, never
-   opacity on the group: a group below full opacity is its own transparency
-   layer and measured four times the cost of a pan. No transition — A9 grants
-   one and it is the question pull's. The trail is exempt (A7). */
+/* §16.2 A9 focus feedback (§16.3). On the leaf marks, never on the group: a
+   group below full opacity is its own transparency layer and measured four
+   times the cost of a pan. opacity rather than stroke-opacity because an
+   arrowhead is a marker filled with context-stroke, which copies the paint
+   but not the stroke's own opacity. No transition — A9 grants one and it is
+   the question pull's. The trail is exempt (A7). */
 .viewport.has-selection .edge-group:not(.incident) {
   --edge-recede: var(--recede-derived);
 }
@@ -814,13 +820,13 @@ aside {
 
 .viewport.has-selection .edge-group:not(.incident) .edge-line,
 .viewport.has-selection .edge-group:not(.incident) .edge-weight {
-  stroke-opacity: var(--edge-recede);
+  opacity: var(--edge-recede);
 }
 
 /* quiet, never gone — a receded relation still answers the hand */
 .viewport.has-selection .edge-group:not(.incident):hover .edge-line,
 .viewport.has-selection .edge-group:not(.incident):hover .edge-weight {
-  stroke-opacity: 1;
+  opacity: 1;
 }
 
 .edge-label {
