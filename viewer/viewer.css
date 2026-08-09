@@ -47,13 +47,8 @@
   --k-zone: oklch(0.52 0.06 196);
 
   /* edge families — colour, dash, and width carry family only (A3) */
-  /* A dash keeps a floor of screen presence, the way the plate outline does:
-     the viewer sets this to 1 / min(zoom, 1), so at or above zoom 1 the
-     authored period is drawn exactly and below it the dash stops shrinking
-     with the picture. A family mark that has dissolved into a solid hairline
-     is not carrying family, and dashing a whole field's worth of edges at the
-     authored period costs a quarter-second per frame — the picture stops
-     answering the hand that is dragging it. */
+  /* set by the viewer to 1 / min(zoom, 1) — a dash keeps a floor of screen
+     presence, since a family mark dissolved into a hairline carries no family */
   --dash-scale: 1;
   --e-authored: oklch(0.45 0.012 250);
   --e-derived: oklch(0.66 0.01 250);
@@ -110,11 +105,8 @@
   --hairline: 0.75px;
   --cartouche-pad: 4px; /* field-undefined frame — a dash on a boundary is freshness (A4) */
   --label-gap: 4px; /* clearance between a label and the last drawn mark on its side */
-  /* Label box estimates for collision-free placement. They size a rectangle
-     the renderer never draws — the label channel itself is A11's, and these
-     two never touch what a mark means. Advance is the mean glyph width at
-     --t-02 in --f-ui; measuring per string would make layout depend on font
-     load order, and the seeded picture must not (§27.8). */
+  /* label box estimate — mean glyph advance at --t-02 in --f-ui; measured per
+     string it would depend on font load order, and the picture is seeded (§27.8) */
   --label-em: 5.8;
   --label-line: 13;
   --edge-lane: 7px; /* spacing between the strokes of one node pair */
@@ -122,16 +114,12 @@
      before it stops, and the angle its siblings fan across (radians) */
   --edge-stub: 14px;
   --edge-stub-fan: 1;
-  /* How much presence a relation keeps while it is not the one you picked.
-     A floor, never a fade to nothing: a receded relation is still drawn, and
-     omission belongs to A11's fixed order and to the focus horizon, never
-     here. The floor is the sheet's own hairline: no receded family may fall
-     below the contrast --rule already carries against --ground, that being
-     the faintest line this design draws on purpose. Measured, not guessed —
-     at 0.55 the faintest family lands at 1.49:1 light and 1.43:1 dark,
-     against --rule at 1.45:1 and 1.38:1. Moving this token means measuring
-     it again. */
-  --edge-recede: 0.55;
+  /* presence a relation keeps while it is not the one picked: per family, so
+     each lands *on* --rule's own contrast rather than a shared amount below
+     its own. Changing one means re-measuring it — the acceptance test does. */
+  --recede-authored: 0.25;
+  --recede-derived: 0.40;
+  --recede-route: 0.55;
 
   /* §16.2 A11 density tiers, as multiples of --plate-r: a channel drops when
      the typical on-screen node spacing falls under tier × plate radius. The
@@ -183,6 +171,10 @@
     --e-derived: oklch(0.50 0.014 250);
     --e-route: oklch(0.42 0.012 250);
     --trail: oklch(0.78 0.155 64);
+    /* the same hairline floor, re-measured against this ground */
+    --recede-authored: 0.20;
+    --recede-derived: 0.36;
+    --recede-route: 0.52;
     /* silence lightens against its ground rather than darkening, so an open
        slot stays a visible groove instead of a hole in the paper (A2) */
     --slot: oklch(0.395 0.013 250);
@@ -736,12 +728,8 @@ aside {
   outline-offset: 2px;
 }
 
-/* The stroke scales with the picture like every other mark. Held at screen
-   width it was the one thing that did not shrink when the view zoomed out to
-   hold a whole field, so the relation mesh buried the plates it connects —
-   nothing was omitted, the reading order was simply upside down. Family still
-   rides colour, dash, and width (A3); at a zoom where they are too fine to
-   read, so is everything else, and the density tiers name it. */
+/* the stroke scales with the picture like every other mark, so a zoomed-out
+   field does not bury its plates under the relation mesh */
 .edge-line {
   fill: none;
   stroke: var(--e-authored);
@@ -787,9 +775,8 @@ aside {
   vector-effect: non-scaling-stroke;
 }
 
-/* #99: the cut end is open, not finished. A round cap reads as an endpoint —
-   "the relation stops here" — which is the one thing a stub must not say, so
-   it is squared off and left bare. Family still rides the stroke (A3). */
+/* #99: a round cap reads as an endpoint, which is the one thing a stub must
+   not say, so the cut end is squared off and left bare */
 .edge-stub {
   stroke-linecap: butt;
 }
@@ -805,34 +792,32 @@ aside {
   filter: drop-shadow(0 0 2px var(--focus));
 }
 
-/* §16.2 A9: the field's focus feedback, and the whole of it. Presence is taken
-   away from the relations the selection does not touch, never added to the
-   ones it does — colour, dash and width are byte-identical on both sides,
-   because they carry edge family and nothing else (A3), and no edge gains a
-   second mark (A5). Nothing here says anything about the graph; it says where
-   the reader is standing, and the panel says the same in words (A8).
+/* §16.2 A9 focus feedback (§16.3). stroke-opacity on the leaf strokes, never
+   opacity on the group: a group below full opacity is its own transparency
+   layer and measured four times the cost of a pan. No transition — A9 grants
+   one and it is the question pull's. The trail is exempt (A7). */
+.viewport.has-selection .edge-group:not(.incident) {
+  --edge-recede: var(--recede-derived);
+}
 
-   stroke-opacity on the strokes, not opacity on the group: a group below full
-   opacity becomes its own transparency layer and is re-rasterised every frame,
-   which measured four times the cost of a pan — and a selection stands for as
-   long as the panel is open, so the hand would pay for the reading the whole
-   time. The channel is free here by construction: rev 1 moved edge weight off
-   stroke opacity onto a midpoint tick precisely to vacate it.
+.viewport.has-selection .edge-group:not(.incident)[data-family="authored"] {
+  --edge-recede: var(--recede-authored);
+}
 
-   No transition. A9 grants exactly one, and it is the question pull's.
+.viewport.has-selection .edge-group:not(.incident)[data-family="route"] {
+  --edge-recede: var(--recede-route);
+}
 
-   The trail never recedes (A7): a suggested route must never render brighter
-   than the trail it parallels, and a route touching the selection beside a
-   trail that does not is exactly that inversion. The real path stays lit. */
-.viewport.has-selection
-  .edge-group:not(.incident):not([data-family="trail"]) .edge-line,
-.viewport.has-selection
-  .edge-group:not(.incident):not([data-family="trail"]) .edge-weight {
+.viewport.has-selection .edge-group:not(.incident)[data-family="trail"] {
+  --edge-recede: 1;
+}
+
+.viewport.has-selection .edge-group:not(.incident) .edge-line,
+.viewport.has-selection .edge-group:not(.incident) .edge-weight {
   stroke-opacity: var(--edge-recede);
 }
 
-/* Quiet, never gone: a receded relation still answers the hand with its own
-   stroke and its own label, so nothing is hidden from a reader who looks. */
+/* quiet, never gone — a receded relation still answers the hand */
 .viewport.has-selection .edge-group:not(.incident):hover .edge-line,
 .viewport.has-selection .edge-group:not(.incident):hover .edge-weight {
   stroke-opacity: 1;
@@ -873,9 +858,8 @@ aside {
 .node-pattern { --plate-hue: var(--k-pattern); }
 .node-zone { --plate-hue: var(--k-zone); }
 
-/* The plate keeps a floor of screen presence: its outline holds 1.5px however
-   far the view is zoomed out, so a whole field reads as a field of nodes with
-   the relations behind them, and never as a mesh with the nodes lost in it. */
+/* the outline holds 1.5px however far the view zooms out, so a whole field
+   never reads as a mesh with its nodes lost in it */
 .node-shape {
   fill: var(--plate-hue, var(--k-concept));
   stroke: var(--node-stroke);
@@ -959,9 +943,8 @@ aside {
   vector-effect: non-scaling-stroke;
 }
 
-/* Both rings are drawn on every plate and shown by state, so a change of
-   selection is a class on a tree that is already right rather than a reason
-   to build it again. */
+/* drawn on every plate and shown by state, so a change of selection is a
+   class on a tree that is already right */
 .selection-ring {
   opacity: 0;
   pointer-events: none;
@@ -1240,6 +1223,11 @@ aside {
     --halo: CanvasText;
     --node-stroke: CanvasText;
     --shadow: transparent;
+    /* no rank below CanvasText, so nothing to recede to that clears --rule:
+       the emphasis stands down and the ring and panel answer instead (A8) */
+    --recede-authored: 1;
+    --recede-derived: 1;
+    --recede-route: 1;
   }
 
   .graph-svg,

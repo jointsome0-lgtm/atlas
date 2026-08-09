@@ -364,9 +364,8 @@ async function dispatch() {
     ? {nodes, edges, cut: [], continues: false}
     : neighbourhood(nodes, edges, selected, horizon);
   fieldContinuesPastHorizon = view.continues;
-  // §25.8's fallback line counts nodes *in view*, and a horizon is what is in
-  // view: standing inside a field too large to draw whole, the reader still
-  // gets a node-link picture of where they are.
+  // §25.8's fallback line counts nodes *in view*, and a horizon is what is
+  // in view.
   const pastCeiling = view.nodes.length > RENDER_NODE_LINK_CEILING;
   setLensControls(pastCeiling);
   if (pastCeiling || viewMode === "list") {
@@ -388,10 +387,8 @@ function setLensControls(pastCeiling) {
   listView.setAttribute("aria-pressed", String(effectiveMode === "list"));
 }
 
-// The horizon is a reader control, not an address: §16.4's fragment carries
-// mode, focus, and field, and an extra key there would be a contract edit.
-// Two people opening one link see the same field; how far each looks around
-// it is theirs.
+// A reader control, not an address: §16.4's fragment carries mode, focus and
+// field, and an extra key there would be a contract edit.
 function setHorizonControl(focused) {
   horizonSelect.disabled = !focused;
   if (focused) horizonSelect.removeAttribute("title");
@@ -403,14 +400,10 @@ function horizonHops() {
   return Number.isNaN(value) ? null : value;
 }
 
-// Fog of war. With a node in focus the field is drawn out to a horizon in
-// hops and no further: what lies past it is not drawn at all, and nothing —
-// no cluster, count, or heat — is drawn in its place (A5, A11). The status
-// line says how many nodes the horizon is keeping out, so the dark is a
-// stated omission and never a claim that the field ends there.
-//
-// Hops run over the edges the reader can actually see, so hiding routes never
-// leaves a node two visible hops away sitting one invisible hop from focus.
+// #99: the field is drawn out to a horizon in hops and no further, with
+// nothing — no cluster, count, or heat — drawn in its place (A5, A11). Hops
+// run over the edges the reader can see, so hiding a family narrows the
+// horizon with it.
 function neighbourhood(nodes, edges, selected, horizon) {
   const neighbours = new Map(nodes.map((node) => [node.id, []]));
   if (!neighbours.has(selected.id)) return {nodes, edges, cut: [], continues: false};
@@ -431,10 +424,8 @@ function neighbourhood(nodes, edges, selected, horizon) {
     }
     frontier = next;
   }
-  // An edge with one end inside the horizon and one outside is not gone: it
-  // is drawn as far as the view reaches and then stops (#99). Walking the
-  // visible set keeps this coherent with the Routes lens — a hidden route
-  // leaves no stub behind, because it is not a relation the reader can see.
+  // Cut, not gone: drawn as far as the view reaches and then stopped (#99).
+  // Taken from the visible set so a hidden family leaves no stub behind.
   const cut = visibleEdges(edges).filter(
     (edge) => reached.has(edge.source) !== reached.has(edge.target));
   return {
@@ -649,10 +640,8 @@ function initialPositions(nodes) {
   return {sorted, positions};
 }
 
-// The room a node's own marks occupy, as a radius: plate, kind marks, and the
-// decision rail when the fold gave it one. Repulsion and the separation pass
-// read it so a plan plate clears more space than an encounter dot. It sizes
-// clearance only — position and size stay geometry, never state (A10).
+// The room a node's own marks occupy, as a radius. Clearance only — position
+// and size stay geometry, never state (A10).
 function layoutRadius(node) {
   let radius = glyphExtent(node);
   const entry = STATE_TYPES.has(node.type)
@@ -672,13 +661,8 @@ function layoutRadii(sorted) {
   return new Map(sorted.map((node) => [node.id, layoutRadius(node)]));
 }
 
-// Settling a field is a pair problem: every node against every other, once per
-// iteration. At §25.8's ceiling that is two hundred million visits, and a Map
-// lookup and a point object on each of them was most of what a reader waited
-// through to open a large field. The arithmetic below is unchanged and runs in
-// the same order — the same graph still settles into the same picture (§27.8);
-// only the container changed. Positions return to the Map the rest of the
-// renderer speaks once the layout is done.
+// Typed arrays for the O(n²) pair loop: same arithmetic in the same order, so
+// the same graph still settles into the same picture (§27.8).
 function layoutBuffer(sorted, positions, radii, edges) {
   const count = sorted.length;
   const index = new Map();
@@ -717,9 +701,8 @@ function layoutBuffer(sorted, positions, radii, edges) {
   };
 }
 
-// Cooling: the step ceiling falls with the temperature so early iterations
-// untangle and late ones settle instead of wandering. Seeded and clamped, so
-// the same graph still resolves to the same picture (§27.8).
+// Cooling: the step ceiling falls with the temperature, so late iterations
+// settle instead of wandering. Seeded and clamped (§27.8).
 function layoutIteration(buffer, restGap, temperature) {
   const {count, x, y, radius, springs, forceX, forceY} = buffer;
   forceX.fill(0);
@@ -775,9 +758,8 @@ function layoutIteration(buffer, restGap, temperature) {
   }
 }
 
-// The force loop leaves pairs that settled inside each other's marks; this
-// resolves what is left by pushing overlapping footprints apart along their
-// own axis. Visiting in id order keeps the correction seeded like the layout.
+// Pushes footprints the force loop left overlapping apart along their own
+// axis. Visited in id order, so the correction is seeded like the layout.
 function separationPass(buffer, gap) {
   const {count, x, y, radius} = buffer;
   let moved = false;
@@ -843,36 +825,26 @@ function typicalSpacing(nodes, positions) {
   return Math.sqrt(VIEW_WIDTH * VIEW_HEIGHT / Math.max(nodes.length, 1));
 }
 
-// The iteration budget is spent where it buys a settled picture. A small
-// field converges long before the 2,400-node ceiling's cost matters, and a
-// large one keeps exactly the budget it had, so §25.8's floor is untouched.
 // Node count is the only input, so the budget is as seeded as the layout.
 function iterationBudget(count) {
   if (count < 2) return 1;
   return Math.min(420, Math.max(120, Math.round(3600 / Math.sqrt(count))));
 }
 
-// Settling a field is deterministic: the same drawn set under the same token
-// sheet settles into the same picture, every time (§27.8). So solving it twice
-// is not caution, it is a reader waiting two seconds to be shown the picture
-// they were already looking at — which is what a click on a node used to cost.
-// The memo is view-time only: it lives in this tab, dies with it, and no second
-// reader can consult it, so nothing derived is stored (§31.8).
+// View-time only: this tab, dying with it, so nothing derived is stored
+// (§31.8).
 //
-// EVERY INPUT calculateLayout READS MUST BE DECLARED IN layoutKey BELOW.
-// One that is not is a silently wrong picture, which is worse than a slow one.
-// Today those are: the drawn node set (the seed and ring radius come from the
-// ids), the drawn edge set in order, and the tokens layoutRadius reads through
+// EVERY INPUT calculateLayout READS MUST BE DECLARED IN layoutKey BELOW; one
+// that is not is a silently wrong picture. Today: the drawn node set, the
+// drawn edge set in order, and the tokens layoutRadius reads through
 // plateRadius and railGeometry.
 const LAYOUT_MEMO_LIMIT = 4;
 const layoutMemo = new Map();
 let layoutOrdinals = null;
 
-// Ids are long and a field may carry many more edges than nodes, so the key is
-// written in ordinals into the accepted graph rather than in ids. Both drawn
-// arrays are order-preserving filters of it, so equal ordinals means equal
-// input — never a hash, whose collision would draw the wrong picture with no
-// symptom at all.
+// Ordinals into the accepted graph, not ids: both drawn arrays are
+// order-preserving filters of it, so equal ordinals means equal input. Never a
+// hash — a collision would draw the wrong picture with no symptom.
 function graphOrdinals() {
   if (!layoutOrdinals) {
     layoutOrdinals = {
@@ -895,8 +867,8 @@ function layoutKey(field, nodes, edges) {
 
 function rememberLayout(key, nodes, positions) {
   const entry = {
-    // Handed out by reference and never mutated by the renderer. When a hand
-    // moves a plate (#116) this entry is what it must write through or evict.
+    // By reference, never mutated by the renderer: dragging a plate (#116)
+    // must write through this entry or evict it.
     positions,
     radii: layoutRadii(nodes),
     spacing: typicalSpacing(nodes, positions)
@@ -923,10 +895,8 @@ async function calculateLayout(nodes, edges, generation) {
   const buffer = layoutBuffer(sorted, positions, radii, edges);
   const restGap = 2.8 * plateRadius();
   const iterations = iterationBudget(sorted.length);
-  // Yield on elapsed time, not on a fixed iteration count: a frame-locked
-  // yield made every field pay 60ths of a second per iteration whatever its
-  // size, so a small graph sat waiting on frames it did not need. The page
-  // still gives way often enough to stay responsive on a large one.
+  // Yield on elapsed time, not per iteration: a frame-locked yield made a
+  // small field wait on frames it did not need.
   let lastYield = performance.now();
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const temperature = Math.max(0.05, 1 - iteration / iterations);
@@ -939,12 +909,8 @@ async function calculateLayout(nodes, edges, generation) {
   }
   if (sorted.length === 0) return positions;
   fitToFrame(buffer);
-  // Overlap is the one layout fault a reader cannot work around: two plates
-  // in one place hide each other's state. It runs after the fit, whose scaling
-  // only ever spreads a small field — a field larger than the frame keeps its
-  // own units and is fitted by zoom instead (frameFit), so nothing rescales
-  // the clearance this pass just won. Passes are bounded, and the bound falls
-  // on big fields so the O(n²) sweep never outgrows §25.8's build budget.
+  // After the fit, which only ever spreads: nothing rescales the clearance
+  // this pass wins. Bounded so the O(n²) sweep stays inside §25.8's budget.
   const separationGap = 0.6 * plateRadius();
   const separationPasses = sorted.length > 600 ? 4 : 24;
   for (let pass = 0; pass < separationPasses; pass += 1) {
@@ -959,13 +925,8 @@ async function calculateLayout(nodes, edges, generation) {
   return positions;
 }
 
-// Centre the settled layout in the viewBox with room for the marks and labels
-// that hang off a plate. Spreading a field smaller than the frame is free; the
-// old fit also *shrank* a larger one, which squeezed positions while every
-// glyph kept its fixed size, so a big field piled its own plates on top of
-// each other. Growth only, and the frame-sized picture is reached by zoom
-// (frameFit) — that scales plate and gap together, so A10's fixed size per
-// kind class is never touched.
+// Centre the settled layout in the viewBox, growth only: shrinking squeezed
+// positions while glyphs kept their size. A larger field is fitted by zoom.
 function fitToFrame(buffer) {
   const {count, x, y} = buffer;
   let minX = Number.POSITIVE_INFINITY;
@@ -987,11 +948,8 @@ function fitToFrame(buffer) {
   }
 }
 
-// The opening view still shows the whole field: whatever the layout's own
-// units, the view zooms out until the drawn bounds — plates included — fit the
-// frame. Zoom out only; a field that already fits opens at 1, so a small graph
-// renders byte for byte as before. Same graph, same picture (§27.8): every
-// input here is the settled layout, not the window.
+// Zoom out only, until the drawn bounds fit the frame. Every input is the
+// settled layout, not the window, so the picture stays seeded (§27.8).
 function frameFit(sorted, positions, radii) {
   const identity = {zoom: 1, x: 0, y: 0};
   if (sorted.length === 0) return identity;
@@ -1030,20 +988,16 @@ function labelAnchors(node) {
   };
 }
 
-// Slot order is fixed, so the chosen placement is a property of the graph and
-// not of the visiting order: the right of the node first — the anchor every
-// single-node render keeps — then the left, then a row above, then below.
+// Fixed order, so a placement is a property of the graph and not of the
+// visiting order.
 const LABEL_SLOTS = [
   {side: "right", row: 0}, {side: "left", row: 0},
   {side: "right", row: -1}, {side: "left", row: -1},
   {side: "right", row: 1}, {side: "left", row: 1},
   {side: "right", row: -2}, {side: "left", row: 2},
 ];
-// Above this many nodes the collision sweep is skipped and every label takes
-// the first slot. The label channel has dropped whole well before a field
-// this dense (A11), so the sweep would cost O(n²) to place text nobody is
-// shown; the threshold reads off the node count alone, so the picture stays
-// seeded either way (§27.8).
+// Above this the sweep is skipped: A11 has dropped the label channel whole
+// well before a field this dense. Node count only, so still seeded (§27.8).
 const LABEL_SWEEP_CEILING = 400;
 
 function boxesIntersect(left, right) {
@@ -1059,11 +1013,8 @@ function labelBox(position, anchors, width, side, dy, line) {
   return {left: x, right: x + width, top, bottom: top + line};
 }
 
-// §16.2 A11 makes labels a channel that drops whole; where they are drawn,
-// they have to be readable, and two titles in one place are not. Each label
-// takes the first slot around its node that clears every plate and every
-// label already placed. This moves no node and encodes nothing: a label's
-// side is legibility, never state (A10).
+// First slot that clears every plate and every label already placed. Moves no
+// node and encodes nothing — a label's side is legibility, never state (A10).
 function placeLabels(nodes, positions, radii) {
   const sorted = [...nodes].sort((left, right) => left.id < right.id ? -1 : (left.id > right.id ? 1 : 0));
   const gap = tokenNumber("--label-gap", 4);
@@ -1120,9 +1071,7 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
     setMainState("LAYOUT");
     main.append(htmlElement("div", "layout-message", "Laying out " + nodes.length + " nodes…"));
     const settled = await calculateLayout(nodes, edges, generation);
-    // An abandoned settling returns nothing, and half a settling is not a
-    // picture: it must never reach the memo, where it would be handed to the
-    // next reader as the answer.
+    // Half a settling must never reach the memo.
     if (!settled || generation !== renderGeneration) return;
     layout = rememberLayout(key, nodes, settled);
     main.replaceChildren();
@@ -1155,7 +1104,10 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
     touches(edge.target, group);
   }
   if (selected && positions.has(selected.id)) {
-    for (const stub of makeStubs(cutEdges, positions, nodeById, positions.get(selected.id))) {
+    // The whole graph, not the drawn set: a stub's family can turn on the
+    // node the horizon is holding back (§16.3).
+    const everyNode = new Map(accepted.graph.nodes.map((node) => [node.id, node]));
+    for (const stub of makeStubs(cutEdges, positions, everyNode, positions.get(selected.id))) {
       viewport.append(stub);
       touches(stub.dataset.source, stub);
     }
@@ -1170,9 +1122,8 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
 
   const focusedPosition = selected ? positions.get(selected.id) : null;
   const fit = frameFit(nodes, positions, radii);
-  // A focused node is read at its own scale — the opening zoom-out is for
-  // finding your way in, not for reading. Unfocused, the view opens on the
-  // whole field, and the reader may zoom back past that to look around.
+  // A focused node is read at its own scale; unfocused, the view opens on
+  // the whole field.
   const transform = focusedPosition
     ? {x: VIEW_WIDTH / 2 - focusedPosition.x, y: VIEW_HEIGHT / 2 - focusedPosition.y, zoom: 1}
     : {x: fit.x, y: fit.y, zoom: fit.zoom};
@@ -1189,10 +1140,8 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
   paintSelection(selected, banner);
 }
 
-// The selection is expressed in exactly one place, so a field that was built
-// from scratch and a field that was only repainted cannot disagree about what
-// is selected — and neither has to draw the other's answer twice.
-// §16.2 A9: this is the field's focus feedback, and the whole of it.
+// §16.2 A9's focus feedback, and the only place it is expressed: a rebuilt
+// field and a repainted one cannot disagree about what is selected.
 function paintSelection(selected, banner) {
   const transform = currentTransform;
   if (!transform) return;
@@ -1216,9 +1165,7 @@ function paintSelection(selected, banner) {
       edgeGroup.classList.add("incident");
     }
   }
-  // A focus the field could not draw — an unknown id, or a node this field
-  // does not hold — leaves the picture whole, rather than receding all of it
-  // against nothing.
+  // A focus the field could not draw leaves the picture whole.
   transform.viewport.classList.toggle("has-selection", group !== null);
   for (const stale of main.querySelectorAll(".banner")) stale.remove();
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
@@ -1228,12 +1175,9 @@ function paintSelection(selected, banner) {
   if (group && focusOrphaned()) group.focus({preventScroll: true});
 }
 
-// Changing focus does not change the picture — only which part of it the
-// reader is standing in. When the drawn set, the lens and the token sheet are
-// the ones already on screen, the field is repainted rather than rebuilt: no
-// settling, no blank stage, no second identical tree. currentTransform is
-// non-null only after a render completed and while none is in flight
-// (resetScreen is the sole writer of null), so it is its own generation guard.
+// Same drawn set, same lens, same token sheet: repaint rather than rebuild.
+// currentTransform is non-null only after a completed render and while none
+// is in flight (resetScreen is its sole writer of null), so it guards itself.
 function repaintSelection(key, selected, banner, cutEdges) {
   const transform = currentTransform;
   if (!transform) return false;
@@ -1251,12 +1195,9 @@ function repaintSelection(key, selected, banner, cutEdges) {
   return true;
 }
 
-// Where the reader is standing is theirs, and so is where they are looking —
-// up to the point where it stops being readable. A selection inside an engaged
-// density tier is a plate whose own marks the view is not drawing (A11), so
-// the view returns to the node's own scale, the same camera a fresh address
-// lands on. Otherwise the picture holds still, and pans only if the selection
-// is off frame at all.
+// The camera is the reader's, up to the point where it stops being readable:
+// a selection inside an engaged density tier (A11) returns to the node's own
+// scale, and otherwise the picture only moves if the selection is off frame.
 function bringSelectionIntoFrame(transform, selected) {
   if (!selected) return;
   const position = transform.positions.get(selected.id);
@@ -1288,11 +1229,8 @@ function renderStatus() {
   if (!statusCounts) return;
   let copy = statusCounts.nodes + " nodes · " + statusCounts.edges + " edges in view";
   if (accepted.graph.generated_at) copy += " · as of " + accepted.graph.generated_at.slice(0, 10);
-  // #99: the horizon says how far the reader is looking, never how much is
-  // left. A running count of what lies ahead is a progress reading in a
-  // system that refuses them (§3, §4) — "1,938 more" is a backlog, not a
-  // fact about the field. The words say the field goes on; the stubs on the
-  // cut edges say where it goes on, which is the honest half.
+  // #99: words, never a count — a running total of what lies ahead is a
+  // progress reading (§3, §4).
   if (fieldContinuesPastHorizon) copy += " · the field continues past the focus horizon — widen it to see further";
   const dropped = currentTransform && currentTransform.dropped ? currentTransform.dropped : [];
   if (dropped.length) copy += " · not drawn at this density: " + dropped.join(", ") + " — open a node to read them";
@@ -1454,19 +1392,15 @@ function completeGlyphExtent(node, direction) {
   return extent;
 }
 
-// One pair of nodes can carry several edges — a concept may both relate_to
-// and demonstrate another, and each says a different thing. Drawn on the one
-// axis they stack exactly, and the field shows a single claim where the graph
-// holds two. Each edge of such a pair takes its own lane along the shared
-// normal. A lane is a slot for telling strokes apart, never a weight and
-// never a rank: the order is the edge's own (type, source, target), so the
-// same graph lands the same picture (§27.8, A3).
+// Several edges between one pair stack exactly on the shared axis. Each takes
+// its own lane — a slot for telling strokes apart, never a weight or a rank
+// (A3) — ordered by (type, source, target), so the picture is seeded (§27.8).
 function edgeLanes(edges) {
   const groups = new Map();
   for (const edge of edges) {
     const key = edge.source < edge.target
-      ? edge.source + " " + edge.target
-      : edge.target + " " + edge.source;
+      ? edge.source + "\0" + edge.target
+      : edge.target + "\0" + edge.source;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(edge);
   }
@@ -1477,8 +1411,8 @@ function edgeLanes(edges) {
       continue;
     }
     const ordered = [...group].sort((left, right) => {
-      const leftKey = left.type + " " + left.source + " " + left.target;
-      const rightKey = right.type + " " + right.source + " " + right.target;
+      const leftKey = left.type + "\0" + left.source + "\0" + left.target;
+      const rightKey = right.type + "\0" + right.source + "\0" + right.target;
       return leftKey < rightKey ? -1 : (leftKey > rightKey ? 1 : 0);
     });
     ordered.forEach((edge, index) => {
@@ -1496,11 +1430,12 @@ function makeEdge(edge, positions, nodeById, lane) {
   // readable without leaving rail-sized gaps on the opposite side.
   const rawAxis = edgeAxis(source, target);
   if (rawAxis && lane) {
-    // A parallel translation: the approach direction is unchanged, so the
-    // trims below stay valid and a laned end clears its plate by more, never
-    // less, than a centred one.
+    // A parallel translation, so the trims below stay valid. The normal is
+    // taken along the pair's own axis, low id to high: derived from the edge's
+    // direction, a reciprocal a→b / b→a pair would cancel back onto one offset.
     const spacing = tokenNumber("--edge-lane", 7);
-    const normal = {x: -rawAxis.unit.y, y: rawAxis.unit.x};
+    const sense = edge.source < edge.target ? 1 : -1;
+    const normal = {x: -rawAxis.unit.y * sense, y: rawAxis.unit.x * sense};
     source = offsetFrom(source, normal, lane * spacing);
     target = offsetFrom(target, normal, lane * spacing);
   }
@@ -1518,11 +1453,10 @@ function makeEdge(edge, positions, nodeById, lane) {
     }
   }
   const group = svgElement("g", "edge-group");
-  // The endpoints and the family ride the group so that a selection can be
-  // answered by restyling what is already drawn (§16.2 A9) instead of drawing
-  // it again. Family is written as data rather than a class because a family
-  // class on the group would inherit its dash down onto the invisible hit
-  // stroke, and a dashed hit stroke only answers the hand between the dashes.
+  // Endpoints and family ride the group so a selection restyles what is drawn
+  // (A9) instead of drawing it again. Family is data, not a class: a family
+  // class here would dash the invisible hit stroke, which would then only
+  // answer the hand between the dashes.
   group.dataset.source = edge.source;
   group.dataset.target = edge.target;
   group.dataset.family = edgeFamily(edge, nodeById);
@@ -1575,17 +1509,11 @@ function makeEdge(edge, positions, nodeById, lane) {
   return group;
 }
 
-// #99: "a shown boundary is a drawn boundary". An edge whose far end is past
-// the focus horizon used to be dropped with the node it led to, which left a
-// boundary node looking like a node that has no further relations — a bound on
-// the view reading as a bound in the graph. It is now drawn from its own plate
-// outward and simply stops: the same grammar as an unassessed weight (A3),
-// where silence is an open gap and never a mark of its own. The stub claims
-// nothing about where the far node lies, so it carries family and nothing
-// else — no arrowhead to point at an absent target, no weight tick, since the
-// midpoint that would carry one is not on screen; the relation stays in the
-// detail panel as words (A8). Order is fixed by id, so the fan is the same
-// picture on every render (§27.8).
+// #99: a bound on the view must not read as a bound in the graph, so an edge
+// cut by the horizon is drawn from its own plate outward and stops. It claims
+// nothing about the far node — family and nothing else, no arrowhead and no
+// weight tick, with the relation still named in the panel (A3, A5, A8). Order
+// is fixed by id, so the fan is the same picture on every render (§27.8).
 function makeStubs(cutEdges, positions, nodeById, focusPosition) {
   const byInside = new Map();
   for (const edge of cutEdges) {
@@ -1617,9 +1545,8 @@ function makeStubs(cutEdges, positions, nodeById, focusPosition) {
       };
       const trim = completeGlyphExtent(nodeById.get(insideId), unit) + 2;
       const group = svgElement("g", "edge-group edge-stub-group");
-      // Only the end that is on screen is named. The far id is what the
-      // horizon is holding back, and writing it into the drawn tree would be
-      // the stub saying the one thing it exists not to say (§16.3).
+      // Only the on-screen end is named: the far id is what the horizon is
+      // holding back (§16.3).
       group.dataset.source = insideId;
       group.dataset.family = edgeFamily(edge, nodeById);
       const line = svgElement("line", "edge-line edge-stub " + edgeClass(edge, nodeById));
@@ -1995,17 +1922,11 @@ function applyTransform(transform) {
   renderStatus();
 }
 
-// §16.2 A3: the dash carries edge family, so it has to survive being drawn.
-// It is the one mark whose cost grows with the picture rather than with the
-// mark: the period is in layout units, so a field held whole at a fiftieth of
-// its own size asks the browser for fifty times the dashes it can show, over
-// every edge at once — a quarter-second a frame, which reads as a picture that
-// has stopped answering the hand dragging it. Below zoom 1 the dash stops
-// shrinking with the picture and holds its own size, the same floor of screen
-// presence the plate outline keeps. At or above zoom 1 the authored period is
-// drawn exactly as §16.2 sets it, so every field small enough to open at its
-// own scale is untouched. Written only when it changes: a pan must not restyle
-// every edge in the field.
+// A3's dash has to survive being drawn: the period is in layout units, so a
+// field held whole at a fiftieth of its size asks for fifty times the dashes
+// it can show, on every edge — a quarter-second a frame. Below zoom 1 the dash
+// holds its own size; at or above it the authored period is exact. Written
+// only when it changes, so a pan does not restyle every edge.
 function applyDashScale(transform) {
   const scale = 1 / Math.min(1, transform.zoom);
   if (transform.dashScale === scale) return;
@@ -2045,12 +1966,9 @@ function installPanZoom(transform) {
     const y = (event.clientY - bounds.top) * VIEW_HEIGHT / bounds.height;
     zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, x, y);
   }, {passive: false});
-  // Nothing in the field moves relative to anything else — A10 keeps every
-  // position derived from the layout — so the whole picture is the only thing
-  // there is to take hold of, and a press anywhere takes hold of it. Requiring
-  // bare background made the gesture fail at random: an edge carries a 12px
-  // invisible hit stroke, and on a 420-node field those cover a fifth of the
-  // canvas, where a press did nothing whatever. Denser fields are worse.
+  // The whole picture is the only thing to take hold of, so a press anywhere
+  // takes hold of it: requiring bare background failed wherever an edge's 12px
+  // hit stroke lay, which on a dense field is most of the canvas.
   svg.addEventListener("pointerdown", (event) => {
     if (event.button > 0) return;
     drag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY};
@@ -2069,10 +1987,13 @@ function installPanZoom(transform) {
       svg.setPointerCapture(event.pointerId);
       svg.classList.add("dragging");
     }
-    transform.x += screenDx * VIEW_WIDTH / svg.clientWidth;
-    transform.y += screenDy * VIEW_HEIGHT / svg.clientHeight;
     drag.x = event.clientX;
     drag.y = event.clientY;
+    // Below the slop the picture holds still: a hand that shakes a pixel
+    // while clicking must not leave the camera somewhere new.
+    if (!moved) return;
+    transform.x += screenDx * VIEW_WIDTH / svg.clientWidth;
+    transform.y += screenDy * VIEW_HEIGHT / svg.clientHeight;
     applyTransform(transform);
   });
   const stopDrag = (event) => {
@@ -2087,7 +2008,10 @@ function installPanZoom(transform) {
   // node's own handler, so the two gestures never both fire.
   svg.addEventListener("click", (event) => {
     if (!moved) return;
-    event.stopPropagation();
+    // Immediate: the background handler below sits on this same element, so
+    // plain propagation still reaches it and a pan over bare ground would
+    // close the reader's selection.
+    event.stopImmediatePropagation();
     event.preventDefault();
     moved = false;
   }, true);

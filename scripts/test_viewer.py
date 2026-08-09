@@ -405,6 +405,14 @@ class ViewerBrowserTests(unittest.TestCase):
     # Colours are authored in oklch and getComputedStyle hands that back
     # verbatim, so contrast has to be measured through a canvas, which is the
     # one place the browser will resolve a colour to the bytes it paints.
+    # Each family recedes to the same quiet level, so each is measured with
+    # its own token: colour, its recession, and the floor they all answer to.
+    RECEDING_FAMILIES = [
+        ("--e-authored", "--recede-authored"),
+        ("--e-derived", "--recede-derived"),
+        ("--e-route", "--recede-route"),
+    ]
+
     CONTRAST_JS = """(names) => {
       const ctx = document.createElement("canvas")
         .getContext("2d", {willReadFrequently: true});
@@ -428,11 +436,12 @@ class ViewerBrowserTests(unittest.TestCase):
       const root = getComputedStyle(document.documentElement);
       const token = (name) => rgb(root.getPropertyValue(name).trim());
       const ground = token("--ground");
-      const alpha = Number(root.getPropertyValue("--edge-recede"));
-      const out = {alpha, rule: ratio(token("--rule"), ground), receded: {}};
-      for (const name of names) {
-        const fg = token(name);
-        out.receded[name] = ratio(
+      const out = {rule: ratio(token("--rule"), ground), receded: {}, alphas: {}};
+      for (const pair of names) {
+        const fg = token(pair[0]);
+        const alpha = Number(root.getPropertyValue(pair[1]));
+        out.alphas[pair[0]] = alpha;
+        out.receded[pair[0]] = ratio(
           fg.map((c, at) => alpha * c + (1 - alpha) * ground[at]), ground);
       }
       return out;
@@ -473,13 +482,27 @@ class ViewerBrowserTests(unittest.TestCase):
         # answers the hand, and the panel names every one of them in words (A8).
         receded = self.page.evaluate(
             """() => {
-                const group = [...document.querySelectorAll(
-                    "svg .edge-group:not(.incident)")].find(
-                    (g) => g.dataset.family !== "trail");
-                return getComputedStyle(
-                    group.querySelector(".edge-line")).strokeOpacity;
+                const root = getComputedStyle(document.documentElement);
+                const out = {};
+                for (const group of document.querySelectorAll(
+                        "svg .edge-group:not(.incident)")) {
+                    const family = group.dataset.family;
+                    if (family === "trail") continue;
+                    const token = family === "authored" ? "--recede-authored"
+                        : family === "route" ? "--recede-route"
+                        : "--recede-derived";
+                    out[family] = [
+                        getComputedStyle(
+                            group.querySelector(".edge-line")).strokeOpacity,
+                        String(Number(root.getPropertyValue(token)))];
+                }
+                return out;
             }""")
-        self.assertAlmostEqual(0.55, float(receded), places=2)
+        self.assertGreater(len(receded), 1)
+        for family, (drawn, authored) in receded.items():
+            self.assertEqual(
+                authored, str(round(float(drawn), 4)),
+                f"{family} does not recede to its own token")
         panel = self.page.locator("#details").inner_text()
         for named in ("concept:rest-api", "part:mdn-http-methods/idempotency"):
             self.assertIn(named, panel)
@@ -525,13 +548,134 @@ class ViewerBrowserTests(unittest.TestCase):
         # not receded, it has dropped — and dropping belongs to A11's fixed
         # order and to the focus horizon, never to a selection.
         self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
-        measured = self.page.evaluate(
-            self.CONTRAST_JS, ["--e-authored", "--e-derived", "--e-route"])
-        self.assertGreater(measured["alpha"], 0)
+        measured = self.page.evaluate(self.CONTRAST_JS, self.RECEDING_FAMILIES)
         for name, ratio in measured["receded"].items():
+            self.assertGreater(measured["alphas"][name], 0)
             self.assertGreaterEqual(
                 ratio, measured["rule"],
                 f"{name} recedes below --rule: {ratio:.2f} < {measured['rule']:.2f}")
+        # And they recede TO that level, not merely above it: one shared
+        # amount would leave the darkest family darker than an undimmed faint
+        # one, which is the reading failing to carry.
+        quiet = list(measured["receded"].values())
+        self.assertLess(max(quiet) - min(quiet), 0.25 * measured["rule"])
+
+    def test_the_emphasis_stands_down_under_forced_colours(self):
+        # The system palette has no rank below its own text, so there is no
+        # quieter level left that still clears the rule. Rather than break the
+        # floor the emphasis stops being drawn; the selection still answers
+        # through the ring and through the panel's words (A8).
+        self.context.close()
+        self.context = self.browser.new_context(forced_colors="active")
+        self.page = self.context.new_page()
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        self.assertEqual(
+            ["1"] * 3,
+            self.page.evaluate(
+                """() => {
+                    const root = getComputedStyle(document.documentElement);
+                    return ["--recede-authored", "--recede-derived",
+                            "--recede-route"].map(
+                        (name) => String(Number(root.getPropertyValue(name))));
+                }"""))
+        opacities = self.page.locator("svg .edge-group .edge-line").evaluate_all(
+            "lines => [...new Set(lines.map("
+            "(l) => getComputedStyle(l).strokeOpacity))]")
+        self.assertEqual(["1"], opacities)
+
+    def test_a_reciprocal_pair_of_relations_takes_two_lanes(self):
+        # a→b and b→a are both allowed, and each says its own thing. Drawn on
+        # the one axis they stack exactly and the field shows one claim where
+        # the graph holds two, so the lane offset is taken along the pair's own
+        # axis rather than along each edge's direction.
+        nodes = [
+            {"id": "concept:alpha", "type": "concept", "title": "Alpha",
+             "fields": ["knowledge"], "aliases": []},
+            {"id": "concept:beta", "type": "concept", "title": "Beta",
+             "fields": ["knowledge"], "aliases": []},
+        ]
+        edges = [
+            {"type": "prerequisite_of", "source": "concept:alpha",
+             "target": "concept:beta", "provenance": ["concept:alpha"],
+             "weight": "unassessed"},
+            {"type": "prerequisite_of", "source": "concept:beta",
+             "target": "concept:alpha", "provenance": ["concept:beta"],
+             "weight": "unassessed"},
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+        # Measured across the axis, not along it: differing end trims already
+        # move the two strokes lengthwise, and that is not a lane.
+        apart = self.page.evaluate(
+            """() => {
+                const centre = (id) => {
+                    const node = document.querySelector(
+                        `svg .node[data-node-id="${id}"]`);
+                    const [x, y] = node.getAttribute("transform")
+                        .match(/-?[\\d.]+/g).map(Number);
+                    return {x, y};
+                };
+                const a = centre("concept:alpha"), b = centre("concept:beta");
+                const span = Math.hypot(b.x - a.x, b.y - a.y);
+                const unit = {x: (b.x - a.x) / span, y: (b.y - a.y) / span};
+                const mids = [...document.querySelectorAll("svg .edge-group")]
+                    .map((group) => group.querySelector(".edge-line"))
+                    .map((line) => ({
+                        x: (line.x1.baseVal.value + line.x2.baseVal.value) / 2,
+                        y: (line.y1.baseVal.value + line.y2.baseVal.value) / 2
+                    }));
+                if (mids.length !== 2) return null;
+                const gap = {x: mids[1].x - mids[0].x, y: mids[1].y - mids[0].y};
+                const along = gap.x * unit.x + gap.y * unit.y;
+                return Math.hypot(gap.x - along * unit.x, gap.y - along * unit.y);
+            }""")
+        self.assertIsNotNone(apart, "expected exactly two drawn relations")
+        self.assertGreater(apart, 5)
+
+    def test_a_pan_over_bare_ground_keeps_the_selection(self):
+        # Taking hold of the picture is not letting go of the node: dragging
+        # the ground moves the camera and nothing else.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        moved = self.drag_ground(120, 60)
+        self.assertGreater(moved, 50)
+        self.page.wait_for_timeout(250)
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        self.assertEqual(1, self.page.locator("svg .viewport.has-selection").count())
+        self.assertFalse(self.page.locator("#details").is_hidden())
+
+    def test_a_press_that_shakes_leaves_the_camera_where_it_was(self):
+        # A hand wobbles a pixel or two on the way to a click. That is a press,
+        # so the picture holds still; otherwise every click nudges the field
+        # and the nudges accumulate.
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual(0.0, self.drag_ground(1, 1))
+        self.assertEqual(0.0, self.drag_ground(-2, 1))
+
+    DRAG_JS = """([dx, dy]) => {
+      const svg = document.querySelector("svg.graph-svg");
+      const before = document.querySelector(".viewport").getAttribute("transform");
+      const box = svg.getBoundingClientRect();
+      const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+      const send = (kind, x, y) => svg.dispatchEvent(new PointerEvent(kind, {
+        pointerId: 1, clientX: x, clientY: y, bubbles: true, buttons: 1}));
+      send("pointerdown", cx, cy);
+      for (let step = 1; step <= 4; step += 1) {
+        send("pointermove", cx + dx * step / 4, cy + dy * step / 4);
+      }
+      send("pointerup", cx + dx, cy + dy);
+      svg.dispatchEvent(new MouseEvent("click", {
+        clientX: cx + dx, clientY: cy + dy, bubbles: true}));
+      const after = document.querySelector(".viewport").getAttribute("transform");
+      const read = (value) => value.match(/-?[\\d.]+/g).map(Number);
+      const [ax, ay] = read(after), [bx, by] = read(before);
+      return Math.abs(ax - bx) + Math.abs(ay - by);
+    }"""
+
+    def drag_ground(self, dx, dy):
+        """Drag from the middle of the canvas; answer how far the camera went."""
+        return self.page.evaluate(self.DRAG_JS, [dx, dy])
 
     # A layout is the one thing on this screen that costs real time, so the
     # tests below watch for it directly: every LAYOUT the viewer enters is
