@@ -665,92 +665,136 @@ function layoutRadii(sorted) {
   return new Map(sorted.map((node) => [node.id, layoutRadius(node)]));
 }
 
+// Settling a field is a pair problem: every node against every other, once per
+// iteration. At §25.8's ceiling that is two hundred million visits, and a Map
+// lookup and a point object on each of them was most of what a reader waited
+// through to open a large field. The arithmetic below is unchanged and runs in
+// the same order — the same graph still settles into the same picture (§27.8);
+// only the container changed. Positions return to the Map the rest of the
+// renderer speaks once the layout is done.
+function layoutBuffer(sorted, positions, radii, edges) {
+  const count = sorted.length;
+  const index = new Map();
+  const x = new Float64Array(count);
+  const y = new Float64Array(count);
+  const radius = new Float64Array(count);
+  sorted.forEach((node, at) => {
+    const position = positions.get(node.id);
+    index.set(node.id, at);
+    x[at] = position.x;
+    y[at] = position.y;
+    radius[at] = radii.get(node.id);
+  });
+  const springs = [];
+  for (const edge of edges) {
+    const source = index.get(edge.source);
+    const target = index.get(edge.target);
+    if (source === undefined || target === undefined) continue;
+    springs.push(source, target);
+  }
+  return {
+    count,
+    x,
+    y,
+    radius,
+    springs: Int32Array.from(springs),
+    forceX: new Float64Array(count),
+    forceY: new Float64Array(count),
+    writeBack() {
+      sorted.forEach((node, at) => {
+        const position = positions.get(node.id);
+        position.x = x[at];
+        position.y = y[at];
+      });
+    }
+  };
+}
+
 // Cooling: the step ceiling falls with the temperature so early iterations
 // untangle and late ones settle instead of wandering. Seeded and clamped, so
 // the same graph still resolves to the same picture (§27.8).
-function layoutIteration(sorted, positions, edges, radii, restGap, temperature) {
-  const force = new Map(sorted.map((node) => [node.id, {x: 0, y: 0}]));
-  for (let leftIndex = 0; leftIndex < sorted.length; leftIndex += 1) {
-    const left = positions.get(sorted[leftIndex].id);
-    const leftRadius = radii.get(sorted[leftIndex].id);
-    for (let rightIndex = leftIndex + 1; rightIndex < sorted.length; rightIndex += 1) {
-      const right = positions.get(sorted[rightIndex].id);
-      let dx = right.x - left.x;
-      let dy = right.y - left.y;
+function layoutIteration(buffer, restGap, temperature) {
+  const {count, x, y, radius, springs, forceX, forceY} = buffer;
+  forceX.fill(0);
+  forceY.fill(0);
+  for (let left = 0; left < count; left += 1) {
+    const leftX = x[left];
+    const leftY = y[left];
+    const leftRadius = radius[left];
+    for (let right = left + 1; right < count; right += 1) {
+      let dx = x[right] - leftX;
+      let dy = y[right] - leftY;
       let distanceSquared = dx * dx + dy * dy;
       if (distanceSquared < 0.01) {
-        dx = 0.1 + leftIndex * 0.001;
-        dy = 0.1 + rightIndex * 0.001;
+        dx = 0.1 + left * 0.001;
+        dy = 0.1 + right * 0.001;
         distanceSquared = dx * dx + dy * dy;
       }
       const distance = Math.sqrt(distanceSquared);
       // Repulsion sized for plate-scale nodes (#98): weakly connected nodes
       // must clear a full plate-and-rail footprint, not the old 7-unit dot.
       // Scaling by the pair's own clearance keeps that true for every kind.
-      const clearance = leftRadius + radii.get(sorted[rightIndex].id);
+      const clearance = leftRadius + radius[right];
       const magnitude = 3 * clearance * clearance / distanceSquared;
       const fx = magnitude * dx / distance;
       const fy = magnitude * dy / distance;
-      force.get(sorted[leftIndex].id).x -= fx;
-      force.get(sorted[leftIndex].id).y -= fy;
-      force.get(sorted[rightIndex].id).x += fx;
-      force.get(sorted[rightIndex].id).y += fy;
+      forceX[left] -= fx;
+      forceY[left] -= fy;
+      forceX[right] += fx;
+      forceY[right] += fy;
     }
   }
-  for (const edge of edges) {
-    const source = positions.get(edge.source);
-    const target = positions.get(edge.target);
-    if (!source || !target) continue;
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
+  for (let at = 0; at < springs.length; at += 2) {
+    const source = springs[at];
+    const target = springs[at + 1];
+    const dx = x[target] - x[source];
+    const dy = y[target] - y[source];
     const distance = Math.max(Math.sqrt(dx * dx + dy * dy), 0.1);
     // Rest length is both footprints plus one gap, so an edge between two big
     // plates does not drag them into each other's marks.
-    const rest = radii.get(edge.source) + radii.get(edge.target) + restGap;
+    const rest = radius[source] + radius[target] + restGap;
     const magnitude = (distance - rest) * 0.018;
     const fx = magnitude * dx / distance;
     const fy = magnitude * dy / distance;
-    force.get(edge.source).x += fx;
-    force.get(edge.source).y += fy;
-    force.get(edge.target).x -= fx;
-    force.get(edge.target).y -= fy;
+    forceX[source] += fx;
+    forceY[source] += fy;
+    forceX[target] -= fx;
+    forceY[target] -= fy;
   }
   const step = 8 * temperature;
-  for (const node of sorted) {
-    const position = positions.get(node.id);
-    const delta = force.get(node.id);
-    position.x += Math.max(-step, Math.min(step, delta.x * 0.08 - position.x * 0.004));
-    position.y += Math.max(-step, Math.min(step, delta.y * 0.08 - position.y * 0.004));
+  for (let at = 0; at < count; at += 1) {
+    x[at] += Math.max(-step, Math.min(step, forceX[at] * 0.08 - x[at] * 0.004));
+    y[at] += Math.max(-step, Math.min(step, forceY[at] * 0.08 - y[at] * 0.004));
   }
 }
 
 // The force loop leaves pairs that settled inside each other's marks; this
 // resolves what is left by pushing overlapping footprints apart along their
 // own axis. Visiting in id order keeps the correction seeded like the layout.
-function separationPass(sorted, positions, radii, gap) {
+function separationPass(buffer, gap) {
+  const {count, x, y, radius} = buffer;
   let moved = false;
-  for (let leftIndex = 0; leftIndex < sorted.length; leftIndex += 1) {
-    const left = positions.get(sorted[leftIndex].id);
-    const leftRadius = radii.get(sorted[leftIndex].id);
-    for (let rightIndex = leftIndex + 1; rightIndex < sorted.length; rightIndex += 1) {
-      const right = positions.get(sorted[rightIndex].id);
-      const minimum = leftRadius + radii.get(sorted[rightIndex].id) + gap;
-      let dx = right.x - left.x;
-      let dy = right.y - left.y;
+  for (let left = 0; left < count; left += 1) {
+    const leftRadius = radius[left];
+    for (let right = left + 1; right < count; right += 1) {
+      const minimum = leftRadius + radius[right] + gap;
+      // Read live: a push earlier in this pass has already moved both ends.
+      let dx = x[right] - x[left];
+      let dy = y[right] - y[left];
       let distance = Math.hypot(dx, dy);
       if (distance >= minimum) continue;
       if (distance < 0.01) {
         dx = 1;
-        dy = (leftIndex + rightIndex) % 2 === 0 ? 0.5 : -0.5;
+        dy = (left + right) % 2 === 0 ? 0.5 : -0.5;
         distance = Math.hypot(dx, dy);
       }
       const push = (minimum - distance) / 2;
       const ux = dx / distance;
       const uy = dy / distance;
-      left.x -= ux * push;
-      left.y -= uy * push;
-      right.x += ux * push;
-      right.y += uy * push;
+      x[left] -= ux * push;
+      y[left] -= uy * push;
+      x[right] += ux * push;
+      y[right] += uy * push;
       moved = true;
     }
   }
@@ -804,6 +848,7 @@ function iterationBudget(count) {
 async function calculateLayout(nodes, edges, generation) {
   const {sorted, positions} = initialPositions(nodes);
   const radii = layoutRadii(sorted);
+  const buffer = layoutBuffer(sorted, positions, radii, edges);
   const restGap = 2.8 * plateRadius();
   const iterations = iterationBudget(sorted.length);
   // Yield on elapsed time, not on a fixed iteration count: a frame-locked
@@ -813,7 +858,7 @@ async function calculateLayout(nodes, edges, generation) {
   let lastYield = performance.now();
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const temperature = Math.max(0.05, 1 - iteration / iterations);
-    layoutIteration(sorted, positions, edges, radii, restGap, temperature);
+    layoutIteration(buffer, restGap, temperature);
     if (performance.now() - lastYield > 8) {
       await nextFrame();
       if (generation !== renderGeneration) return null;
@@ -821,7 +866,7 @@ async function calculateLayout(nodes, edges, generation) {
     }
   }
   if (sorted.length === 0) return positions;
-  fitToFrame(sorted, positions);
+  fitToFrame(buffer);
   // Overlap is the one layout fault a reader cannot work around: two plates
   // in one place hide each other's state. It runs after the fit, whose scaling
   // only ever spreads a small field — a field larger than the frame keeps its
@@ -831,13 +876,14 @@ async function calculateLayout(nodes, edges, generation) {
   const separationGap = 0.6 * plateRadius();
   const separationPasses = sorted.length > 600 ? 4 : 24;
   for (let pass = 0; pass < separationPasses; pass += 1) {
-    if (!separationPass(sorted, positions, radii, separationGap)) break;
+    if (!separationPass(buffer, separationGap)) break;
     if (performance.now() - lastYield > 8) {
       await nextFrame();
       if (generation !== renderGeneration) return null;
       lastYield = performance.now();
     }
   }
+  buffer.writeBack();
   return positions;
 }
 
@@ -848,20 +894,24 @@ async function calculateLayout(nodes, edges, generation) {
 // each other. Growth only, and the frame-sized picture is reached by zoom
 // (frameFit) — that scales plate and gap together, so A10's fixed size per
 // kind class is never touched.
-function fitToFrame(sorted, positions) {
-  const xs = sorted.map((node) => positions.get(node.id).x);
-  const ys = sorted.map((node) => positions.get(node.id).y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
+function fitToFrame(buffer) {
+  const {count, x, y} = buffer;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let at = 0; at < count; at += 1) {
+    minX = Math.min(minX, x[at]);
+    maxX = Math.max(maxX, x[at]);
+    minY = Math.min(minY, y[at]);
+    maxY = Math.max(maxY, y[at]);
+  }
   const scale = Math.max(1, Math.min((VIEW_WIDTH - 110) / Math.max(maxX - minX, 1), (VIEW_HEIGHT - 100) / Math.max(maxY - minY, 1)));
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
-  for (const node of sorted) {
-    const position = positions.get(node.id);
-    position.x = VIEW_WIDTH / 2 + (position.x - centerX) * scale;
-    position.y = VIEW_HEIGHT / 2 + (position.y - centerY) * scale;
+  for (let at = 0; at < count; at += 1) {
+    x[at] = VIEW_WIDTH / 2 + (x[at] - centerX) * scale;
+    y[at] = VIEW_HEIGHT / 2 + (y[at] - centerY) * scale;
   }
 }
 
@@ -1654,6 +1704,7 @@ function renderedSvgScale(svg) {
 
 function applyTransform(transform) {
   transform.viewport.setAttribute("transform", "translate(" + transform.x.toFixed(3) + " " + transform.y.toFixed(3) + ") scale(" + transform.zoom.toFixed(5) + ")");
+  applyDashScale(transform);
   // §16.2 A11: channels drop whole and in the fixed order as density rises.
   // Density is the typical on-screen spacing — layout spacing × zoom × the
   // rendered-to-viewBox scale — so crowding, zoom, a narrow embed, and an open
@@ -1677,6 +1728,24 @@ function applyTransform(transform) {
   });
   transform.dropped = dropped;
   renderStatus();
+}
+
+// §16.2 A3: the dash carries edge family, so it has to survive being drawn.
+// It is the one mark whose cost grows with the picture rather than with the
+// mark: the period is in layout units, so a field held whole at a fiftieth of
+// its own size asks the browser for fifty times the dashes it can show, over
+// every edge at once — a quarter-second a frame, which reads as a picture that
+// has stopped answering the hand dragging it. Below zoom 1 the dash stops
+// shrinking with the picture and holds its own size, the same floor of screen
+// presence the plate outline keeps. At or above zoom 1 the authored period is
+// drawn exactly as §16.2 sets it, so every field small enough to open at its
+// own scale is untouched. Written only when it changes: a pan must not restyle
+// every edge in the field.
+function applyDashScale(transform) {
+  const scale = 1 / Math.min(1, transform.zoom);
+  if (transform.dashScale === scale) return;
+  transform.dashScale = scale;
+  transform.viewport.style.setProperty("--dash-scale", scale.toFixed(4));
 }
 
 function installDensityResize(transform) {

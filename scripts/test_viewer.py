@@ -470,6 +470,85 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(0, geometry["outside"])
         self.assertEqual(0, geometry["overlaps"])
 
+    def wide_route_field(self):
+        # A path long enough to open wider than the frame, carrying one route
+        # edge so a dashed family is on screen. §20.3 canonical order sorts by
+        # type first, so every related_to precedes the suggested_next.
+        nodes = [
+            {"id": f"concept:n{index:03d}", "type": "concept",
+             "title": f"N{index:03d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(140)
+        ]
+        nodes.append({
+            "id": "suggested-route:wide", "type": "suggested_route",
+            "title": "Wide route", "status": "available",
+            "source_plan": "plan:wide", "fields": ["knowledge"],
+        })
+        nodes.append({
+            "id": "plan:wide", "type": "plan", "title": "Wide plan",
+            "fields": ["knowledge"],
+        })
+        edges = [
+            {"source": f"concept:n{index:03d}",
+             "target": f"concept:n{index + 1:03d}",
+             "type": "related_to", "provenance": [f"concept:n{index:03d}"],
+             "weight": "unassessed"}
+            for index in range(140 - 1)
+        ]
+        edges.append({
+            "source": "concept:n000", "target": "concept:n139",
+            "type": "suggested_next", "provenance": ["suggested-route:wide"],
+            "context": "suggested-route:wide",
+        })
+        return self.graph_envelope(nodes=nodes, edges=edges)
+
+    def measured_dash(self):
+        return self.page.evaluate(
+            """() => {
+                const viewport = document.querySelector("svg .viewport");
+                const route = document.querySelector("svg .edge-route");
+                return {
+                    zoom: Number(viewport.getAttribute("transform")
+                        .match(/scale\\(([\\d.]+)\\)/)[1]),
+                    scale: Number(getComputedStyle(viewport)
+                        .getPropertyValue("--dash-scale")),
+                    dash: getComputedStyle(route).strokeDasharray
+                        .match(/[\\d.]+/g).map(Number),
+                };
+            }"""
+        )
+
+    def test_a_field_at_its_own_scale_draws_the_authored_dash(self):
+        # §16.2 A3 sets the route period at 4 on, 3 off. A field that opens at
+        # zoom 1 draws exactly that — the screen floor below only ever grows a
+        # dash, so every field small enough to open whole is untouched by it.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field", "FIELD")
+        measured = self.measured_dash()
+        self.assertEqual(1, measured["zoom"])
+        self.assertEqual(1, measured["scale"])
+        self.assertEqual([4, 3], measured["dash"])
+
+    def test_a_dash_stops_shrinking_once_the_picture_is_drawn_smaller(self):
+        # A dash carries edge family, and its period is in layout units: a
+        # field held whole at a fiftieth of its own size asks for fifty times
+        # the dashes it can show, on every edge at once. The family mark
+        # dissolves into a hairline, and the browser spends a quarter-second a
+        # frame drawing what cannot be seen — the picture stops answering the
+        # hand dragging it. Below zoom 1 the dash holds its own size instead,
+        # the same floor of screen presence the plate outline keeps.
+        self.write_graph(self.wide_route_field())
+        self.open_state("#mode=field", "FIELD")
+        measured = self.measured_dash()
+        self.assertLess(measured["zoom"], 1)
+        self.assertAlmostEqual(
+            1 / measured["zoom"], measured["scale"], places=3)
+        # The authored period, grown by that scale and nothing else.
+        self.assertAlmostEqual(
+            4 * measured["scale"], measured["dash"][0], places=2)
+        self.assertAlmostEqual(
+            3 * measured["scale"], measured["dash"][1], places=2)
+
     def test_focus_horizon_control_needs_a_focus(self):
         # The horizon is a reader control over a focused node, so it stays
         # inert — and says why — until there is one. It is not an address key:
