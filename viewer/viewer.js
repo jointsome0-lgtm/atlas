@@ -17,7 +17,7 @@ const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5;
 // Screen pixels a press may wander and still count as a press, not a pan.
 const DRAG_SLOP = 4;
-// The arrowhead's side in stroke-width units, before applyDashScale divides
+// The arrowhead's side in stroke-width units, before applyScreenScale divides
 // the stroke's low-zoom lift back out of it.
 const ARROW_UNITS = 6;
 const ROUTE_TYPES = new Set(["step_of_route", "suggested_next"]);
@@ -361,20 +361,26 @@ async function dispatch() {
   const nodes = accepted.graph.nodes.filter((node) => node.fields.includes(field) || (field === DEFAULT_FIELD && node.fields.length === 0));
   const ids = new Set(nodes.map((node) => node.id));
   const edges = accepted.graph.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
-  setHorizonControl(selected !== null);
   const horizon = selected === null ? null : horizonHops();
   const view = horizon === null
     ? {nodes, edges, cut: [], continues: false}
     : neighbourhood(nodes, edges, selected, horizon);
-  fieldContinuesPastHorizon = view.continues;
   // §25.8's fallback line counts nodes *in view*, and a horizon is what is
   // in view.
   const pastCeiling = view.nodes.length > RENDER_NODE_LINK_CEILING;
+  const listing = pastCeiling || viewMode === "list";
   setLensControls(pastCeiling);
-  if (pastCeiling || viewMode === "list") {
-    renderList(field, view.nodes, view.edges, selected, banner, pastCeiling);
+  setHorizonControl(selected !== null, listing);
+  if (listing) {
+    // §16.3 bounds the node-link view alone. The list is A11's fallback and
+    // carries the field's own channels as columns, so a hop radius must not
+    // thin it — a cut relation has a stub in the picture and would have
+    // nothing here.
+    fieldContinuesPastHorizon = false;
+    renderList(field, nodes, edges, selected, banner, pastCeiling);
     return;
   }
+  fieldContinuesPastHorizon = view.continues;
   await renderField(field, view.nodes, view.edges, selected, banner, view.cut);
 }
 
@@ -392,9 +398,10 @@ function setLensControls(pastCeiling) {
 
 // A reader control, not an address: §16.4's fragment carries mode, focus and
 // field, and an extra key there would be a contract edit.
-function setHorizonControl(focused) {
-  horizonSelect.disabled = !focused;
-  if (focused) horizonSelect.removeAttribute("title");
+function setHorizonControl(focused, listing) {
+  horizonSelect.disabled = !focused || listing;
+  if (listing) horizonSelect.title = "The list carries the whole field";
+  else if (focused) horizonSelect.removeAttribute("title");
   else horizonSelect.title = "Open a node to look around it";
 }
 
@@ -1899,7 +1906,7 @@ function renderedSvgScale(svg) {
 
 function applyTransform(transform) {
   transform.viewport.setAttribute("transform", "translate(" + transform.x.toFixed(3) + " " + transform.y.toFixed(3) + ") scale(" + transform.zoom.toFixed(5) + ")");
-  applyDashScale(transform);
+  applyScreenScale(transform);
   // §16.2 A11: channels drop whole and in the fixed order as density rises.
   // Density is the typical on-screen spacing — layout spacing × zoom × the
   // rendered-to-viewBox scale — so crowding, zoom, a narrow embed, and an open
@@ -1928,17 +1935,24 @@ function applyTransform(transform) {
 // A3's dash has to survive being drawn: the period is in layout units, so a
 // field held whole at a fiftieth of its size asks for fifty times the dashes
 // it can show, on every edge — a quarter-second a frame. Below zoom 1 the dash
-// holds its own size; at or above it the authored period is exact. Written
-// only when it changes, so a pan does not restyle every edge.
-function applyDashScale(transform) {
+// holds its own size; at or above it the authored period is exact.
+//
+// --screen-scale is the whole trip from a layout unit to a CSS pixel, camera
+// and frame together: the frame's own scale is what a narrow embed shrinks,
+// and a floor measured in screen pixels has to see it (§16.4). Both are
+// written only when they change, so a pan does not restyle every edge.
+function applyScreenScale(transform) {
   const scale = 1 / Math.min(1, transform.zoom);
-  if (transform.dashScale === scale) return;
+  const screen = transform.zoom * renderedSvgScale(transform.svg);
+  if (transform.dashScale === scale && transform.screenScale === screen) return;
   transform.dashScale = scale;
+  transform.screenScale = screen;
   transform.viewport.style.setProperty("--dash-scale", scale.toFixed(4));
+  transform.viewport.style.setProperty("--screen-scale", screen.toFixed(5));
   // The head is sized in stroke-width units, so the stroke's own floor would
   // multiply it by the same lift and a direction mark would outgrow the plate
   // it points at. The head keeps the picture's scale.
-  const lift = Math.max(1, tokenNumber("--edge-hairline", 0.6) * scale);
+  const lift = Math.max(1, tokenNumber("--edge-hairline", 0.58) / screen);
   const marker = document.getElementById("arrow");
   if (marker) {
     marker.setAttribute("markerWidth", (ARROW_UNITS / lift).toFixed(4));

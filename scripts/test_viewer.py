@@ -337,6 +337,24 @@ class ViewerBrowserTests(unittest.TestCase):
             "() => document.querySelectorAll('svg .node').length === 5")
         self.assertNotIn("concept:island", self.drawn_ids())
 
+    def test_the_list_carries_the_whole_field_past_a_horizon(self):
+        # §16.3 bounds the node-link view alone. The list is A11's fallback and
+        # carries the field's channels as columns, so a hop radius must not
+        # thin it: a cut relation has a stub in the picture and would have
+        # nothing at all here.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        self.page.locator("#horizon-select").select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector(".node-list-row")
+        self.assertEqual(8, self.page.locator(".node-list-row").count())
+        # A control that cannot act must not read as though it could.
+        self.assertTrue(self.page.locator("#horizon-select").is_disabled())
+        self.assertNotIn("past the focus horizon",
+                         self.page.locator("#status-bar").inner_text())
+
     def test_focus_horizon_walks_only_the_edges_in_view(self):
         # Hops are counted over what the reader can see: with routes hidden a
         # node joined only by a route step is not one hop away, because the
@@ -764,10 +782,10 @@ class ViewerBrowserTests(unittest.TestCase):
                 const withFloor = half();
                 // Neutralise the compensation and measure the same relation
                 // again: what a stroke that scaled with the picture would leave.
-                const written = viewport.style.getPropertyValue("--dash-scale");
-                viewport.style.setProperty("--dash-scale", "1");
+                const written = viewport.style.getPropertyValue("--screen-scale");
+                viewport.style.setProperty("--screen-scale", "1");
                 const scaled = half();
-                viewport.style.setProperty("--dash-scale", written);
+                viewport.style.setProperty("--screen-scale", written);
                 return {zoom, withFloor, scaled, onEdge: lands(0)};
             }""")
         self.assertLess(reach["zoom"], 1, "expected a field fitted by zoom")
@@ -836,6 +854,31 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertAlmostEqual(1.25, drawn["widths"]["edge-journal"] / base, 3)
         self.assertAlmostEqual(1.5, drawn["widths"]["edge-authored"] / base, 3)
         self.assertAlmostEqual(2.5, drawn["widths"]["edge-trail"] / base, 3)
+
+    def test_a_narrow_embed_keeps_the_floor_and_the_hit_band(self):
+        # The frame scales the picture as surely as the camera does (§16.4), so
+        # a floor measured in screen pixels has to see both: at half the frame
+        # a floor blind to it lands at half the presence it promised.
+        self.page.set_viewport_size({"width": 450, "height": 325})
+        self.open_state("#mode=field", "FIELD")
+        embed = self.page.evaluate(self.DRAWN_JS)
+        self.assertLess(embed["rendered"], 0.6, "expected a narrow frame")
+        thinnest = min(embed["widths"].values())
+        self.assertGreaterEqual(
+            thinnest * embed["zoom"] * embed["rendered"], 0.5)
+        band = self.page.evaluate(
+            """() => {
+                const hit = document.querySelector("svg .edge-hit");
+                const svg = document.querySelector("svg.graph-svg");
+                const rendered = Math.min(
+                    svg.getBoundingClientRect().width / svg.viewBox.baseVal.width,
+                    svg.getBoundingClientRect().height / svg.viewBox.baseVal.height);
+                const zoom = Number(document.querySelector(".viewport")
+                    .getAttribute("transform").match(/scale\\(([-\\d.]+)\\)/)[1]);
+                return Number.parseFloat(getComputedStyle(hit).strokeWidth)
+                    * zoom * rendered;
+            }""")
+        self.assertGreaterEqual(band, 11.5)
 
     def test_a_direction_mark_never_outgrows_the_plate_it_points_at(self):
         # The head is sized in stroke-width units, so the stroke's own lift

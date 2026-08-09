@@ -50,11 +50,14 @@
   /* set by the viewer to 1 / min(zoom, 1) — a dash keeps a floor of screen
      presence, since a family mark dissolved into a hairline carries no family */
   --dash-scale: 1;
-  /* and neither does a stroke: the screen presence the thinnest family keeps
-     once the picture is drawn smaller than itself. 0.6 is both the coverage
-     --e-route needs to carry --rule's contrast on --ground and the width the
-     140-node field already opens at. */
-  --edge-hairline: 0.6;
+  /* set by the viewer to zoom × the frame's own scale — a layout unit's whole
+     trip to a CSS pixel, so a floor in screen pixels sees a narrow embed too */
+  --screen-scale: 1;
+  /* and neither does a stroke: the CSS pixels of screen presence the thinnest
+     family keeps once the picture is drawn smaller than itself. Measured — the
+     coverage --e-route needs to carry --rule's contrast on --ground is 0.52,
+     and 0.58 is what the 140-node field already opens at. */
+  --edge-hairline: 0.58;
   --e-authored: oklch(0.45 0.012 250);
   --e-derived: oklch(0.66 0.01 250);
   --e-route: oklch(0.755 0.008 250);
@@ -745,7 +748,7 @@ aside {
   fill: none;
   stroke: var(--e-authored);
   stroke-linecap: round;
-  --edge-floor: max(1, var(--edge-hairline, 0.6) * var(--dash-scale));
+  --edge-floor: max(1, var(--edge-hairline, 0.58) / var(--screen-scale, 1));
   stroke-width: calc(1px * var(--edge-floor));
 }
 
@@ -797,11 +800,12 @@ aside {
 .edge-hit {
   fill: none;
   stroke: transparent;
-  /* A floor of screen presence, on the same --dash-scale the dash rides: a
-     field fitted by zoom would otherwise leave a hit band under a pixel wide.
-     Written into the width rather than as non-scaling-stroke, which Chromium
-     honours when painting but not when hit-testing. */
-  stroke-width: calc(12px * var(--dash-scale));
+  /* Twelve CSS pixels wherever the picture is smaller than itself, camera or
+     frame: a field fitted by zoom, or a narrow embed, would otherwise leave a
+     hit band under a pixel wide. Written into the width rather than as
+     non-scaling-stroke, which Chromium honours when painting but not when
+     hit-testing. Above its own scale the band grows with the stroke. */
+  stroke-width: calc(12px * max(1, 1 / var(--screen-scale, 1)));
   pointer-events: stroke;
 }
 
