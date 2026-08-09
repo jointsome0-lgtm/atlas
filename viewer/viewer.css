@@ -117,8 +117,10 @@
   --hairline: 0.75px;
   --cartouche-pad: 4px; /* field-undefined frame — a dash on a boundary is freshness (A4) */
   --label-gap: 4px; /* clearance between a label and the last drawn mark on its side */
-  /* label box estimate — mean glyph advance at --t-02 in --f-ui; measured per
-     string it would depend on font load order, and the picture is seeded (§27.8) */
+  /* label box estimate — the base glyph advance at --t-02 in --f-ui; the
+     viewer widens it per glyph class (see LABEL_ADVANCE). Measured per string
+     it would depend on the font the reader resolves, and the picture is
+     seeded (§27.8) */
   --label-em: 5.8;
   --label-line: 13;
   --edge-lane: 7px; /* spacing between the strokes of one node pair */
@@ -128,10 +130,12 @@
   --edge-stub-fan: 1;
   /* presence a relation keeps while it is not the one picked: per family, so
      each lands *on* --rule's own contrast rather than a shared amount below
-     its own. Changing one means re-measuring it — the acceptance test does. */
+     its own. Measured over --page — the field's own surface, which is what a
+     relation paints on; the plates are the --ground above it. Changing one
+     means re-measuring it — the acceptance test does. */
   --recede-authored: 0.25;
-  --recede-derived: 0.40;
-  --recede-route: 0.55;
+  --recede-derived: 0.41;
+  --recede-route: 0.57;
 
   /* §16.2 A11 density tiers, as multiples of --plate-r: a channel drops when
      the typical on-screen node spacing falls under tier × plate radius. The
@@ -184,7 +188,7 @@
     --e-route: oklch(0.42 0.012 250);
     --trail: oklch(0.78 0.155 64);
     /* the same hairline floor, re-measured against this ground */
-    --recede-authored: 0.20;
+    --recede-authored: 0.21;
     --recede-derived: 0.36;
     --recede-route: 0.52;
     /* silence lightens against its ground rather than darkening, so an open

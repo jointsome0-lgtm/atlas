@@ -479,13 +479,22 @@ class ViewerBrowserTests(unittest.TestCase):
       const root = getComputedStyle(document.documentElement);
       const token = (name) => rgb(root.getPropertyValue(name).trim());
       const ground = token("--ground");
-      const out = {rule: ratio(token("--rule"), ground), receded: {}, alphas: {}};
+      // The threshold is what a rule carries on the surface a rule is drawn
+      // on; the recession is measured on the surface an edge is drawn on,
+      // read off the graph itself rather than named, so moving the field's
+      // background moves the measurement with it.
+      const surface = rgb(getComputedStyle(
+        document.querySelector("svg.graph-svg")).backgroundColor);
+      const out = {
+        rule: ratio(token("--rule"), ground), receded: {}, alphas: {},
+        surface: surface.join(","), ground: ground.join(","),
+      };
       for (const pair of names) {
         const fg = token(pair[0]);
         const alpha = Number(root.getPropertyValue(pair[1]));
         out.alphas[pair[0]] = alpha;
         out.receded[pair[0]] = ratio(
-          fg.map((c, at) => alpha * c + (1 - alpha) * ground[at]), ground);
+          fg.map((c, at) => alpha * c + (1 - alpha) * surface[at]), surface);
       }
       return out;
     }"""
@@ -593,8 +602,23 @@ class ViewerBrowserTests(unittest.TestCase):
         # faintest line this design draws on purpose. Below it the channel has
         # not receded, it has dropped — and dropping belongs to A11's fixed
         # order and to the focus horizon, never to a selection.
-        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        # Both palettes: the two surfaces sit on opposite sides of the ground
+        # in light and in dark, so an amount calibrated on one is calibrated on
+        # neither.
+        for scheme in ("light", "dark"):
+            with self.subTest(scheme=scheme):
+                self.context.close()
+                self.context = self.browser.new_context(color_scheme=scheme)
+                self.page = self.context.new_page()
+                self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+                self.assert_recession_clears_the_rule()
+
+    def assert_recession_clears_the_rule(self):
         measured = self.page.evaluate(self.CONTRAST_JS, self.RECEDING_FAMILIES)
+        # The field is not the panel: an edge paints on --page and the plates
+        # are the --ground above it, so a recession calibrated on --ground is
+        # calibrated on a surface no relation touches.
+        self.assertNotEqual(measured["ground"], measured["surface"])
         for name, ratio in measured["receded"].items():
             self.assertGreater(measured["alphas"][name], 0)
             self.assertGreaterEqual(
@@ -605,6 +629,63 @@ class ViewerBrowserTests(unittest.TestCase):
         # one, which is the reading failing to carry.
         quiet = list(measured["receded"].values())
         self.assertLess(max(quiet) - min(quiet), 0.25 * measured["rule"])
+
+    LABEL_INK_JS = """() => {
+      const svg = document.querySelector("svg.graph-svg");
+      const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return {left: r.left, right: r.right, top: r.top, bottom: r.bottom};
+      };
+      const hits = (a, b) => a.left < b.right && b.left < a.right
+        && a.top < b.bottom && b.top < a.bottom;
+      const drawn = [...svg.querySelectorAll(".node")].map((group) => ({
+        id: group.dataset.nodeId,
+        plate: rect(group.querySelector(".node-shape")),
+        label: rect(group.querySelector(".node-label")),
+      }));
+      const overlaps = [];
+      for (const label of drawn) {
+        for (const plate of drawn) {
+          if (label.id === plate.id) continue;
+          if (hits(label.label, plate.plate)) overlaps.push(label.id);
+        }
+      }
+      return {count: drawn.length, overlaps};
+    }"""
+
+    def wide_titled_field(self, title):
+        # A chain of eleven, which the seeded layout spreads far enough that
+        # every one of these labels has a free slot to be put in. So a label
+        # sitting on a plate here is the estimate being wrong and not the
+        # field being full — the sweep never drops a label, it falls back.
+        nodes = [
+            {"id": f"concept:w{index:02d}", "type": "concept",
+             "title": title, "fields": ["knowledge"], "aliases": []}
+            for index in range(11)
+        ]
+        edges = [
+            {"source": f"concept:w{index:02d}",
+             "target": f"concept:w{index + 1:02d}",
+             "type": "related_to", "provenance": [f"concept:w{index:02d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+
+    def test_a_title_of_wide_glyphs_reserves_the_room_it_takes(self):
+        # The label box is estimated, never measured — the picture is seeded
+        # (§27.8) and a measured string would follow whichever font the reader
+        # resolves. But one mean advance per glyph is an estimate that only
+        # holds for mixed-case Latin: a title of full-width script, or of the
+        # widest Latin capitals, takes about twice it, and the sweep then
+        # accepts a slot the text runs straight out of and onto a plate.
+        for title in ("知识图谱与检索增强生成模型学习", "W" * 15):
+            with self.subTest(title=title):
+                self.wide_titled_field(title)
+                drawn = self.page.evaluate(self.LABEL_INK_JS)
+                self.assertEqual(11, drawn["count"])
+                self.assertEqual([], drawn["overlaps"])
 
     def test_the_emphasis_stands_down_under_forced_colours(self):
         # The system palette has no rank below its own text, so there is no

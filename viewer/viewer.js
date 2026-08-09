@@ -1013,6 +1013,33 @@ const LABEL_SLOTS = [
 // well before a field this dense. Node count only, so still seeded (§27.8).
 const LABEL_SWEEP_CEILING = 400;
 
+// Glyph advances for the label box, as fractions of the type size. Measuring
+// the string would be exact and would depend on the font the reader's machine
+// actually resolves, and the picture is seeded (§27.8) — so each glyph is
+// charged its class instead, and a class is an upper bound rather than a mean.
+// The mean is right for mixed-case Latin and understates a title of capitals
+// or of CJK by most of its width, and an understated box is a slot the sweep
+// accepts and the text then runs out of. Over-charging costs a slot further
+// down the list, never the label: the sweep falls back rather than drops.
+// First class that matches wins.
+const LABEL_ADVANCE = [
+  // full-width scripts and pictographs — an em box each, never averaged down
+  [/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}！-｠￠-￦]|\p{Extended_Pictographic}/u, 1.05],
+  // the widest Latin glyphs and the wide punctuation
+  [/[MWmw@#%&—–…]/u, 0.95],
+  [/\p{Lu}/u, 0.70],
+];
+
+function labelWidth(title, em, size) {
+  let width = 0;
+  // By code point, so a pictograph outside the basic plane is charged once.
+  for (const glyph of title) {
+    const advance = LABEL_ADVANCE.find(([match]) => match.test(glyph));
+    width += advance ? advance[1] * size : em;
+  }
+  return width;
+}
+
 function boxesIntersect(left, right) {
   return left.left < right.right && right.left < left.right
     && left.top < right.bottom && right.top < left.bottom;
@@ -1032,6 +1059,7 @@ function placeLabels(nodes, positions, radii) {
   const sorted = [...nodes].sort((left, right) => left.id < right.id ? -1 : (left.id > right.id ? 1 : 0));
   const gap = tokenNumber("--label-gap", 4);
   const em = tokenNumber("--label-em", 5.8);
+  const size = tokenNumber("--t-02", 11);
   const line = tokenNumber("--label-line", 13);
   const placements = new Map();
   const fallback = {side: "right", offset: 4};
@@ -1050,7 +1078,7 @@ function placeLabels(nodes, positions, radii) {
   for (const node of sorted) {
     const position = positions.get(node.id);
     const anchors = labelAnchors(node);
-    const width = displayTitle(node).length * em;
+    const width = labelWidth(displayTitle(node), em, size);
     let chosen = null;
     for (const slot of LABEL_SLOTS) {
       const offset = 4 + slot.row * line;
