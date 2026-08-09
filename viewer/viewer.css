@@ -122,6 +122,16 @@
      before it stops, and the angle its siblings fan across (radians) */
   --edge-stub: 14px;
   --edge-stub-fan: 1;
+  /* How much presence a relation keeps while it is not the one you picked.
+     A floor, never a fade to nothing: a receded relation is still drawn, and
+     omission belongs to A11's fixed order and to the focus horizon, never
+     here. The floor is the sheet's own hairline: no receded family may fall
+     below the contrast --rule already carries against --ground, that being
+     the faintest line this design draws on purpose. Measured, not guessed —
+     at 0.55 the faintest family lands at 1.49:1 light and 1.43:1 dark,
+     against --rule at 1.45:1 and 1.38:1. Moving this token means measuring
+     it again. */
+  --edge-recede: 0.55;
 
   /* §16.2 A11 density tiers, as multiples of --plate-r: a channel drops when
      the typical on-screen node spacing falls under tier × plate radius. The
@@ -795,6 +805,39 @@ aside {
   filter: drop-shadow(0 0 2px var(--focus));
 }
 
+/* §16.2 A9: the field's focus feedback, and the whole of it. Presence is taken
+   away from the relations the selection does not touch, never added to the
+   ones it does — colour, dash and width are byte-identical on both sides,
+   because they carry edge family and nothing else (A3), and no edge gains a
+   second mark (A5). Nothing here says anything about the graph; it says where
+   the reader is standing, and the panel says the same in words (A8).
+
+   stroke-opacity on the strokes, not opacity on the group: a group below full
+   opacity becomes its own transparency layer and is re-rasterised every frame,
+   which measured four times the cost of a pan — and a selection stands for as
+   long as the panel is open, so the hand would pay for the reading the whole
+   time. The channel is free here by construction: rev 1 moved edge weight off
+   stroke opacity onto a midpoint tick precisely to vacate it.
+
+   No transition. A9 grants exactly one, and it is the question pull's.
+
+   The trail never recedes (A7): a suggested route must never render brighter
+   than the trail it parallels, and a route touching the selection beside a
+   trail that does not is exactly that inversion. The real path stays lit. */
+.viewport.has-selection
+  .edge-group:not(.incident):not([data-family="trail"]) .edge-line,
+.viewport.has-selection
+  .edge-group:not(.incident):not([data-family="trail"]) .edge-weight {
+  stroke-opacity: var(--edge-recede);
+}
+
+/* Quiet, never gone: a receded relation still answers the hand with its own
+   stroke and its own label, so nothing is hidden from a reader who looks. */
+.viewport.has-selection .edge-group:not(.incident):hover .edge-line,
+.viewport.has-selection .edge-group:not(.incident):hover .edge-weight {
+  stroke-opacity: 1;
+}
+
 .edge-label {
   display: none;
   fill: var(--ink);
@@ -914,6 +957,18 @@ aside {
   stroke: var(--focus);
   stroke-width: 3;
   vector-effect: non-scaling-stroke;
+}
+
+/* Both rings are drawn on every plate and shown by state, so a change of
+   selection is a class on a tree that is already right rather than a reason
+   to build it again. */
+.selection-ring {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.node.selected .selection-ring {
+  opacity: 1;
 }
 
 .focus-ring {

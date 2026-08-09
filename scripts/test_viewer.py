@@ -402,6 +402,250 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(
             0, self.page.locator("svg .edge-stub.edge-route").count())
 
+    # Colours are authored in oklch and getComputedStyle hands that back
+    # verbatim, so contrast has to be measured through a canvas, which is the
+    # one place the browser will resolve a colour to the bytes it paints.
+    CONTRAST_JS = """(names) => {
+      const ctx = document.createElement("canvas")
+        .getContext("2d", {willReadFrequently: true});
+      const rgb = (value) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = "#000";
+        ctx.fillStyle = value;
+        ctx.fillRect(0, 0, 1, 1);
+        const d = ctx.getImageData(0, 0, 1, 1).data;
+        return [d[0], d[1], d[2]];
+      };
+      const lin = (c) => {
+        c /= 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      };
+      const lum = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+      const ratio = (a, b) => {
+        const pair = [lum(a), lum(b)].sort((x, y) => y - x);
+        return (pair[0] + 0.05) / (pair[1] + 0.05);
+      };
+      const root = getComputedStyle(document.documentElement);
+      const token = (name) => rgb(root.getPropertyValue(name).trim());
+      const ground = token("--ground");
+      const alpha = Number(root.getPropertyValue("--edge-recede"));
+      const out = {alpha, rule: ratio(token("--rule"), ground), receded: {}};
+      for (const name of names) {
+        const fg = token(name);
+        out.receded[name] = ratio(
+          fg.map((c, at) => alpha * c + (1 - alpha) * ground[at]), ground);
+      }
+      return out;
+    }"""
+
+    def edge_strokes(self):
+        return self.page.evaluate(
+            """() => [...document.querySelectorAll("svg .edge-line")].map((line) => {
+                const s = getComputedStyle(line);
+                return [s.stroke, s.strokeWidth, s.strokeDasharray,
+                        line.getAttribute("marker-end") || ""].join("|");
+            })""")
+
+    def incident_pairs(self):
+        return sorted(self.page.locator("svg .edge-group.incident").evaluate_all(
+            """groups => groups.map(
+                (g) => g.dataset.source + " " + (g.dataset.target || ""))"""))
+
+    def test_a_selection_answers_with_the_relations_that_touch_it(self):
+        # §16.2 A9's focus feedback: picking a node lights the relations it
+        # stands in by quieting the ones it does not, so the reader sees what
+        # they picked joined to something rather than a ring on one plate.
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual(0, self.page.locator("svg .viewport.has-selection").count())
+        self.assertEqual(0, self.page.locator("svg .edge-group.incident").count())
+
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        self.assertEqual(1, self.page.locator("svg .viewport.has-selection").count())
+        self.assertEqual(
+            ["concept:http-methods concept:rest-api",
+             "concept:http-methods question:demo-when-is-retry-safe",
+             "material:mdn-http-methods concept:http-methods",
+             "part:fastapi-tutorial/path-operations concept:http-methods",
+             "part:mdn-http-methods/idempotency concept:http-methods"],
+            self.incident_pairs())
+
+        # The quiet is a floor, not a disappearance: a receded relation still
+        # answers the hand, and the panel names every one of them in words (A8).
+        receded = self.page.evaluate(
+            """() => {
+                const group = [...document.querySelectorAll(
+                    "svg .edge-group:not(.incident)")].find(
+                    (g) => g.dataset.family !== "trail");
+                return getComputedStyle(
+                    group.querySelector(".edge-line")).strokeOpacity;
+            }""")
+        self.assertAlmostEqual(0.55, float(receded), places=2)
+        panel = self.page.locator("#details").inner_text()
+        for named in ("concept:rest-api", "part:mdn-http-methods/idempotency"):
+            self.assertIn(named, panel)
+
+        # Moving the selection moves the lit set with it, and clearing it
+        # returns the field whole.
+        self.page.locator("#close-details").click()
+        self.page.wait_for_selector("svg .viewport:not(.has-selection)")
+        self.assertEqual(0, self.page.locator("svg .edge-group.incident").count())
+
+    def test_the_emphasis_spends_no_family_channel(self):
+        # A3 tripwire: stroke colour, dash and width carry edge family and
+        # nothing else. Whatever a selection does to the picture, it may not
+        # touch them — element for element. The emphasis is switched on the
+        # standing picture rather than by opening a second address, so the
+        # camera is identical and only the emphasis differs.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        lit = self.edge_strokes()
+        self.page.evaluate(
+            """() => document.querySelector("svg .viewport")
+                .classList.remove("has-selection")""")
+        self.assertEqual(lit, self.edge_strokes())
+
+    def test_the_trail_never_recedes_behind_a_selection(self):
+        # A7: a suggested route never renders brighter than the trail it
+        # parallels. A route touching the selection beside a trail edge that
+        # does not is exactly that inversion, so the trail is exempt — the
+        # reader's real path is the one thing the looking never dims.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        trails = self.page.locator(
+            'svg .edge-group[data-family="trail"]:not(.incident)')
+        self.assertGreater(trails.count(), 0)
+        self.assertEqual(
+            ["1"] * trails.count(),
+            trails.evaluate_all(
+                """groups => groups.map((g) => getComputedStyle(
+                    g.querySelector(".edge-line")).strokeOpacity)"""))
+
+    def test_a_receded_relation_is_still_a_drawn_relation(self):
+        # The recession is bounded by the sheet's own hairline: no family may
+        # fall below the presence --rule already carries, that being the
+        # faintest line this design draws on purpose. Below it the channel has
+        # not receded, it has dropped — and dropping belongs to A11's fixed
+        # order and to the focus horizon, never to a selection.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        measured = self.page.evaluate(
+            self.CONTRAST_JS, ["--e-authored", "--e-derived", "--e-route"])
+        self.assertGreater(measured["alpha"], 0)
+        for name, ratio in measured["receded"].items():
+            self.assertGreaterEqual(
+                ratio, measured["rule"],
+                f"{name} recedes below --rule: {ratio:.2f} < {measured['rule']:.2f}")
+
+    # A layout is the one thing on this screen that costs real time, so the
+    # tests below watch for it directly: every LAYOUT the viewer enters is
+    # recorded, and the picture is compared plate by plate.
+    WATCH_JS = """() => {
+      window.__states = [];
+      window.__svg = document.querySelector("svg.graph-svg");
+      new MutationObserver((records) => {
+        for (const record of records) {
+          window.__states.push(document.querySelector("#main").dataset.state);
+        }
+      }).observe(document.querySelector("#main"),
+                 {attributes: true, attributeFilter: ["data-state"]});
+    }"""
+    PLATES_JS = """() => [...document.querySelectorAll("svg .node")].map(
+      (g) => g.dataset.nodeId + "@" + g.getAttribute("transform"))"""
+
+    def test_changing_focus_repaints_the_field_instead_of_solving_it_again(self):
+        # The same drawn set settles into the same picture every time (§27.8),
+        # so solving it again on a click is a reader waiting to be shown what
+        # they were already looking at. The picture is repainted: same tree,
+        # same coordinates, no LAYOUT, no blank stage.
+        self.open_state("#mode=field", "FIELD")
+        before = self.page.evaluate(self.PLATES_JS)
+        self.page.evaluate(self.WATCH_JS)
+        self.page.locator('svg .node[data-node-id="concept:idempotency"]').click()
+        self.page.wait_for_selector(
+            'svg .node.selected[data-node-id="concept:idempotency"]')
+        self.assertNotIn("LAYOUT", self.page.evaluate("() => window.__states"))
+        self.assertTrue(self.page.evaluate(
+            "() => window.__svg === document.querySelector('svg.graph-svg')"))
+        self.assertEqual(before, self.page.evaluate(self.PLATES_JS))
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        self.assertEqual(
+            "0",
+            self.page.locator("svg .node.selected").get_attribute("tabindex"))
+
+        # And again, onto a second node, from the panel's own relation list.
+        self.page.evaluate("() => { window.__states.length = 0; }")
+        self.page.locator("#details button", has_text="concept:redis").first.click()
+        self.page.wait_for_selector(
+            'svg .node.selected[data-node-id="concept:redis"]')
+        self.assertNotIn("LAYOUT", self.page.evaluate("() => window.__states"))
+        self.assertEqual(before, self.page.evaluate(self.PLATES_JS))
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+
+    def test_each_drawn_set_is_solved_once_and_then_remembered(self):
+        # The memo is keyed on what is drawn: a new drawn set is an honest
+        # miss and is solved, and every return to one already solved gives
+        # back the identical picture without solving it again — which is only
+        # ever the picture §27.8 would have produced anyway.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        horizon = self.page.locator("#horizon-select")
+        whole = self.page.evaluate(self.PLATES_JS)
+        self.page.evaluate(self.WATCH_JS)
+
+        # A narrower horizon is a drawn set nothing has solved yet.
+        horizon.select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        narrow = self.page.evaluate(self.PLATES_JS)
+        self.assertIn("LAYOUT", self.page.evaluate("() => window.__states"))
+
+        # Both directions now come back from the memo, unchanged.
+        for option, count, expected in (("all", 8, whole), ("1", 3, narrow)):
+            self.page.evaluate("() => { window.__states.length = 0; }")
+            horizon.select_option(option)
+            self.page.wait_for_function(
+                "() => document.querySelectorAll('svg .node').length === "
+                + str(count))
+            self.assertNotIn("LAYOUT", self.page.evaluate("() => window.__states"))
+            self.assertEqual(expected, self.page.evaluate(self.PLATES_JS))
+
+    def test_the_routes_lens_redraws_from_the_remembered_layout(self):
+        # The Routes lens keeps the layout and changes the drawn edges, so an
+        # equal memo key is not an equal picture across it. Without that guard
+        # a hidden route would stay on the screen.
+        self.open_state("#mode=field&focus=concept:idempotency", "FIELD")
+        before = self.page.evaluate(self.PLATES_JS)
+        drawn = self.page.locator("svg .edge-group").count()
+        self.page.evaluate(self.WATCH_JS)
+
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_selector("#main[data-state='FIELD']")
+        self.assertLess(self.page.locator("svg .edge-group").count(), drawn)
+        self.assertEqual(0, self.page.locator("svg .edge-line.edge-route").count())
+        self.assertNotIn("LAYOUT", self.page.evaluate("() => window.__states"))
+        self.assertEqual(before, self.page.evaluate(self.PLATES_JS))
+
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_selector("#main[data-state='FIELD']")
+        self.assertEqual(drawn, self.page.locator("svg .edge-group").count())
+        self.assertEqual(before, self.page.evaluate(self.PLATES_JS))
+
+    def test_the_emphasis_is_reachable_without_a_pointer(self):
+        # §27.8: every interaction is keyboard-reachable. The selection is the
+        # field's one tab stop, and stepping it from the panel moves the lit
+        # set with it — the same picture the mouse draws.
+        self.open_state("#mode=field&focus=concept:idempotency", "FIELD")
+        first = self.incident_pairs()
+        self.assertGreater(len(first), 0)
+        button = self.page.locator("#details button", has_text="concept:redis").first
+        button.focus()
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_selector('svg .node.selected[data-node-id="concept:redis"]')
+        second = self.incident_pairs()
+        self.assertNotEqual(first, second)
+        self.assertTrue(any("concept:redis" in pair for pair in second))
+        self.assertEqual(
+            "0", self.page.locator("svg .node.selected").get_attribute("tabindex"))
+        self.assertEqual(
+            1, self.page.locator('svg .node[tabindex="0"]').count())
+
     def hit_point(self, selector):
         # The centre of an element is only a usable press target if it is what
         # the pointer would actually land on — edges carry a wide invisible

@@ -852,6 +852,71 @@ function iterationBudget(count) {
   return Math.min(420, Math.max(120, Math.round(3600 / Math.sqrt(count))));
 }
 
+// Settling a field is deterministic: the same drawn set under the same token
+// sheet settles into the same picture, every time (§27.8). So solving it twice
+// is not caution, it is a reader waiting two seconds to be shown the picture
+// they were already looking at — which is what a click on a node used to cost.
+// The memo is view-time only: it lives in this tab, dies with it, and no second
+// reader can consult it, so nothing derived is stored (§31.8).
+//
+// EVERY INPUT calculateLayout READS MUST BE DECLARED IN layoutKey BELOW.
+// One that is not is a silently wrong picture, which is worse than a slow one.
+// Today those are: the drawn node set (the seed and ring radius come from the
+// ids), the drawn edge set in order, and the tokens layoutRadius reads through
+// plateRadius and railGeometry.
+const LAYOUT_MEMO_LIMIT = 4;
+const layoutMemo = new Map();
+let layoutOrdinals = null;
+
+// Ids are long and a field may carry many more edges than nodes, so the key is
+// written in ordinals into the accepted graph rather than in ids. Both drawn
+// arrays are order-preserving filters of it, so equal ordinals means equal
+// input — never a hash, whose collision would draw the wrong picture with no
+// symptom at all.
+function graphOrdinals() {
+  if (!layoutOrdinals) {
+    layoutOrdinals = {
+      node: new Map(accepted.graph.nodes.map((node, at) => [node.id, at])),
+      edge: new Map(accepted.graph.edges.map((edge, at) => [edge, at]))
+    };
+  }
+  return layoutOrdinals;
+}
+
+function layoutKey(field, nodes, edges) {
+  const ordinals = graphOrdinals();
+  const rails = railGeometry();
+  return [
+    field, plateRadius(), rails.gap, rails.width, rails.slotH, rails.pitch,
+    nodes.map((node) => ordinals.node.get(node.id)).join(","),
+    edges.map((edge) => ordinals.edge.get(edge)).join(",")
+  ].join("|");
+}
+
+function rememberLayout(key, nodes, positions) {
+  const entry = {
+    // Handed out by reference and never mutated by the renderer. When a hand
+    // moves a plate (#116) this entry is what it must write through or evict.
+    positions,
+    radii: layoutRadii(nodes),
+    spacing: typicalSpacing(nodes, positions)
+  };
+  layoutMemo.delete(key);
+  layoutMemo.set(key, entry);
+  while (layoutMemo.size > LAYOUT_MEMO_LIMIT) {
+    layoutMemo.delete(layoutMemo.keys().next().value);
+  }
+  return entry;
+}
+
+function recallLayout(key) {
+  const entry = layoutMemo.get(key);
+  if (!entry) return null;
+  layoutMemo.delete(key);
+  layoutMemo.set(key, entry);
+  return entry;
+}
+
 async function calculateLayout(nodes, edges, generation) {
   const {sorted, positions} = initialPositions(nodes);
   const radii = layoutRadii(sorted);
@@ -1044,15 +1109,25 @@ function placeLabels(nodes, positions, radii) {
 }
 
 async function renderField(field, nodes, edges, selected, banner, cutEdges = []) {
+  const key = layoutKey(field, nodes, edges);
+  if (repaintSelection(key, selected, banner, cutEdges)) return;
   resetScreen(field);
   const generation = renderGeneration;
   const renderedEdges = visibleEdges(edges);
-  setMainState("LAYOUT");
-  main.append(htmlElement("div", "layout-message", "Laying out " + nodes.length + " nodes…"));
   setStatus(nodes.length, renderedEdges.length);
-  const positions = await calculateLayout(nodes, edges, generation);
-  if (!positions || generation !== renderGeneration) return;
-  main.replaceChildren();
+  let layout = recallLayout(key);
+  if (!layout) {
+    setMainState("LAYOUT");
+    main.append(htmlElement("div", "layout-message", "Laying out " + nodes.length + " nodes…"));
+    const settled = await calculateLayout(nodes, edges, generation);
+    // An abandoned settling returns nothing, and half a settling is not a
+    // picture: it must never reach the memo, where it would be handed to the
+    // next reader as the answer.
+    if (!settled || generation !== renderGeneration) return;
+    layout = rememberLayout(key, nodes, settled);
+    main.replaceChildren();
+  }
+  const {positions, radii} = layout;
   setMainState("FIELD");
   const stage = htmlElement("div", "graph-stage");
   const svg = svgElement("svg", "graph-svg");
@@ -1066,23 +1141,31 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const lanes = edgeLanes(renderedEdges);
+  // Which relations touch which plate, kept as the drawn groups themselves:
+  // answering a selection is then a class on what is already on screen.
+  const incidence = new Map();
+  const touches = (id, group) => {
+    if (!incidence.has(id)) incidence.set(id, []);
+    incidence.get(id).push(group);
+  };
   for (const edge of renderedEdges) {
-    viewport.append(makeEdge(edge, positions, nodeById, lanes.get(edge)));
+    const group = makeEdge(edge, positions, nodeById, lanes.get(edge));
+    viewport.append(group);
+    touches(edge.source, group);
+    touches(edge.target, group);
   }
   if (selected && positions.has(selected.id)) {
     for (const stub of makeStubs(cutEdges, positions, nodeById, positions.get(selected.id))) {
       viewport.append(stub);
+      touches(stub.dataset.source, stub);
     }
   }
-  const radii = layoutRadii(nodes);
   const placements = placeLabels(nodes, positions, radii);
-  let selectedGroup = null;
+  const nodeGroups = new Map();
   for (const node of nodes) {
-    const group = makeNode(
-      node, positions.get(node.id), selected && selected.id === node.id,
-      placements.get(node.id));
+    const group = makeNode(node, positions.get(node.id), placements.get(node.id));
     viewport.append(group);
-    if (selected && selected.id === node.id) selectedGroup = group;
+    nodeGroups.set(node.id, group);
   }
 
   const focusedPosition = selected ? positions.get(selected.id) : null;
@@ -1094,15 +1177,101 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
     ? {x: VIEW_WIDTH / 2 - focusedPosition.x, y: VIEW_HEIGHT / 2 - focusedPosition.y, zoom: 1}
     : {x: fit.x, y: fit.y, zoom: fit.zoom};
   transform.minZoom = Math.min(ZOOM_MIN, fit.zoom);
-  transform.spacing = typicalSpacing(nodes, positions);
-  currentTransform = {svg, viewport, ...transform};
+  transform.spacing = layout.spacing;
+  currentTransform = {
+    svg, viewport, key, positions, nodeGroups, incidence, selectedId: null,
+    routes: routesToggle.checked, stubs: cutEdges.length > 0, ...transform
+  };
   applyTransform(currentTransform);
   installDensityResize(currentTransform);
   installPanZoom(currentTransform);
   installKeyboardPanZoom(stage, currentTransform);
+  paintSelection(selected, banner);
+}
+
+// The selection is expressed in exactly one place, so a field that was built
+// from scratch and a field that was only repainted cannot disagree about what
+// is selected — and neither has to draw the other's answer twice.
+// §16.2 A9: this is the field's focus feedback, and the whole of it.
+function paintSelection(selected, banner) {
+  const transform = currentTransform;
+  if (!transform) return;
+  const previous = transform.selectedId;
+  if (previous !== null) {
+    const stale = transform.nodeGroups.get(previous);
+    if (stale) {
+      stale.classList.remove("selected");
+      stale.setAttribute("tabindex", "-1");
+    }
+    for (const group of transform.incidence.get(previous) || []) {
+      group.classList.remove("incident");
+    }
+  }
+  const group = selected ? transform.nodeGroups.get(selected.id) || null : null;
+  transform.selectedId = group ? selected.id : null;
+  if (group) {
+    group.classList.add("selected");
+    group.setAttribute("tabindex", "0");
+    for (const edgeGroup of transform.incidence.get(selected.id) || []) {
+      edgeGroup.classList.add("incident");
+    }
+  }
+  // A focus the field could not draw — an unknown id, or a node this field
+  // does not hold — leaves the picture whole, rather than receding all of it
+  // against nothing.
+  transform.viewport.classList.toggle("has-selection", group !== null);
+  for (const stale of main.querySelectorAll(".banner")) stale.remove();
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
+  else closePanel();
   if (banner) appendBanner(banner.kind, banner.value);
-  if (selectedGroup && focusOrphaned()) selectedGroup.focus({preventScroll: true});
+  renderStatus();
+  if (group && focusOrphaned()) group.focus({preventScroll: true});
+}
+
+// Changing focus does not change the picture — only which part of it the
+// reader is standing in. When the drawn set, the lens and the token sheet are
+// the ones already on screen, the field is repainted rather than rebuilt: no
+// settling, no blank stage, no second identical tree. currentTransform is
+// non-null only after a render completed and while none is in flight
+// (resetScreen is the sole writer of null), so it is its own generation guard.
+function repaintSelection(key, selected, banner, cutEdges) {
+  const transform = currentTransform;
+  if (!transform) return false;
+  if (main.dataset.state !== "FIELD") return false;
+  if (!transform.svg.isConnected) return false;
+  if (transform.key !== key) return false;
+  // The Routes lens keeps the layout and changes the drawn edges, so an equal
+  // key is not an equal picture across it.
+  if (transform.routes !== routesToggle.checked) return false;
+  // A stub fan aims away from the focus (#99), so two focuses over one reached
+  // set are two different pictures.
+  if (transform.stubs || cutEdges.length > 0) return false;
+  paintSelection(selected, banner);
+  bringSelectionIntoFrame(transform, selected);
+  return true;
+}
+
+// Where the reader is standing is theirs, and so is where they are looking —
+// up to the point where it stops being readable. A selection inside an engaged
+// density tier is a plate whose own marks the view is not drawing (A11), so
+// the view returns to the node's own scale, the same camera a fresh address
+// lands on. Otherwise the picture holds still, and pans only if the selection
+// is off frame at all.
+function bringSelectionIntoFrame(transform, selected) {
+  if (!selected) return;
+  const position = transform.positions.get(selected.id);
+  if (!position) return;
+  const margin = 3 * plateRadius();
+  const screenX = position.x * transform.zoom + transform.x;
+  const screenY = position.y * transform.zoom + transform.y;
+  const unreadable = (transform.dropped || []).length > 0;
+  const offFrame = screenX < margin || screenX > VIEW_WIDTH - margin
+    || screenY < margin || screenY > VIEW_HEIGHT - margin;
+  if (!unreadable && !offFrame) return;
+  if (unreadable) transform.zoom = 1;
+  transform.x = VIEW_WIDTH / 2 - position.x * transform.zoom;
+  transform.y = VIEW_HEIGHT / 2 - position.y * transform.zoom;
+  applyTransform(transform);
 }
 
 // §16.2: the Routes lens is coherent across surfaces — hidden routes leave
@@ -1195,12 +1364,16 @@ function isRouteEdge(edge, nodeById) {
   return target && target.type === "suggested_route";
 }
 
+function edgeFamily(edge, nodeById) {
+  if (isRouteEdge(edge, nodeById)) return "route";
+  if (TRAIL_TYPES.has(edge.type)) return "trail";
+  if (AUTHORED_TYPES.has(edge.type)) return "authored";
+  if (STRUCTURAL_TYPES.has(edge.type)) return "structural";
+  return "journal";
+}
+
 function edgeClass(edge, nodeById) {
-  if (isRouteEdge(edge, nodeById)) return EDGE_FAMILY_CLASSES.route;
-  if (TRAIL_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.trail;
-  if (AUTHORED_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.authored;
-  if (STRUCTURAL_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.structural;
-  return EDGE_FAMILY_CLASSES.journal;
+  return EDGE_FAMILY_CLASSES[edgeFamily(edge, nodeById)];
 }
 
 function setEnds(item, from, to) {
@@ -1345,6 +1518,14 @@ function makeEdge(edge, positions, nodeById, lane) {
     }
   }
   const group = svgElement("g", "edge-group");
+  // The endpoints and the family ride the group so that a selection can be
+  // answered by restyling what is already drawn (§16.2 A9) instead of drawing
+  // it again. Family is written as data rather than a class because a family
+  // class on the group would inherit its dash down onto the invisible hit
+  // stroke, and a dashed hit stroke only answers the hand between the dashes.
+  group.dataset.source = edge.source;
+  group.dataset.target = edge.target;
+  group.dataset.family = edgeFamily(edge, nodeById);
   const lineClass = "edge-line " + edgeClass(edge, nodeById);
   const hit = svgElement("line", "edge-hit");
   setEnds(hit, source, target);
@@ -1436,6 +1617,11 @@ function makeStubs(cutEdges, positions, nodeById, focusPosition) {
       };
       const trim = completeGlyphExtent(nodeById.get(insideId), unit) + 2;
       const group = svgElement("g", "edge-group edge-stub-group");
+      // Only the end that is on screen is named. The far id is what the
+      // horizon is holding back, and writing it into the drawn tree would be
+      // the stub saying the one thing it exists not to say (§16.3).
+      group.dataset.source = insideId;
+      group.dataset.family = edgeFamily(edge, nodeById);
       const line = svgElement("line", "edge-line edge-stub " + edgeClass(edge, nodeById));
       const from = offsetFrom(position, unit, trim);
       const to = offsetFrom(position, unit, trim + length);
@@ -1675,12 +1861,15 @@ function makeCartouche(leftExtent, rightExtent, halfHeight) {
     leftExtent + rightExtent + 2 * pad, 2 * (halfHeight + pad));
 }
 
-function makeNode(node, position, selected, placement) {
+// The selection is not baked in here. Every plate is drawn the same way and
+// the one that is selected is marked afterwards by paintSelection, so both
+// render paths build the identical tree and a change of focus never has to
+// rebuild one.
+function makeNode(node, position, placement) {
   const u = plateUnit();
   const entry = STATE_TYPES.has(node.type) ? accepted.graph.state[node.id] : undefined;
   const texture = STATE_TYPES.has(node.type) ? plateTexture(node, entry) : null;
   const classes = ["node", NODE_CLASSES[node.type]];
-  if (selected) classes.push("selected");
   if (node.fields.length === 0) classes.push("field-undefined");
   if (texture) classes.push("tx-" + texture);
   if (entry && entry.freshness) classes.push("fresh-" + entry.freshness);
@@ -1690,7 +1879,7 @@ function makeNode(node, position, selected, placement) {
   // Only the selection joins the tab order — near the 2,400-node ceiling a
   // per-node tab stop buries everything after the graph. The list lens is
   // the dense keyboard path; click-focus still works via tabindex="-1".
-  group.setAttribute("tabindex", selected ? "0" : "-1");
+  group.setAttribute("tabindex", "-1");
   group.dataset.nodeId = node.id;
   const accessible = svgElement("title");
   accessible.textContent = (node.title || node.id) + ", " + node.type.replaceAll("_", " ");
@@ -1700,11 +1889,9 @@ function makeNode(node, position, selected, placement) {
   const focusRing = svgElement("circle", "focus-ring");
   focusRing.setAttribute("r", (19 * u).toFixed(2));
   group.append(focusRing);
-  if (selected) {
-    const ring = svgElement("circle", "selection-ring");
-    ring.setAttribute("r", (15 * u).toFixed(2));
-    group.append(ring);
-  }
+  const ring = svgElement("circle", "selection-ring");
+  ring.setAttribute("r", (15 * u).toFixed(2));
+  group.append(ring);
   appendKindMarks(group, node);
   if (texture === "dot") {
     const dot = svgElement("circle", "plate-dot");
@@ -2275,6 +2462,10 @@ async function loadGraph() {
   } else {
     accepted = result;
     loadState = "ACCEPTED";
+    // A newly accepted graph must never draw on the previous one's
+    // coordinates, and the ordinals the memo keys on are its ordinals.
+    layoutMemo.clear();
+    layoutOrdinals = null;
   }
   await dispatch();
 }
