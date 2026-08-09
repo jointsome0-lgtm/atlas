@@ -370,7 +370,10 @@ async function dispatch() {
   const pastCeiling = view.nodes.length > RENDER_NODE_LINK_CEILING;
   const listing = pastCeiling || viewMode === "list";
   setLensControls(pastCeiling);
-  setHorizonControl(selected !== null, listing);
+  // Stood down only for a list the reader asked for. Past the ceiling the
+  // radius is the one control that can bring the field back under it, so a
+  // forced fallback must not be the state that takes it away.
+  setHorizonControl(selected !== null, viewMode === "list");
   if (listing) {
     // §16.3 bounds the node-link view alone. The list is A11's fallback and
     // carries the field's own channels as columns, so a hop radius must not
@@ -1381,12 +1384,26 @@ function rayRectExit(direction, left, top, right, bottom) {
 // mark on that ray. The primary shape keeps its conservative circumradius;
 // asymmetric payload dots and decision rails extend only the approaches that
 // actually cross them.
-function completeGlyphExtent(node, direction) {
+// How far a ray must run to leave everything the plate draws. The ray starts
+// at the node's centre unless a lane has moved it: an offset ray meets marks
+// the centre one misses, so the marks are shifted under it rather than the
+// centre extent reused (#117).
+function completeGlyphExtent(node, direction, offset = {x: 0, y: 0}) {
   const u = plateUnit();
-  let extent = radialExtent(node.type);
-  if (node.type === "question") extent = Math.max(extent, glyphExtent(node));
+  const shifted = (x, y) => [x - offset.x, y - offset.y];
+  let extent = rayCircleExit(
+    direction, ...shifted(0, 0), radialExtent(node.type),
+  ) ?? 0;
+  if (node.type === "question") {
+    const glyphExit = rayCircleExit(
+      direction, ...shifted(0, 0), glyphExtent(node),
+    );
+    if (glyphExit !== null) extent = Math.max(extent, glyphExit);
+  }
   if (node.sensitivity) {
-    const dotExit = rayCircleExit(direction, 8 * u, -8 * u, 2.5 * u);
+    const dotExit = rayCircleExit(
+      direction, ...shifted(8 * u, -8 * u), 2.5 * u,
+    );
     if (dotExit !== null) extent = Math.max(extent, dotExit);
   }
   const entry = STATE_TYPES.has(node.type)
@@ -1395,7 +1412,9 @@ function completeGlyphExtent(node, direction) {
   if (dimensions.length) {
     const bounds = railBounds(node, dimensions);
     const railExit = rayRectExit(
-      direction, bounds.left, bounds.top, bounds.right, bounds.bottom,
+      direction,
+      bounds.left - offset.x, bounds.top - offset.y,
+      bounds.right - offset.x, bounds.bottom - offset.y,
     );
     if (railExit !== null) extent = Math.max(extent, railExit);
   }
@@ -1439,23 +1458,25 @@ function makeEdge(edge, positions, nodeById, lane) {
   // glyph; ends stop at every mark on their approach ray so direction stays
   // readable without leaving rail-sized gaps on the opposite side.
   const rawAxis = edgeAxis(source, target);
+  let laneOffset = {x: 0, y: 0};
   if (rawAxis && lane) {
-    // A parallel translation, so the trims below stay valid. The normal is
-    // taken along the pair's own axis, low id to high: derived from the edge's
-    // direction, a reciprocal a→b / b→a pair would cancel back onto one offset.
+    // A parallel translation. The normal is taken along the pair's own axis,
+    // low id to high: derived from the edge's direction, a reciprocal a→b /
+    // b→a pair would cancel back onto one offset.
     const spacing = tokenNumber("--edge-lane", 7);
     const sense = edge.source < edge.target ? 1 : -1;
     const normal = {x: -rawAxis.unit.y * sense, y: rawAxis.unit.x * sense};
+    laneOffset = {x: normal.x * lane * spacing, y: normal.y * lane * spacing};
     source = offsetFrom(source, normal, lane * spacing);
     target = offsetFrom(target, normal, lane * spacing);
   }
   if (rawAxis) {
     const sourceTrim = completeGlyphExtent(
-      nodeById.get(edge.source), rawAxis.unit,
+      nodeById.get(edge.source), rawAxis.unit, laneOffset,
     ) + 2;
     const targetTrim = completeGlyphExtent(
       nodeById.get(edge.target),
-      {x: -rawAxis.unit.x, y: -rawAxis.unit.y},
+      {x: -rawAxis.unit.x, y: -rawAxis.unit.y}, laneOffset,
     ) + 2;
     if (rawAxis.length > sourceTrim + targetTrim + 8) {
       source = offsetFrom(source, rawAxis.unit, sourceTrim);
@@ -1953,6 +1974,12 @@ function applyScreenScale(transform) {
   // multiply it by the same lift and a direction mark would outgrow the plate
   // it points at. The head keeps the picture's scale.
   const lift = Math.max(1, tokenNumber("--edge-hairline", 0.58) / screen);
+  // A round cap runs half the stroke past its own endpoint, and the endpoints
+  // were trimmed to clear the plate at the width the field was solved at. Once
+  // the floor lifts the stroke the cap reaches back over the glyph — so where
+  // the floor is doing the work the cap is squared off, at widths where its
+  // shape is well under a pixel anyway.
+  transform.viewport.classList.toggle("floored", lift > 1);
   const marker = document.getElementById("arrow");
   if (marker) {
     marker.setAttribute("markerWidth", (ARROW_UNITS / lift).toFixed(4));

@@ -355,6 +355,31 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertNotIn("past the focus horizon",
                          self.page.locator("#status-bar").inner_text())
 
+    def test_a_horizon_can_bring_an_oversized_field_back_into_the_picture(self):
+        # Past the ceiling the list is forced, and the radius is the one
+        # control that can bring the field back under it. Standing it down
+        # there would shut the reader out of the node-link view for exactly
+        # the fields a bounded one serves best.
+        nodes = [
+            {"id": f"concept:n-{index}", "type": "concept",
+             "title": f"Node {index}", "fields": ["knowledge"], "aliases": []}
+            for index in range(2401)
+        ]
+        edges = [
+            {"source": "concept:n-0", "target": f"concept:n-{index}",
+             "type": "related_to", "provenance": ["concept:n-0"],
+             "weight": "unassessed"}
+            for index in range(1, 4)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field&focus=concept:n-0", "LIST")
+        horizon = self.page.locator("#horizon-select")
+        self.assertFalse(horizon.is_disabled())
+        horizon.select_option("1")
+        self.page.wait_for_selector("#main[data-state='FIELD']")
+        self.assertEqual(4, len(self.drawn_ids()))
+        self.assertFalse(self.page.locator("#graph-view").is_disabled())
+
     def test_focus_horizon_walks_only_the_edges_in_view(self):
         # Hops are counted over what the reader can see: with routes hidden a
         # node joined only by a route step is not one hop away, because the
@@ -601,6 +626,59 @@ class ViewerBrowserTests(unittest.TestCase):
             "lines => [...new Set(lines.map("
             "(l) => getComputedStyle(l).opacity))]")
         self.assertEqual(["1"], opacities)
+
+    LANE_TRIM_JS = """() => {
+      const centre = (id) => {
+        const [x, y] = document
+          .querySelector(`svg .node[data-node-id="${id}"]`)
+          .getAttribute("transform").match(/-?[\\d.]+/g).map(Number);
+        return {x, y};
+      };
+      const a = centre("concept:alpha"), b = centre("concept:beta");
+      const span = Math.hypot(b.x - a.x, b.y - a.y);
+      const unit = {x: (b.x - a.x) / span, y: (b.y - a.y) / span};
+      const along = (x, y) => (x - a.x) * unit.x + (y - a.y) * unit.y;
+      // How far along the pair's own axis each stroke starts, alpha's side,
+      // whichever way the relation points.
+      return [...document.querySelectorAll(".edge-group")].map((group) => {
+        const hit = group.querySelector(".edge-hit");
+        return Math.min(along(hit.x1.baseVal.value, hit.y1.baseVal.value),
+                        along(hit.x2.baseVal.value, hit.y2.baseVal.value));
+      });
+    }"""
+
+    def test_a_lane_is_trimmed_for_the_ray_it_actually_draws(self):
+        # The trim clears everything the plate draws along the ray. A lane has
+        # moved that ray off the centre, where it leaves the plate sooner and
+        # can meet a mark the centre ray passed by — so the marks move under
+        # the offset ray rather than the centre extent being reused.
+        nodes = [
+            {"id": "concept:alpha", "type": "concept", "title": "Alpha",
+             "fields": ["knowledge"], "aliases": []},
+            {"id": "concept:beta", "type": "concept", "title": "Beta",
+             "fields": ["knowledge"], "aliases": []},
+        ]
+        forward = {"type": "prerequisite_of", "source": "concept:alpha",
+                   "target": "concept:beta", "provenance": ["concept:alpha"],
+                   "weight": "unassessed"}
+        back = {"type": "prerequisite_of", "source": "concept:beta",
+                "target": "concept:alpha", "provenance": ["concept:beta"],
+                "weight": "unassessed"}
+
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=[forward]))
+        self.open_state("#mode=field", "FIELD")
+        centred = self.page.evaluate(self.LANE_TRIM_JS)
+        self.assertEqual(1, len(centred))
+
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=[forward, back]))
+        self.open_state("#mode=field", "FIELD")
+        laned = self.page.evaluate(self.LANE_TRIM_JS)
+        self.assertEqual(2, len(laned))
+        # A parallel offset cuts a chord, so an offset ray leaves the plate
+        # sooner than the centre one — reusing the centre extent would trim
+        # both the same and let the stroke run under whatever it passed.
+        for trim in laned:
+            self.assertGreater(centred[0] - trim, 0.2)
 
     def test_a_reciprocal_pair_of_relations_takes_two_lanes(self):
         # a→b and b→a are both allowed, and each says its own thing. Drawn on
@@ -879,6 +957,32 @@ class ViewerBrowserTests(unittest.TestCase):
                     * zoom * rendered;
             }""")
         self.assertGreaterEqual(band, 11.5)
+
+    def test_a_lifted_stroke_does_not_cap_back_over_the_plate(self):
+        # The endpoints were trimmed to clear the glyph at the width the field
+        # was solved at. A round cap runs half the stroke past its endpoint, so
+        # once the floor lifts the stroke the cap reaches back over the plate.
+        self.big_field(1400)
+        capped = self.page.evaluate(self.DRAWN_JS)
+        self.assertEqual(
+            "butt",
+            self.page.evaluate(
+                """() => getComputedStyle(
+                    document.querySelector("svg .edge-line")).strokeLinecap"""))
+        # And the reach a round cap would have had is real, not hypothetical:
+        # half the widest lifted stroke against the trim that cleared the plate.
+        self.assertGreater(max(capped["widths"].values()) / 2,
+                           capped["plate"] / 2 + 2)
+
+    def test_a_field_at_its_own_scale_keeps_its_round_caps(self):
+        # The squaring off belongs to the floor alone: a field that opens whole
+        # is drawn exactly as authored.
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual(
+            "round",
+            self.page.evaluate(
+                """() => getComputedStyle(
+                    document.querySelector("svg .edge-line")).strokeLinecap"""))
 
     def test_a_direction_mark_never_outgrows_the_plate_it_points_at(self):
         # The head is sized in stroke-width units, so the stroke's own lift

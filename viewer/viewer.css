@@ -797,6 +797,12 @@ aside {
   stroke-linecap: butt;
 }
 
+/* and while the floor is lifting the stroke, so is every relation: a round cap
+   would run half its lifted width back over the plate the trim cleared */
+.viewport.floored .edge-line {
+  stroke-linecap: butt;
+}
+
 .edge-hit {
   fill: none;
   stroke: transparent;
