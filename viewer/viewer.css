@@ -47,8 +47,9 @@
   --k-zone: oklch(0.52 0.06 196);
 
   /* edge families — colour, dash, and width carry family only (A3) */
-  /* set by the viewer to 1 / min(zoom, 1) — a dash keeps a floor of screen
-     presence, since a family mark dissolved into a hairline carries no family */
+  /* set by the viewer to 1 / min(1, --screen-scale) — a dash keeps a floor of
+     screen presence, since a family mark dissolved into a hairline carries no
+     family, and a narrow frame dissolves one as surely as the camera does */
   --dash-scale: 1;
   /* set by the viewer to zoom × the frame's own scale — a layout unit's whole
      trip to a CSS pixel, so a floor in screen pixels sees a narrow embed too */
@@ -58,6 +59,9 @@
      coverage --e-route needs to carry --rule's contrast on --ground is 0.52,
      and 0.58 is what the 140-node field already opens at. */
   --edge-hairline: 0.58;
+  /* A9's one transition: long enough that the quiet reads as settling rather
+     than as a repaint, short enough to be over before the hand moves on */
+  --focus-settle: 120ms;
   --e-authored: oklch(0.45 0.012 250);
   --e-derived: oklch(0.66 0.01 250);
   --e-route: oklch(0.755 0.008 250);
@@ -823,8 +827,9 @@ aside {
    group below full opacity is its own transparency layer and measured four
    times the cost of a pan. opacity rather than stroke-opacity because an
    arrowhead is a marker filled with context-stroke, which copies the paint
-   but not the stroke's own opacity. No transition — A9 grants one and it is
-   the question pull's. The trail is exempt (A7). */
+   but not the stroke's own opacity. A9 gives focus feedback the one transition
+   there is, and reduced motion collapses it to zero below. The trail is
+   exempt (A7). */
 .viewport.has-selection .edge-group:not(.incident) {
   --edge-recede: var(--recede-derived);
 }
@@ -839,6 +844,11 @@ aside {
 
 .viewport.has-selection .edge-group:not(.incident)[data-family="trail"] {
   --edge-recede: 1;
+}
+
+.edge-line,
+.edge-weight {
+  transition: opacity var(--focus-settle) ease;
 }
 
 .viewport.has-selection .edge-group:not(.incident) .edge-line,
@@ -1211,6 +1221,13 @@ aside {
   * {
     scroll-behavior: auto;
     transition-duration: 0s;
+  }
+
+  /* A9's transitions collapse to zero. Through the token, not the rule above:
+     that one is a universal selector and loses to any class that names its own
+     duration — the quiet then arrives already arrived. */
+  :root {
+    --focus-settle: 0s;
   }
 }
 

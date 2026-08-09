@@ -523,6 +523,9 @@ class ViewerBrowserTests(unittest.TestCase):
 
         # The quiet is a floor, not a disappearance: a receded relation still
         # answers the hand, and the panel names every one of them in words (A8).
+        # Read once the quiet has settled — A9 gives focus feedback the one
+        # transition there is, so the opacity is on its way for a moment.
+        self.page.wait_for_timeout(300)
         receded = self.page.evaluate(
             """() => {
                 const root = getComputedStyle(document.documentElement);
@@ -799,6 +802,8 @@ class ViewerBrowserTests(unittest.TestCase):
         # stroke's paint but not its opacity, so a recession spent on
         # stroke-opacity leaves bright heads scattered through the quiet.
         self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        # Read once A9's transition has settled.
+        self.page.wait_for_timeout(300)
         marked = self.page.evaluate(
             """() => {
                 const group = [...document.querySelectorAll(
@@ -1327,6 +1332,8 @@ class ViewerBrowserTests(unittest.TestCase):
                         .match(/scale\\(([\\d.]+)\\)/)[1]),
                     scale: Number(getComputedStyle(viewport)
                         .getPropertyValue("--dash-scale")),
+                    screen: Number(getComputedStyle(viewport)
+                        .getPropertyValue("--screen-scale")),
                     dash: getComputedStyle(route).strokeDasharray
                         .match(/[\\d.]+/g).map(Number),
                 };
@@ -1334,15 +1341,34 @@ class ViewerBrowserTests(unittest.TestCase):
         )
 
     def test_a_field_at_its_own_scale_draws_the_authored_dash(self):
-        # §16.2 A3 sets the route period at 4 on, 3 off. A field that opens at
-        # zoom 1 draws exactly that — the screen floor below only ever grows a
-        # dash, so every field small enough to open whole is untouched by it.
+        # §16.2 A3 sets the route period at 4 on, 3 off. A field drawn at least
+        # at its own size draws exactly that — the screen floor only ever grows
+        # a dash, so nothing the frame shows whole is touched by it. Its own
+        # size is the whole trip, camera and frame: a frame shorter than the
+        # field was authored for is already drawing it smaller.
+        self.page.set_viewport_size({"width": 1280, "height": 900})
         self.write_graph(self.chain_graph())
         self.open_state("#mode=field", "FIELD")
         measured = self.measured_dash()
         self.assertEqual(1, measured["zoom"])
+        self.assertGreaterEqual(measured["screen"], 1)
         self.assertEqual(1, measured["scale"])
         self.assertEqual([4, 3], measured["dash"])
+
+    def test_a_narrow_frame_holds_the_dash_up_on_its_own(self):
+        # The camera is not the only thing that draws the field smaller than
+        # itself: an embed narrower than the field was authored for shrinks the
+        # period with everything else, and a route dash blurred into a
+        # continuous stroke has stopped carrying family (A3, §16.4).
+        self.page.set_viewport_size({"width": 420, "height": 300})
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field", "FIELD")
+        measured = self.measured_dash()
+        self.assertLess(measured["screen"], 0.6, "expected a narrow frame")
+        self.assertAlmostEqual(
+            1 / measured["screen"], measured["scale"], places=3)
+        # On screen the period is the authored one, whatever the frame does.
+        self.assertGreater(measured["dash"][0] * measured["screen"], 3.5)
 
     def test_a_dash_stops_shrinking_once_the_picture_is_drawn_smaller(self):
         # A dash carries edge family, and its period is in layout units: a
@@ -1350,14 +1376,15 @@ class ViewerBrowserTests(unittest.TestCase):
         # the dashes it can show, on every edge at once. The family mark
         # dissolves into a hairline, and the browser spends a quarter-second a
         # frame drawing what cannot be seen — the picture stops answering the
-        # hand dragging it. Below zoom 1 the dash holds its own size instead,
-        # the same floor of screen presence the plate outline keeps.
+        # hand dragging it. Drawn smaller than itself the dash holds its own
+        # size instead, the same floor of screen presence the plate outline
+        # keeps.
         self.write_graph(self.wide_route_field())
         self.open_state("#mode=field", "FIELD")
         measured = self.measured_dash()
         self.assertLess(measured["zoom"], 1)
         self.assertAlmostEqual(
-            1 / measured["zoom"], measured["scale"], places=3)
+            1 / measured["screen"], measured["scale"], places=3)
         # The authored period, grown by that scale and nothing else.
         self.assertAlmostEqual(
             4 * measured["scale"], measured["dash"][0], places=2)
@@ -2124,6 +2151,21 @@ class ViewerBrowserTests(unittest.TestCase):
         self.page.keyboard.press("Escape")
         self.assertEqual("false", button.get_attribute("aria-expanded"))
         self.assertTrue(self.page.locator("#legend").is_hidden())
+
+    def test_the_quiet_settles_in_and_stands_still_under_reduced_motion(self):
+        # A9 gives focus feedback the one transition there is, so the relations
+        # that do not touch a selection settle rather than snap — and reduced
+        # motion collapses it to zero, where they are simply already quiet.
+        settle = """() => getComputedStyle(
+            document.querySelector("svg .edge-line")).transitionDuration"""
+        self.open_state("#mode=field", "FIELD")
+        self.assertNotEqual("0s", self.page.evaluate(settle))
+
+        self.context.close()
+        self.context = self.browser.new_context(reduced_motion="reduce")
+        self.page = self.context.new_page()
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual("0s", self.page.evaluate(settle))
 
     def test_reduced_motion_disables_question_animation(self):
         self.context.close()

@@ -1955,17 +1955,19 @@ function applyTransform(transform) {
 
 // A3's dash has to survive being drawn: the period is in layout units, so a
 // field held whole at a fiftieth of its size asks for fifty times the dashes
-// it can show, on every edge — a quarter-second a frame. Below zoom 1 the dash
-// holds its own size; at or above it the authored period is exact.
+// it can show, on every edge — a quarter-second a frame. Drawn smaller than
+// itself the dash holds its own size; at or above it the authored period is
+// exact.
 //
 // --screen-scale is the whole trip from a layout unit to a CSS pixel, camera
 // and frame together: the frame's own scale is what a narrow embed shrinks,
-// and a floor measured in screen pixels has to see it (§16.4). Both are
-// written only when they change, so a pan does not restyle every edge.
+// and every floor measured in screen pixels has to see it — the dash as much
+// as the stroke and the hit band (§16.4). Written only when it changes, so a
+// pan does not restyle every edge.
 function applyScreenScale(transform) {
-  const scale = 1 / Math.min(1, transform.zoom);
   const screen = transform.zoom * renderedSvgScale(transform.svg);
-  if (transform.dashScale === scale && transform.screenScale === screen) return;
+  if (transform.screenScale === screen) return;
+  const scale = 1 / Math.min(1, screen);
   transform.dashScale = scale;
   transform.screenScale = screen;
   transform.viewport.style.setProperty("--dash-scale", scale.toFixed(4));
