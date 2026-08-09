@@ -850,6 +850,20 @@ aside {
   --edge-recede: 1;
 }
 
+/* Where the floor is already lifting the stroke there is no room left under
+   it: a width below a pixel is coverage, and the recession multiplies that
+   coverage, so each amount — measured at the width the field was authored
+   for — would land the quieted family under the hairline the floor exists to
+   hold. Compensating in the width is not available either: the lift would
+   then have to differ per family and width carries family alone (A3). So
+   rather than break the floor the emphasis stands down, which is the answer
+   forced colours already get; the selection still answers through the ring
+   and through the panel's words (A8). Last of the four, so it takes the tie
+   with the per-family amounts above. */
+.viewport.floored.has-selection .edge-group:not(.incident) {
+  --edge-recede: 1;
+}
+
 .edge-line,
 .edge-weight {
   transition: opacity var(--focus-settle) ease;

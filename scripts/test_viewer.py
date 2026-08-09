@@ -1044,6 +1044,37 @@ class ViewerBrowserTests(unittest.TestCase):
             }""")
         self.assertGreaterEqual(band, 11.5)
 
+    def test_the_quiet_stands_down_where_the_floor_is_already_working(self):
+        # The floor lifts the thinnest family to the coverage --rule's contrast
+        # needs, and that coverage is the whole of it: below a pixel a stroke
+        # paints its own width, so a recession multiplying it lands the quieted
+        # family under the very floor. Compensating in the width is not open —
+        # the lift would differ per family and width carries family alone (A3).
+        # So the emphasis stands down instead, as it does under forced colours.
+        self.page.set_viewport_size({"width": 450, "height": 325})
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        self.assertEqual(1, self.page.locator("svg .viewport.floored.has-selection").count())
+        quiet = self.page.locator('svg .edge-group:not(.incident)')
+        self.assertGreater(quiet.count(), 0)
+        self.page.wait_for_timeout(300)
+        self.assertEqual(
+            ["1"] * quiet.count(),
+            quiet.evaluate_all(
+                """groups => groups.map((g) => getComputedStyle(
+                    g.querySelector(".edge-line")).opacity)"""))
+        # And it is the floor doing that, not the selection having stopped
+        # answering: at the field's own scale the same picture still quiets.
+        self.page.set_viewport_size({"width": 1280, "height": 900})
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        self.assertEqual(0, self.page.locator("svg .viewport.floored").count())
+        self.page.wait_for_timeout(300)
+        settled = quiet.evaluate_all(
+            """groups => groups.map((g) => Number(getComputedStyle(
+                g.querySelector(".edge-line")).opacity))""")
+        self.assertTrue(
+            any(value < 1 for value in settled),
+            f"nothing receded at the field's own scale: {settled}")
+
     def test_a_lifted_stroke_does_not_cap_back_over_the_plate(self):
         # The endpoints were trimmed to clear the glyph at the width the field
         # was solved at. A round cap runs half the stroke past its endpoint, so
