@@ -220,7 +220,9 @@ button {
 }
 
 .view-controls {
-  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 12px;
 }
 
 .identity {
@@ -256,6 +258,26 @@ button {
 
 .toggle-control input {
   accent-color: var(--accent);
+}
+
+.toggle-control select {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  color: var(--ink-2);
+  background: var(--ground);
+  cursor: pointer;
+}
+
+.toggle-control select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.toggle-control select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .segmented-control {
@@ -692,11 +714,16 @@ aside {
   outline-offset: 2px;
 }
 
+/* The stroke scales with the picture like every other mark. Held at screen
+   width it was the one thing that did not shrink when the view zoomed out to
+   hold a whole field, so the relation mesh buried the plates it connects —
+   nothing was omitted, the reading order was simply upside down. Family still
+   rides colour, dash, and width (A3); at a zoom where they are too fine to
+   read, so is everything else, and the density tiers name it. */
 .edge-line {
   fill: none;
   stroke: var(--e-authored);
   stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
 }
 
 .edge-route {
@@ -782,6 +809,9 @@ aside {
 .node-pattern { --plate-hue: var(--k-pattern); }
 .node-zone { --plate-hue: var(--k-zone); }
 
+/* The plate keeps a floor of screen presence: its outline holds 1.5px however
+   far the view is zoomed out, so a whole field reads as a field of nodes with
+   the relations behind them, and never as a mesh with the nodes lost in it. */
 .node-shape {
   fill: var(--plate-hue, var(--k-concept));
   stroke: var(--node-stroke);

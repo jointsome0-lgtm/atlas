@@ -264,6 +264,162 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(1, self.page.locator(".node.field-undefined.selected").count())
         self.assertIn("field undefined", self.page.locator("#details").inner_text())
 
+    def chain_graph(self):
+        # a — b — c — d, plus one node joined to a by a suggested step alone
+        # and one joined to nothing at all. The route and its plan carry the
+        # step's context and are themselves unjoined.
+        nodes = [
+            {"id": f"concept:{name}", "type": "concept", "title": name.title(),
+             "fields": ["knowledge"], "aliases": []}
+            for name in ("a", "b", "c", "d", "far", "island")
+        ]
+        nodes.append({
+            "id": "suggested-route:chain", "type": "suggested_route",
+            "title": "Chain route", "status": "available",
+            "source_plan": "plan:chain", "fields": ["knowledge"],
+        })
+        nodes.append({
+            "id": "plan:chain", "type": "plan", "title": "Chain plan",
+            "fields": ["knowledge"],
+        })
+        edges = [
+            {"source": f"concept:{left}", "target": f"concept:{right}",
+             "type": "related_to", "provenance": [f"concept:{left}"],
+             "weight": "unassessed"}
+            for left, right in (("a", "b"), ("b", "c"), ("c", "d"))
+        ]
+        edges.append({
+            "source": "concept:a", "target": "concept:far",
+            "type": "suggested_next", "provenance": ["suggested-route:chain"],
+            "context": "suggested-route:chain",
+        })
+        return self.graph_envelope(nodes=nodes, edges=edges)
+
+    def drawn_ids(self):
+        return sorted(self.page.locator("svg .node").evaluate_all(
+            "nodes => nodes.map(node => node.dataset.nodeId)"))
+
+    def test_focus_horizon_draws_the_named_hops_and_names_the_rest(self):
+        # Fog of war: past the horizon nothing is drawn, and nothing stands in
+        # for it (A5, A11) — the count of what is being kept out is words in
+        # the status line, so the dark never reads as the edge of the field.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        horizon = self.page.locator("#horizon-select")
+        self.assertEqual("all", horizon.input_value())
+        self.assertEqual(8, len(self.drawn_ids()))
+        self.assertNotIn("outside the focus horizon",
+                         self.page.locator("#status-bar").inner_text())
+
+        horizon.select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        self.assertEqual(
+            ["concept:a", "concept:b", "concept:far"], self.drawn_ids())
+        self.assertIn("5 further nodes are outside the focus horizon",
+                      self.page.locator("#status-bar").inner_text())
+
+        horizon.select_option("2")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 4")
+        self.assertEqual(
+            ["concept:a", "concept:b", "concept:c", "concept:far"],
+            self.drawn_ids())
+
+        # An unjoined node is never inside any horizon, however wide.
+        horizon.select_option("3")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 5")
+        self.assertNotIn("concept:island", self.drawn_ids())
+
+    def test_focus_horizon_walks_only_the_edges_in_view(self):
+        # Hops are counted over what the reader can see: with routes hidden a
+        # node joined only by a route step is not one hop away, because the
+        # step that would make it one is not on the screen.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        self.page.locator("#horizon-select").select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        self.assertIn("concept:far", self.drawn_ids())
+
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 2")
+        self.assertEqual(["concept:a", "concept:b"], self.drawn_ids())
+
+    def test_a_field_wider_than_the_frame_opens_whole_and_unsqueezed(self):
+        # A field too big for the frame is fitted by zooming the view out, not
+        # by pulling the positions together: the plate keeps its fixed size
+        # per kind class (A10), so shrinking the gaps under it was the one way
+        # to make plates overlap that no A11 tier could undo. Everything is on
+        # screen, and nothing is on top of anything.
+        nodes = [
+            {"id": f"concept:n{index:03d}", "type": "concept",
+             "title": f"N{index:03d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(140)
+        ]
+        edges = [
+            {"source": f"concept:n{index:03d}",
+             "target": f"concept:n{index + 1:03d}",
+             "type": "related_to", "provenance": [f"concept:n{index:03d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+        geometry = self.page.evaluate(
+            """() => {
+                const viewport = document.querySelector("svg .viewport");
+                const frame = document.querySelector("svg").getBoundingClientRect();
+                const plates = [...document.querySelectorAll("svg .node-shape")]
+                    .map((shape) => shape.getBoundingClientRect());
+                const outside = plates.filter((box) =>
+                    box.left < frame.left - 0.5 || box.right > frame.right + 0.5
+                    || box.top < frame.top - 0.5 || box.bottom > frame.bottom + 0.5);
+                const overlaps = [];
+                for (let i = 0; i < plates.length; i += 1) {
+                    for (let j = i + 1; j < plates.length; j += 1) {
+                        const a = plates[i], b = plates[j];
+                        if (a.left < b.right && b.left < a.right
+                            && a.top < b.bottom && b.top < a.bottom) overlaps.push([i, j]);
+                    }
+                }
+                return {
+                    scale: Number(viewport.getAttribute("transform")
+                        .match(/scale\\(([\\d.]+)\\)/)[1]),
+                    plates: plates.length,
+                    outside: outside.length,
+                    overlaps: overlaps.length,
+                };
+            }"""
+        )
+        self.assertEqual(140, geometry["plates"])
+        self.assertLess(geometry["scale"], 1)
+        self.assertEqual(0, geometry["outside"])
+        self.assertEqual(0, geometry["overlaps"])
+
+    def test_focus_horizon_control_needs_a_focus(self):
+        # The horizon is a reader control over a focused node, so it stays
+        # inert — and says why — until there is one. It is not an address key:
+        # §16.4's fragment is unchanged by moving it.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field", "FIELD")
+        horizon = self.page.locator("#horizon-select")
+        self.assertTrue(horizon.is_disabled())
+        self.assertEqual(
+            "Open a node to look around it", horizon.get_attribute("title"))
+
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        horizon = self.page.locator("#horizon-select")
+        self.assertFalse(horizon.is_disabled())
+        self.assertIsNone(horizon.get_attribute("title"))
+        horizon.select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        self.assertEqual("mode=field&focus=concept:a",
+                         urlsplit(self.page.url).fragment)
+
     def test_unknown_fragment_params_of_any_shape_are_ignored(self):
         # §16.4 forward compatibility: unknown keys — underscores, digits,
         # future names — never invalidate the address.

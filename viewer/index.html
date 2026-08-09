@@ -17,6 +17,15 @@
     </div>
     <div class="view-controls" aria-label="View controls">
       <label class="toggle-control">
+        <span>Around focus</span>
+        <select id="horizon-select" disabled>
+          <option value="1">1 hop</option>
+          <option value="2">2 hops</option>
+          <option value="3">3 hops</option>
+          <option value="all" selected>Whole field</option>
+        </select>
+      </label>
+      <label class="toggle-control">
         <input id="routes-toggle" type="checkbox" checked>
         <span>Routes</span>
       </label>

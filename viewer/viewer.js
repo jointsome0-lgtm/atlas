@@ -114,6 +114,7 @@ const closeDetails = document.querySelector("#close-details");
 const fieldChip = document.querySelector("#field-chip");
 const statusBar = document.querySelector("#status-bar");
 const routesToggle = document.querySelector("#routes-toggle");
+const horizonSelect = document.querySelector("#horizon-select");
 const graphView = document.querySelector("#graph-view");
 const listView = document.querySelector("#list-view");
 const legendToggle = document.querySelector("#legend-toggle");
@@ -126,6 +127,7 @@ let renderGeneration = 0;
 let currentTransform = null;
 let densityResizeObserver = null;
 let viewMode = "graph";
+let beyondHorizon = 0;
 
 function htmlElement(tag, className, text) {
   const element = document.createElement(tag);
@@ -297,6 +299,10 @@ async function dispatch() {
     return;
   }
   setLensControls(false);
+  // Every screen that is not a drawn field has no horizon and nothing outside
+  // one; the render below re-arms both once it knows there is a focus.
+  setHorizonControl(false);
+  beyondHorizon = 0;
   // §16.5: address hardening never depends on graph content — a bad
   // address is the generic error and no render, empty graph included.
   const raw = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
@@ -350,13 +356,22 @@ async function dispatch() {
   const nodes = accepted.graph.nodes.filter((node) => node.fields.includes(field) || (field === DEFAULT_FIELD && node.fields.length === 0));
   const ids = new Set(nodes.map((node) => node.id));
   const edges = accepted.graph.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
-  const pastCeiling = nodes.length > RENDER_NODE_LINK_CEILING;
+  setHorizonControl(selected !== null);
+  const horizon = selected === null ? null : horizonHops();
+  const view = horizon === null
+    ? {nodes, edges, beyond: 0}
+    : neighbourhood(nodes, edges, selected, horizon);
+  beyondHorizon = view.beyond;
+  // §25.8's fallback line counts nodes *in view*, and a horizon is what is in
+  // view: standing inside a field too large to draw whole, the reader still
+  // gets a node-link picture of where they are.
+  const pastCeiling = view.nodes.length > RENDER_NODE_LINK_CEILING;
   setLensControls(pastCeiling);
   if (pastCeiling || viewMode === "list") {
-    renderList(field, nodes, edges, selected, banner, pastCeiling);
+    renderList(field, view.nodes, view.edges, selected, banner, pastCeiling);
     return;
   }
-  await renderField(field, nodes, edges, selected, banner);
+  await renderField(field, view.nodes, view.edges, selected, banner);
 }
 
 function setLensControls(pastCeiling) {
@@ -369,6 +384,56 @@ function setLensControls(pastCeiling) {
   }
   graphView.setAttribute("aria-pressed", String(effectiveMode === "graph"));
   listView.setAttribute("aria-pressed", String(effectiveMode === "list"));
+}
+
+// The horizon is a reader control, not an address: §16.4's fragment carries
+// mode, focus, and field, and an extra key there would be a contract edit.
+// Two people opening one link see the same field; how far each looks around
+// it is theirs.
+function setHorizonControl(focused) {
+  horizonSelect.disabled = !focused;
+  if (focused) horizonSelect.removeAttribute("title");
+  else horizonSelect.title = "Open a node to look around it";
+}
+
+function horizonHops() {
+  const value = Number.parseInt(horizonSelect.value, 10);
+  return Number.isNaN(value) ? null : value;
+}
+
+// Fog of war. With a node in focus the field is drawn out to a horizon in
+// hops and no further: what lies past it is not drawn at all, and nothing —
+// no cluster, count, or heat — is drawn in its place (A5, A11). The status
+// line says how many nodes the horizon is keeping out, so the dark is a
+// stated omission and never a claim that the field ends there.
+//
+// Hops run over the edges the reader can actually see, so hiding routes never
+// leaves a node two visible hops away sitting one invisible hop from focus.
+function neighbourhood(nodes, edges, selected, horizon) {
+  const neighbours = new Map(nodes.map((node) => [node.id, []]));
+  if (!neighbours.has(selected.id)) return {nodes, edges, beyond: 0};
+  for (const edge of visibleEdges(edges)) {
+    neighbours.get(edge.source).push(edge.target);
+    neighbours.get(edge.target).push(edge.source);
+  }
+  const reached = new Set([selected.id]);
+  let frontier = [selected.id];
+  for (let hop = 0; hop < horizon; hop += 1) {
+    const next = [];
+    for (const id of frontier) {
+      for (const other of neighbours.get(id)) {
+        if (reached.has(other)) continue;
+        reached.add(other);
+        next.push(other);
+      }
+    }
+    frontier = next;
+  }
+  return {
+    nodes: nodes.filter((node) => reached.has(node.id)),
+    edges: edges.filter((edge) => reached.has(edge.source) && reached.has(edge.target)),
+    beyond: nodes.length - reached.size
+  };
 }
 
 // An accepted graph may hold up to the §25.8 node ceiling; the list stays
@@ -756,15 +821,15 @@ async function calculateLayout(nodes, edges, generation) {
   if (sorted.length === 0) return positions;
   fitToFrame(sorted, positions);
   // Overlap is the one layout fault a reader cannot work around: two plates
-  // in one place hide each other's state. It runs after the fit, in the frame
-  // units the reader actually sees — run before, the fit's own scaling would
-  // undo it. Passes are bounded, and the bound falls on big fields so the
-  // O(n²) sweep never outgrows §25.8's build budget.
+  // in one place hide each other's state. It runs after the fit, whose scaling
+  // only ever spreads a small field — a field larger than the frame keeps its
+  // own units and is fitted by zoom instead (frameFit), so nothing rescales
+  // the clearance this pass just won. Passes are bounded, and the bound falls
+  // on big fields so the O(n²) sweep never outgrows §25.8's build budget.
   const separationGap = 0.6 * plateRadius();
   const separationPasses = sorted.length > 600 ? 4 : 24;
   for (let pass = 0; pass < separationPasses; pass += 1) {
     if (!separationPass(sorted, positions, radii, separationGap)) break;
-    clampToFrame(sorted, positions, radii);
     if (performance.now() - lastYield > 8) {
       await nextFrame();
       if (generation !== renderGeneration) return null;
@@ -775,7 +840,12 @@ async function calculateLayout(nodes, edges, generation) {
 }
 
 // Centre the settled layout in the viewBox with room for the marks and labels
-// that hang off a plate.
+// that hang off a plate. Spreading a field smaller than the frame is free; the
+// old fit also *shrank* a larger one, which squeezed positions while every
+// glyph kept its fixed size, so a big field piled its own plates on top of
+// each other. Growth only, and the frame-sized picture is reached by zoom
+// (frameFit) — that scales plate and gap together, so A10's fixed size per
+// kind class is never touched.
 function fitToFrame(sorted, positions) {
   const xs = sorted.map((node) => positions.get(node.id).x);
   const ys = sorted.map((node) => positions.get(node.id).y);
@@ -783,7 +853,7 @@ function fitToFrame(sorted, positions) {
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
-  const scale = Math.min((VIEW_WIDTH - 110) / Math.max(maxX - minX, 1), (VIEW_HEIGHT - 100) / Math.max(maxY - minY, 1));
+  const scale = Math.max(1, Math.min((VIEW_WIDTH - 110) / Math.max(maxX - minX, 1), (VIEW_HEIGHT - 100) / Math.max(maxY - minY, 1)));
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
   for (const node of sorted) {
@@ -793,15 +863,33 @@ function fitToFrame(sorted, positions) {
   }
 }
 
-// Separation may push a plate past the frame; the opening view shows the whole
-// field, so a pushed node returns to the margin rather than off screen.
-function clampToFrame(sorted, positions, radii) {
+// The opening view still shows the whole field: whatever the layout's own
+// units, the view zooms out until the drawn bounds — plates included — fit the
+// frame. Zoom out only; a field that already fits opens at 1, so a small graph
+// renders byte for byte as before. Same graph, same picture (§27.8): every
+// input here is the settled layout, not the window.
+function frameFit(sorted, positions, radii) {
+  const identity = {zoom: 1, x: 0, y: 0};
+  if (sorted.length === 0) return identity;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
   for (const node of sorted) {
     const position = positions.get(node.id);
     const margin = radii.get(node.id) + 2;
-    position.x = Math.max(margin, Math.min(VIEW_WIDTH - margin, position.x));
-    position.y = Math.max(margin, Math.min(VIEW_HEIGHT - margin, position.y));
+    minX = Math.min(minX, position.x - margin);
+    maxX = Math.max(maxX, position.x + margin);
+    minY = Math.min(minY, position.y - margin);
+    maxY = Math.max(maxY, position.y + margin);
   }
+  const zoom = Math.min(1, (VIEW_WIDTH - 40) / Math.max(maxX - minX, 1), (VIEW_HEIGHT - 40) / Math.max(maxY - minY, 1));
+  if (zoom >= 1) return identity;
+  return {
+    zoom,
+    x: VIEW_WIDTH / 2 - zoom * (minX + maxX) / 2,
+    y: VIEW_HEIGHT / 2 - zoom * (minY + maxY) / 2
+  };
 }
 
 // Where a label may start on each side of a node: past the plate, and past
@@ -934,12 +1022,15 @@ async function renderField(field, nodes, edges, selected, banner) {
   }
 
   const focusedPosition = selected ? positions.get(selected.id) : null;
-  const transform = {
-    x: focusedPosition ? VIEW_WIDTH / 2 - focusedPosition.x : 0,
-    y: focusedPosition ? VIEW_HEIGHT / 2 - focusedPosition.y : 0,
-    zoom: 1,
-    spacing: typicalSpacing(nodes, positions)
-  };
+  const fit = frameFit(nodes, positions, radii);
+  // A focused node is read at its own scale — the opening zoom-out is for
+  // finding your way in, not for reading. Unfocused, the view opens on the
+  // whole field, and the reader may zoom back past that to look around.
+  const transform = focusedPosition
+    ? {x: VIEW_WIDTH / 2 - focusedPosition.x, y: VIEW_HEIGHT / 2 - focusedPosition.y, zoom: 1}
+    : {x: fit.x, y: fit.y, zoom: fit.zoom};
+  transform.minZoom = Math.min(ZOOM_MIN, fit.zoom);
+  transform.spacing = typicalSpacing(nodes, positions);
   currentTransform = {svg, viewport, ...transform};
   applyTransform(currentTransform);
   installDensityResize(currentTransform);
@@ -964,6 +1055,7 @@ function renderStatus() {
   if (!statusCounts) return;
   let copy = statusCounts.nodes + " nodes · " + statusCounts.edges + " edges in view";
   if (accepted.graph.generated_at) copy += " · as of " + accepted.graph.generated_at.slice(0, 10);
+  if (beyondHorizon > 0) copy += " · " + beyondHorizon + " further nodes are outside the focus horizon — widen it to see them";
   const dropped = currentTransform && currentTransform.dropped ? currentTransform.dropped : [];
   if (dropped.length) copy += " · not drawn at this density: " + dropped.join(", ") + " — open a node to read them";
   statusBar.textContent = copy;
@@ -1545,8 +1637,11 @@ function makeZoomControls() {
   return controls;
 }
 
-function clampZoom(value) {
-  return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, value));
+// The floor drops to whatever the opening view needed: on a field wider than
+// the frame the fit zoom is already below ZOOM_MIN, and a reader who zooms out
+// must be able to get back to the whole picture.
+function clampZoom(value, floor) {
+  return Math.max(floor ?? ZOOM_MIN, Math.min(ZOOM_MAX, value));
 }
 
 function renderedSvgScale(svg) {
@@ -1594,7 +1689,7 @@ function installDensityResize(transform) {
 function zoomAt(factor, x, y) {
   if (!currentTransform) return;
   const oldZoom = currentTransform.zoom;
-  const nextZoom = clampZoom(oldZoom * factor);
+  const nextZoom = clampZoom(oldZoom * factor, currentTransform.minZoom);
   const worldX = (x - currentTransform.x) / oldZoom;
   const worldY = (y - currentTransform.y) / oldZoom;
   currentTransform.x = x - worldX * nextZoom;
@@ -2016,6 +2111,7 @@ async function loadGraph() {
 
 window.addEventListener("hashchange", () => { void dispatch(); });
 routesToggle.addEventListener("change", () => { void dispatch(); });
+horizonSelect.addEventListener("change", () => { void dispatch(); });
 graphView.addEventListener("click", () => {
   viewMode = "graph";
   void dispatch();
