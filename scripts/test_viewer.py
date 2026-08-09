@@ -348,6 +348,77 @@ class ViewerBrowserTests(unittest.TestCase):
             "() => document.querySelectorAll('svg .node').length === 2")
         self.assertEqual(["concept:a", "concept:b"], self.drawn_ids())
 
+    def hit_point(self, selector):
+        # The centre of an element is only a usable press target if it is what
+        # the pointer would actually land on — edges carry a wide invisible
+        # hit stroke that sits over its neighbours.
+        return self.page.evaluate(
+            """(want) => {
+                for (const el of document.querySelectorAll("svg " + want)) {
+                    const box = el.getBoundingClientRect();
+                    const x = Math.round(box.left + box.width / 2);
+                    const y = Math.round(box.top + box.height / 2);
+                    const hit = document.elementFromPoint(x, y);
+                    if (hit && hit.matches(want)) return [x, y];
+                }
+                return null;
+            }""",
+            selector,
+        )
+
+    def drag_from(self, x, y):
+        transform = "() => document.querySelector('svg .viewport')" \
+                    ".getAttribute('transform')"
+        before = self.page.evaluate(transform)
+        self.page.mouse.move(x, y)
+        self.page.mouse.down()
+        for step in range(1, 13):
+            self.page.mouse.move(x + step * 18, y + step * 5)
+        self.page.mouse.up()
+        return self.page.evaluate(transform) != before
+
+    def test_the_picture_is_grabbable_anywhere_and_a_drag_is_not_a_click(self):
+        # Nothing in the field moves relative to anything else, so the whole
+        # picture is the only thing to take hold of — and every press takes
+        # hold of it. Requiring bare background made the gesture fail wherever
+        # an edge's invisible 12px hit stroke lay, which on a dense field is
+        # most of the canvas.
+        nodes = [
+            {"id": f"concept:n{index:02d}", "type": "concept",
+             "title": f"N{index:02d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(24)
+        ]
+        edges = [
+            {"source": f"concept:n{index:02d}",
+             "target": f"concept:n{index + 1:02d}",
+             "type": "related_to", "provenance": [f"concept:n{index:02d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        graph = self.graph_envelope(nodes=nodes, edges=edges)
+        for target in ("svg-background", ".edge-hit", ".node-shape"):
+            with self.subTest(grabbed=target):
+                self.write_graph(graph)
+                self.open_state("#mode=field", "FIELD")
+                spot = ((8, 8) if target == "svg-background"
+                        else self.hit_point(target))
+                self.assertIsNotNone(spot, f"no reachable {target}")
+                if target == "svg-background":
+                    box = self.page.locator("svg").bounding_box()
+                    spot = (int(box["x"] + 12), int(box["y"] + 12))
+                self.assertTrue(self.drag_from(*spot))
+                # The drag moved the picture, so it did not also open a node.
+                self.assertTrue(self.page.locator("#details").is_hidden())
+                self.assertEqual("mode=field", urlsplit(self.page.url).fragment)
+
+        # A press that does not travel is still a press: it selects.
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+        spot = self.hit_point(".node-shape")
+        self.page.mouse.click(*spot)
+        self.page.wait_for_selector("#details:not([hidden])")
+        self.assertIn("focus=", urlsplit(self.page.url).fragment)
+
     def test_a_field_wider_than_the_frame_opens_whole_and_unsqueezed(self):
         # A field too big for the frame is fitted by zooming the view out, not
         # by pulling the positions together: the plate keeps its fixed size

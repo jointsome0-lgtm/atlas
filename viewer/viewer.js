@@ -15,6 +15,8 @@ const VIEW_WIDTH = 900;
 const VIEW_HEIGHT = 650;
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5;
+// Screen pixels a press may wander and still count as a press, not a pan.
+const DRAG_SLOP = 4;
 const ROUTE_TYPES = new Set(["step_of_route", "suggested_next"]);
 const TRAIL_TYPES = new Set(["moved_to", "via", "produced_artifact"]);
 const AUTHORED_TYPES = new Set(["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"]);
@@ -1709,20 +1711,32 @@ function installPanZoom(transform) {
     const y = (event.clientY - bounds.top) * VIEW_HEIGHT / bounds.height;
     zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, x, y);
   }, {passive: false});
+  // Nothing in the field moves relative to anything else — A10 keeps every
+  // position derived from the layout — so the whole picture is the only thing
+  // there is to take hold of, and a press anywhere takes hold of it. Requiring
+  // bare background made the gesture fail at random: an edge carries a 12px
+  // invisible hit stroke, and on a 420-node field those cover a fifth of the
+  // canvas, where a press did nothing whatever. Denser fields are worse.
   svg.addEventListener("pointerdown", (event) => {
-    if (event.target !== svg) return;
+    if (event.button > 0) return;
     drag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY};
     moved = false;
-    svg.setPointerCapture(event.pointerId);
-    svg.classList.add("dragging");
   });
   svg.addEventListener("pointermove", (event) => {
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const dx = (event.clientX - drag.x) * VIEW_WIDTH / svg.clientWidth;
-    const dy = (event.clientY - drag.y) * VIEW_HEIGHT / svg.clientHeight;
-    if (Math.abs(dx) + Math.abs(dy) > 0.5) moved = true;
-    transform.x += dx;
-    transform.y += dy;
+    const screenDx = event.clientX - drag.x;
+    const screenDy = event.clientY - drag.y;
+    drag.travel = (drag.travel || 0) + Math.abs(screenDx) + Math.abs(screenDy);
+    // A press that wanders a pixel or two is still a press. Only a real
+    // journey becomes a pan — and then the pointer is captured, so the
+    // gesture survives leaving the node or edge it started on.
+    if (!moved && drag.travel > DRAG_SLOP) {
+      moved = true;
+      svg.setPointerCapture(event.pointerId);
+      svg.classList.add("dragging");
+    }
+    transform.x += screenDx * VIEW_WIDTH / svg.clientWidth;
+    transform.y += screenDy * VIEW_HEIGHT / svg.clientHeight;
     drag.x = event.clientX;
     drag.y = event.clientY;
     applyTransform(transform);
@@ -1734,6 +1748,15 @@ function installPanZoom(transform) {
   };
   svg.addEventListener("pointerup", stopDrag);
   svg.addEventListener("pointercancel", stopDrag);
+  // A drag that happened to start on a node dragged the picture, not the
+  // node: it must not also open the node. Caught on the way down, before the
+  // node's own handler, so the two gestures never both fire.
+  svg.addEventListener("click", (event) => {
+    if (!moved) return;
+    event.stopPropagation();
+    event.preventDefault();
+    moved = false;
+  }, true);
   svg.addEventListener("click", (event) => {
     if (event.target === svg && !moved) updateFocus(null);
     moved = false;
