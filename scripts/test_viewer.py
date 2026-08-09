@@ -299,16 +299,19 @@ class ViewerBrowserTests(unittest.TestCase):
         return sorted(self.page.locator("svg .node").evaluate_all(
             "nodes => nodes.map(node => node.dataset.nodeId)"))
 
-    def test_focus_horizon_draws_the_named_hops_and_names_the_rest(self):
+    def test_focus_horizon_draws_the_named_hops_and_says_the_field_goes_on(self):
         # Fog of war: past the horizon nothing is drawn, and nothing stands in
-        # for it (A5, A11) — the count of what is being kept out is words in
-        # the status line, so the dark never reads as the edge of the field.
+        # for it (A5, A11). The status line says the field continues, so the
+        # dark never reads as the edge of the field — and says it without a
+        # number: a running count of what lies ahead is a backlog reading, and
+        # this system refuses those (§3, §4). Where the field continues is the
+        # stubs' job, not the status line's.
         self.write_graph(self.chain_graph())
         self.open_state("#mode=field&focus=concept:a", "FIELD")
         horizon = self.page.locator("#horizon-select")
         self.assertEqual("all", horizon.input_value())
         self.assertEqual(8, len(self.drawn_ids()))
-        self.assertNotIn("outside the focus horizon",
+        self.assertNotIn("past the focus horizon",
                          self.page.locator("#status-bar").inner_text())
 
         horizon.select_option("1")
@@ -316,8 +319,10 @@ class ViewerBrowserTests(unittest.TestCase):
             "() => document.querySelectorAll('svg .node').length === 3")
         self.assertEqual(
             ["concept:a", "concept:b", "concept:far"], self.drawn_ids())
-        self.assertIn("5 further nodes are outside the focus horizon",
-                      self.page.locator("#status-bar").inner_text())
+        status = self.page.locator("#status-bar").inner_text()
+        self.assertIn("the field continues past the focus horizon", status)
+        # No count of what is being kept out, in any wording.
+        self.assertNotRegex(status.split("continues past")[1], r"\d")
 
         horizon.select_option("2")
         self.page.wait_for_function(
@@ -347,6 +352,55 @@ class ViewerBrowserTests(unittest.TestCase):
         self.page.wait_for_function(
             "() => document.querySelectorAll('svg .node').length === 2")
         self.assertEqual(["concept:a", "concept:b"], self.drawn_ids())
+
+    def test_an_edge_leaving_the_horizon_is_drawn_as_far_as_the_view_reaches(self):
+        # #99: a shown boundary is a drawn boundary. The edge b — c leaves the
+        # one-hop view, so b keeps a stub pointing outward instead of looking
+        # like a node with no further relations. The stub carries family and
+        # nothing else — no arrowhead at an absent target, no weight tick at a
+        # midpoint that is off screen (A3, A5).
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        self.assertEqual(0, self.page.locator("svg .edge-stub").count())
+
+        self.page.locator("#horizon-select").select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        stubs = self.page.locator("svg .edge-stub")
+        self.assertEqual(1, stubs.count())
+        self.assertIn("edge-authored", stubs.first.get_attribute("class"))
+        self.assertIsNone(stubs.first.get_attribute("marker-end"))
+        self.assertEqual(
+            0, self.page.locator("svg .edge-stub-group .edge-weight").count())
+
+        # The stub starts outside its own plate and runs away from the focus,
+        # so it never doubles back over the picture it came from.
+        reach = self.page.evaluate(
+            """() => {
+                const focus = document.querySelector(
+                    "svg .node[data-node-id='concept:a']");
+                const at = (el) => el.getAttribute("transform")
+                    .match(/translate\\(([-\\d.]+) ([-\\d.]+)\\)/).slice(1).map(Number);
+                const [fx, fy] = at(focus);
+                const stub = document.querySelector("svg .edge-stub");
+                const x1 = Number(stub.getAttribute("x1"));
+                const y1 = Number(stub.getAttribute("y1"));
+                const x2 = Number(stub.getAttribute("x2"));
+                const y2 = Number(stub.getAttribute("y2"));
+                return {near: Math.hypot(x1 - fx, y1 - fy),
+                        far: Math.hypot(x2 - fx, y2 - fy)};
+            }""")
+        self.assertGreater(reach["far"], reach["near"])
+
+        # A relation the reader cannot see leaves no stub behind: with routes
+        # hidden the step a — far is not cut, it is simply not a relation on
+        # the screen, so only the authored b — c still reaches outward.
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 2")
+        self.assertEqual(1, self.page.locator("svg .edge-stub").count())
+        self.assertEqual(
+            0, self.page.locator("svg .edge-stub.edge-route").count())
 
     def hit_point(self, selector):
         # The centre of an element is only a usable press target if it is what

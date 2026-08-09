@@ -118,6 +118,10 @@
   --label-em: 5.8;
   --label-line: 13;
   --edge-lane: 7px; /* spacing between the strokes of one node pair */
+  /* an edge leaving the focus horizon: how far it reaches past its own plate
+     before it stops, and the angle its siblings fan across (radians) */
+  --edge-stub: 14px;
+  --edge-stub-fan: 1;
 
   /* §16.2 A11 density tiers, as multiples of --plate-r: a channel drops when
      the typical on-screen node spacing falls under tier × plate radius. The
@@ -771,6 +775,13 @@ aside {
   stroke-width: var(--w-stroke);
   stroke-linecap: butt;
   vector-effect: non-scaling-stroke;
+}
+
+/* #99: the cut end is open, not finished. A round cap reads as an endpoint —
+   "the relation stops here" — which is the one thing a stub must not say, so
+   it is squared off and left bare. Family still rides the stroke (A3). */
+.edge-stub {
+  stroke-linecap: butt;
 }
 
 .edge-hit {

@@ -203,6 +203,8 @@ What questions are pulling me now?
 What is nearby but not obligatory?
 ```
 
+Focus horizon (#99): with a focus set, the node-link view may be bounded to a hop radius around it. The radius is session state, never a §16.4 address key — the address names what is being looked at, not how far around it the reader is looking. Hops are counted over the edges in view, so hiding a family narrows the horizon with it. What lies past the bound is not drawn and is not counted: the status line says the field continues, without a number, because a running total of what is ahead is a progress reading (§3, §4). An edge with one end past the bound is drawn from its own plate outward and stops — a bound in the view is never rendered as a node with no further relations. The stub carries edge family alone: no arrowhead at an absent endpoint, no weight tick at a midpoint off screen (§16.2 A3, A5).
+
 Link contract (#37): a `url` value renders as a link only after the viewer itself re-parses it and the scheme is exactly `https` — the §25.7 schemas admit nothing else, and the viewer does not trust that; anything else renders as inert text. Links carry `rel="noopener noreferrer"` under the no-referrer policy (§16.5); the viewer never fetches a url on its own — navigation is the user's click (§31.7).
 
 ## §16.4 Embedding

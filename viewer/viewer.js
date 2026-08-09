@@ -129,7 +129,7 @@ let renderGeneration = 0;
 let currentTransform = null;
 let densityResizeObserver = null;
 let viewMode = "graph";
-let beyondHorizon = 0;
+let fieldContinuesPastHorizon = false;
 
 function htmlElement(tag, className, text) {
   const element = document.createElement(tag);
@@ -304,7 +304,7 @@ async function dispatch() {
   // Every screen that is not a drawn field has no horizon and nothing outside
   // one; the render below re-arms both once it knows there is a focus.
   setHorizonControl(false);
-  beyondHorizon = 0;
+  fieldContinuesPastHorizon = false;
   // §16.5: address hardening never depends on graph content — a bad
   // address is the generic error and no render, empty graph included.
   const raw = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
@@ -361,9 +361,9 @@ async function dispatch() {
   setHorizonControl(selected !== null);
   const horizon = selected === null ? null : horizonHops();
   const view = horizon === null
-    ? {nodes, edges, beyond: 0}
+    ? {nodes, edges, cut: [], continues: false}
     : neighbourhood(nodes, edges, selected, horizon);
-  beyondHorizon = view.beyond;
+  fieldContinuesPastHorizon = view.continues;
   // §25.8's fallback line counts nodes *in view*, and a horizon is what is in
   // view: standing inside a field too large to draw whole, the reader still
   // gets a node-link picture of where they are.
@@ -373,7 +373,7 @@ async function dispatch() {
     renderList(field, view.nodes, view.edges, selected, banner, pastCeiling);
     return;
   }
-  await renderField(field, view.nodes, view.edges, selected, banner);
+  await renderField(field, view.nodes, view.edges, selected, banner, view.cut);
 }
 
 function setLensControls(pastCeiling) {
@@ -413,7 +413,7 @@ function horizonHops() {
 // leaves a node two visible hops away sitting one invisible hop from focus.
 function neighbourhood(nodes, edges, selected, horizon) {
   const neighbours = new Map(nodes.map((node) => [node.id, []]));
-  if (!neighbours.has(selected.id)) return {nodes, edges, beyond: 0};
+  if (!neighbours.has(selected.id)) return {nodes, edges, cut: [], continues: false};
   for (const edge of visibleEdges(edges)) {
     neighbours.get(edge.source).push(edge.target);
     neighbours.get(edge.target).push(edge.source);
@@ -431,10 +431,17 @@ function neighbourhood(nodes, edges, selected, horizon) {
     }
     frontier = next;
   }
+  // An edge with one end inside the horizon and one outside is not gone: it
+  // is drawn as far as the view reaches and then stops (#99). Walking the
+  // visible set keeps this coherent with the Routes lens — a hidden route
+  // leaves no stub behind, because it is not a relation the reader can see.
+  const cut = visibleEdges(edges).filter(
+    (edge) => reached.has(edge.source) !== reached.has(edge.target));
   return {
     nodes: nodes.filter((node) => reached.has(node.id)),
     edges: edges.filter((edge) => reached.has(edge.source) && reached.has(edge.target)),
-    beyond: nodes.length - reached.size
+    cut,
+    continues: reached.size < nodes.length
   };
 }
 
@@ -1036,7 +1043,7 @@ function placeLabels(nodes, positions, radii) {
   return placements;
 }
 
-async function renderField(field, nodes, edges, selected, banner) {
+async function renderField(field, nodes, edges, selected, banner, cutEdges = []) {
   resetScreen(field);
   const generation = renderGeneration;
   const renderedEdges = visibleEdges(edges);
@@ -1061,6 +1068,11 @@ async function renderField(field, nodes, edges, selected, banner) {
   const lanes = edgeLanes(renderedEdges);
   for (const edge of renderedEdges) {
     viewport.append(makeEdge(edge, positions, nodeById, lanes.get(edge)));
+  }
+  if (selected && positions.has(selected.id)) {
+    for (const stub of makeStubs(cutEdges, positions, nodeById, positions.get(selected.id))) {
+      viewport.append(stub);
+    }
   }
   const radii = layoutRadii(nodes);
   const placements = placeLabels(nodes, positions, radii);
@@ -1107,7 +1119,12 @@ function renderStatus() {
   if (!statusCounts) return;
   let copy = statusCounts.nodes + " nodes · " + statusCounts.edges + " edges in view";
   if (accepted.graph.generated_at) copy += " · as of " + accepted.graph.generated_at.slice(0, 10);
-  if (beyondHorizon > 0) copy += " · " + beyondHorizon + " further nodes are outside the focus horizon — widen it to see them";
+  // #99: the horizon says how far the reader is looking, never how much is
+  // left. A running count of what lies ahead is a progress reading in a
+  // system that refuses them (§3, §4) — "1,938 more" is a backlog, not a
+  // fact about the field. The words say the field goes on; the stubs on the
+  // cut edges say where it goes on, which is the honest half.
+  if (fieldContinuesPastHorizon) copy += " · the field continues past the focus horizon — widen it to see further";
   const dropped = currentTransform && currentTransform.dropped ? currentTransform.dropped : [];
   if (dropped.length) copy += " · not drawn at this density: " + dropped.join(", ") + " — open a node to read them";
   statusBar.textContent = copy;
@@ -1375,6 +1392,67 @@ function makeEdge(edge, positions, nodeById, lane) {
   group.addEventListener("mouseleave", () => label.classList.remove("visible"));
   group.append(...strokes, hit, label);
   return group;
+}
+
+// #99: "a shown boundary is a drawn boundary". An edge whose far end is past
+// the focus horizon used to be dropped with the node it led to, which left a
+// boundary node looking like a node that has no further relations — a bound on
+// the view reading as a bound in the graph. It is now drawn from its own plate
+// outward and simply stops: the same grammar as an unassessed weight (A3),
+// where silence is an open gap and never a mark of its own. The stub claims
+// nothing about where the far node lies, so it carries family and nothing
+// else — no arrowhead to point at an absent target, no weight tick, since the
+// midpoint that would carry one is not on screen; the relation stays in the
+// detail panel as words (A8). Order is fixed by id, so the fan is the same
+// picture on every render (§27.8).
+function makeStubs(cutEdges, positions, nodeById, focusPosition) {
+  const byInside = new Map();
+  for (const edge of cutEdges) {
+    const insideId = positions.has(edge.source) ? edge.source : edge.target;
+    const outsideId = insideId === edge.source ? edge.target : edge.source;
+    if (!positions.has(insideId)) continue;
+    if (!byInside.has(insideId)) byInside.set(insideId, []);
+    byInside.get(insideId).push({edge, outsideId});
+  }
+  const length = tokenNumber("--edge-stub", 14);
+  const fan = tokenNumber("--edge-stub-fan", 1);
+  const groups = [];
+  for (const insideId of [...byInside.keys()].sort()) {
+    const cuts = byInside.get(insideId).sort((left, right) => {
+      if (left.edge.type !== right.edge.type) return left.edge.type < right.edge.type ? -1 : 1;
+      return left.outsideId < right.outsideId ? -1 : (left.outsideId > right.outsideId ? 1 : 0);
+    });
+    const position = positions.get(insideId);
+    // Outward is away from where the reader is standing: the horizon is a
+    // disc around the focus, so its rim is the direction the field continues.
+    let outward = {x: position.x - focusPosition.x, y: position.y - focusPosition.y};
+    const reach = Math.hypot(outward.x, outward.y);
+    outward = reach < 0.01 ? {x: 0, y: -1} : {x: outward.x / reach, y: outward.y / reach};
+    cuts.forEach(({edge}, at) => {
+      const turn = cuts.length > 1 ? -fan / 2 + fan * at / (cuts.length - 1) : 0;
+      const unit = {
+        x: outward.x * Math.cos(turn) - outward.y * Math.sin(turn),
+        y: outward.x * Math.sin(turn) + outward.y * Math.cos(turn)
+      };
+      const trim = completeGlyphExtent(nodeById.get(insideId), unit) + 2;
+      const group = svgElement("g", "edge-group edge-stub-group");
+      const line = svgElement("line", "edge-line edge-stub " + edgeClass(edge, nodeById));
+      const from = offsetFrom(position, unit, trim);
+      const to = offsetFrom(position, unit, trim + length);
+      setEnds(line, from, to);
+      const hit = svgElement("line", "edge-hit");
+      setEnds(hit, from, to);
+      const label = svgElement("text", "edge-label");
+      label.setAttribute("x", ((from.x + to.x) / 2).toFixed(3));
+      label.setAttribute("y", ((from.y + to.y) / 2 - 6).toFixed(3));
+      label.textContent = edge.type + " — past the horizon";
+      group.addEventListener("mouseenter", () => label.classList.add("visible"));
+      group.addEventListener("mouseleave", () => label.classList.remove("visible"));
+      group.append(line, hit, label);
+      groups.push(group);
+    });
+  }
+  return groups;
 }
 
 function polygon(points, u) {
