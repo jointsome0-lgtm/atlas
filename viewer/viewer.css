@@ -50,6 +50,11 @@
   /* set by the viewer to 1 / min(zoom, 1) — a dash keeps a floor of screen
      presence, since a family mark dissolved into a hairline carries no family */
   --dash-scale: 1;
+  /* and neither does a stroke: the screen presence the thinnest family keeps
+     once the picture is drawn smaller than itself. 0.6 is both the coverage
+     --e-route needs to carry --rule's contrast on --ground and the width the
+     140-node field already opens at. */
+  --edge-hairline: 0.6;
   --e-authored: oklch(0.45 0.012 250);
   --e-derived: oklch(0.66 0.01 250);
   --e-route: oklch(0.755 0.008 250);
@@ -729,37 +734,45 @@ aside {
 }
 
 /* the stroke scales with the picture like every other mark, so a zoomed-out
-   field does not bury its plates under the relation mesh */
+   field does not bury its plates under the relation mesh — down to a floor of
+   screen presence, on the same --dash-scale the dash and the hit band ride.
+   Under that floor a relation is not omitted in A11's fixed order, it is gone,
+   and A11 has no fading step. The lift multiplies each family's own width, so
+   the ratios that carry family (A3) survive it. Declared here rather than on
+   :root: a custom property's var()s resolve on the element that declares it,
+   and :root would capture the fallback --dash-scale of 1. */
 .edge-line {
   fill: none;
   stroke: var(--e-authored);
   stroke-linecap: round;
+  --edge-floor: max(1, var(--edge-hairline, 0.6) * var(--dash-scale));
+  stroke-width: calc(1px * var(--edge-floor));
 }
 
 .edge-route {
   stroke: var(--e-route);
-  stroke-width: 1;
+  stroke-width: calc(1px * var(--edge-floor));
   stroke-dasharray: calc(4 * var(--dash-scale)) calc(3 * var(--dash-scale));
 }
 
 .edge-trail {
   stroke: var(--trail);
-  stroke-width: 2.5;
+  stroke-width: calc(2.5px * var(--edge-floor));
 }
 
 .edge-authored {
-  stroke-width: var(--w-stroke);
+  stroke-width: calc(var(--w-stroke) * var(--edge-floor));
 }
 
 .edge-structural {
   stroke: var(--e-derived);
-  stroke-width: 1;
+  stroke-width: calc(1px * var(--edge-floor));
   stroke-dasharray: calc(1 * var(--dash-scale)) calc(3 * var(--dash-scale));
 }
 
 .edge-journal {
   stroke: var(--e-derived);
-  stroke-width: 1.25;
+  stroke-width: calc(1.25px * var(--edge-floor));
   stroke-dasharray:
     calc(6 * var(--dash-scale)) calc(2 * var(--dash-scale))
     calc(1 * var(--dash-scale)) calc(2 * var(--dash-scale));

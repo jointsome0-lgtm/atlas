@@ -653,6 +653,27 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(0.0, self.drag_ground(1, 1))
         self.assertEqual(0.0, self.drag_ground(-2, 1))
 
+    def test_a_press_that_shakes_in_place_still_opens_the_node(self):
+        # A shake is not a journey. Six wobbles inside one pixel add up past
+        # the slop only if the path is summed, and then the press becomes a
+        # pan: the plate under the hand never opens and the camera drifts.
+        # The real mouse, because the point is the click the browser would
+        # have synthesised.
+        self.open_state("#mode=field", "FIELD")
+        spot = self.hit_point(".node-shape")
+        self.assertIsNotNone(spot, "no reachable plate")
+        before = self.viewport_transform()
+        x, y = spot
+        self.page.mouse.move(x, y)
+        self.page.mouse.down()
+        for dx, dy in ((1, 0), (0, 0), (1, 1), (0, 1), (1, 0), (0, 0)):
+            self.page.mouse.move(x + dx, y + dy)
+        self.page.mouse.up()
+        self.page.wait_for_timeout(250)
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        self.assertIn("focus=", urlsplit(self.page.url).fragment)
+        self.assertEqual(before, self.viewport_transform())
+
     DRAG_JS = """([dx, dy]) => {
       const svg = document.querySelector("svg.graph-svg");
       const before = document.querySelector(".viewport").getAttribute("transform");
@@ -753,6 +774,88 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertTrue(reach["onEdge"], "the middle of a drawn relation is not on it")
         self.assertGreaterEqual(reach["withFloor"], 4)
         self.assertGreater(reach["withFloor"], reach["scaled"])
+
+    # On-screen size of a stroke authored in viewBox units, and the family
+    # widths beside it: the picture's own scale times the camera's.
+    DRAWN_JS = """() => {
+      const svg = document.querySelector("svg.graph-svg");
+      const box = svg.getBoundingClientRect();
+      const rendered = Math.min(box.width / svg.viewBox.baseVal.width,
+                                box.height / svg.viewBox.baseVal.height);
+      const zoom = Number(document.querySelector(".viewport")
+          .getAttribute("transform").match(/scale\\(([-\\d.]+)\\)/)[1]);
+      const probe = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      const widths = {};
+      for (const family of ["edge-route", "edge-structural", "edge-journal",
+                            "edge-authored", "edge-trail"]) {
+        probe.setAttribute("class", "edge-line " + family);
+        document.querySelector(".viewport").append(probe);
+        widths[family] = Number.parseFloat(getComputedStyle(probe).strokeWidth);
+      }
+      probe.remove();
+      const marker = document.getElementById("arrow");
+      const head = Number(marker.getAttribute("markerWidth"));
+      return {zoom, rendered, widths,
+              plate: 2 * Number.parseFloat(getComputedStyle(document.documentElement)
+                  .getPropertyValue("--plate-r")),
+              head};
+    }"""
+
+    def big_field(self, count):
+        nodes = [
+            {"id": f"concept:n{index:04d}", "type": "concept",
+             "title": f"N{index:04d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(count)
+        ]
+        edges = [
+            {"source": f"concept:n{index:04d}",
+             "target": f"concept:n{index + 1:04d}",
+             "type": "related_to", "provenance": [f"concept:n{index:04d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+
+    def test_a_field_fitted_by_zoom_still_draws_its_relations(self):
+        # A stroke that scales all the way down does not thin, it goes: at the
+        # opening fit of a field this size it paints a fortieth of a pixel and
+        # no family reaches the contrast a rule carries against the ground.
+        # That is omission, and omission belongs to A11's order (§16.3).
+        self.big_field(700)
+        drawn = self.page.evaluate(self.DRAWN_JS)
+        self.assertLess(drawn["zoom"], 0.1, "expected a field far past the fit")
+        thinnest = min(drawn["widths"].values())
+        # The coverage --e-route needs to carry --rule's contrast on --ground,
+        # measured; without the lift this family paints about 0.05.
+        self.assertGreaterEqual(thinnest * drawn["zoom"] * drawn["rendered"], 0.5)
+        # The lift multiplies each family's own width, so width still carries
+        # family alone (A3) — a shared floor would merge these.
+        base = drawn["widths"]["edge-route"]
+        self.assertAlmostEqual(1.0, drawn["widths"]["edge-structural"] / base, 3)
+        self.assertAlmostEqual(1.25, drawn["widths"]["edge-journal"] / base, 3)
+        self.assertAlmostEqual(1.5, drawn["widths"]["edge-authored"] / base, 3)
+        self.assertAlmostEqual(2.5, drawn["widths"]["edge-trail"] / base, 3)
+
+    def test_a_direction_mark_never_outgrows_the_plate_it_points_at(self):
+        # The head is sized in stroke-width units, so the stroke's own lift
+        # would multiply it too and the arrow would swallow its target.
+        self.big_field(700)
+        drawn = self.page.evaluate(self.DRAWN_JS)
+        widest = max(drawn["widths"].values())
+        self.assertLess(drawn["head"] * widest, drawn["plate"])
+
+    def test_the_family_widths_survive_a_palette_that_drops_the_hairline(self):
+        # A variant is a token swap, and one that redeclares the root without
+        # this token must not collapse every family onto one width (A3).
+        self.open_state("#mode=field", "FIELD")
+        self.page.evaluate(
+            """() => document.documentElement.style
+                .setProperty("--edge-hairline", "initial")""")
+        drawn = self.page.evaluate(self.DRAWN_JS)
+        base = drawn["widths"]["edge-route"]
+        self.assertAlmostEqual(1.25, drawn["widths"]["edge-journal"] / base, 3)
+        self.assertAlmostEqual(2.5, drawn["widths"]["edge-trail"] / base, 3)
 
     def test_a_cancelled_drag_does_not_eat_the_next_click(self):
         # A cancelled pointer sequence synthesises no click, so the suppression

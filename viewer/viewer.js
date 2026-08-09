@@ -17,6 +17,9 @@ const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5;
 // Screen pixels a press may wander and still count as a press, not a pan.
 const DRAG_SLOP = 4;
+// The arrowhead's side in stroke-width units, before applyDashScale divides
+// the stroke's low-zoom lift back out of it.
+const ARROW_UNITS = 6;
 const ROUTE_TYPES = new Set(["step_of_route", "suggested_next"]);
 const TRAIL_TYPES = new Set(["moved_to", "via", "produced_artifact"]);
 const AUTHORED_TYPES = new Set(["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"]);
@@ -1251,8 +1254,8 @@ function makeDefinitions() {
   // extends back toward the source, outside the target's glyph clearance.
   marker.setAttribute("refX", "10");
   marker.setAttribute("refY", "5");
-  marker.setAttribute("markerWidth", "6");
-  marker.setAttribute("markerHeight", "6");
+  marker.setAttribute("markerWidth", String(ARROW_UNITS));
+  marker.setAttribute("markerHeight", String(ARROW_UNITS));
   marker.setAttribute("orient", "auto-start-reverse");
   const path = svgElement("path");
   path.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
@@ -1932,6 +1935,15 @@ function applyDashScale(transform) {
   if (transform.dashScale === scale) return;
   transform.dashScale = scale;
   transform.viewport.style.setProperty("--dash-scale", scale.toFixed(4));
+  // The head is sized in stroke-width units, so the stroke's own floor would
+  // multiply it by the same lift and a direction mark would outgrow the plate
+  // it points at. The head keeps the picture's scale.
+  const lift = Math.max(1, tokenNumber("--edge-hairline", 0.6) * scale);
+  const marker = document.getElementById("arrow");
+  if (marker) {
+    marker.setAttribute("markerWidth", (ARROW_UNITS / lift).toFixed(4));
+    marker.setAttribute("markerHeight", (ARROW_UNITS / lift).toFixed(4));
+  }
 }
 
 function installDensityResize(transform) {
@@ -1971,7 +1983,8 @@ function installPanZoom(transform) {
   // hit stroke lay, which on a dense field is most of the canvas.
   svg.addEventListener("pointerdown", (event) => {
     if (event.button > 0) return;
-    drag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY};
+    drag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+            originX: event.clientX, originY: event.clientY};
     moved = false;
   });
   svg.addEventListener("pointermove", (event) => {
@@ -1986,11 +1999,15 @@ function installPanZoom(transform) {
     }
     const screenDx = event.clientX - drag.x;
     const screenDy = event.clientY - drag.y;
-    drag.travel = (drag.travel || 0) + Math.abs(screenDx) + Math.abs(screenDy);
+    // How far the pointer is from where it landed, not how far it has walked:
+    // a hand shaking inside one pixel covers no distance, and summing every
+    // step would call the sixth shake a pan.
+    const wandered = Math.abs(event.clientX - drag.originX)
+      + Math.abs(event.clientY - drag.originY);
     // A press that wanders a pixel or two is still a press. Only a real
     // journey becomes a pan — and then the pointer is captured, so the
     // gesture survives leaving the node or edge it started on.
-    if (!moved && drag.travel > DRAG_SLOP) {
+    if (!moved && wandered > DRAG_SLOP) {
       moved = true;
       svg.setPointerCapture(event.pointerId);
       svg.classList.add("dragging");
