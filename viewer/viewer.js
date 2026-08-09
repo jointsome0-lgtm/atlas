@@ -575,10 +575,37 @@ function initialPositions(nodes) {
   return {sorted, positions};
 }
 
-function layoutIteration(sorted, positions, edges) {
+// The room a node's own marks occupy, as a radius: plate, kind marks, and the
+// decision rail when the fold gave it one. Repulsion and the separation pass
+// read it so a plan plate clears more space than an encounter dot. It sizes
+// clearance only — position and size stay geometry, never state (A10).
+function layoutRadius(node) {
+  let radius = glyphExtent(node);
+  const entry = STATE_TYPES.has(node.type)
+    ? accepted.graph.state[node.id] : undefined;
+  if (entry !== undefined) {
+    const dimensions = railDimensions(node);
+    if (dimensions.length) {
+      const bounds = railBounds(node, dimensions);
+      radius = Math.max(
+        radius, bounds.right, -bounds.left, bounds.bottom, -bounds.top);
+    }
+  }
+  return radius;
+}
+
+function layoutRadii(sorted) {
+  return new Map(sorted.map((node) => [node.id, layoutRadius(node)]));
+}
+
+// Cooling: the step ceiling falls with the temperature so early iterations
+// untangle and late ones settle instead of wandering. Seeded and clamped, so
+// the same graph still resolves to the same picture (§27.8).
+function layoutIteration(sorted, positions, edges, radii, restGap, temperature) {
   const force = new Map(sorted.map((node) => [node.id, {x: 0, y: 0}]));
   for (let leftIndex = 0; leftIndex < sorted.length; leftIndex += 1) {
     const left = positions.get(sorted[leftIndex].id);
+    const leftRadius = radii.get(sorted[leftIndex].id);
     for (let rightIndex = leftIndex + 1; rightIndex < sorted.length; rightIndex += 1) {
       const right = positions.get(sorted[rightIndex].id);
       let dx = right.x - left.x;
@@ -592,7 +619,9 @@ function layoutIteration(sorted, positions, edges) {
       const distance = Math.sqrt(distanceSquared);
       // Repulsion sized for plate-scale nodes (#98): weakly connected nodes
       // must clear a full plate-and-rail footprint, not the old 7-unit dot.
-      const magnitude = 3600 / distanceSquared;
+      // Scaling by the pair's own clearance keeps that true for every kind.
+      const clearance = leftRadius + radii.get(sorted[rightIndex].id);
+      const magnitude = 3 * clearance * clearance / distanceSquared;
       const fx = magnitude * dx / distance;
       const fy = magnitude * dy / distance;
       force.get(sorted[leftIndex].id).x -= fx;
@@ -608,7 +637,10 @@ function layoutIteration(sorted, positions, edges) {
     const dx = target.x - source.x;
     const dy = target.y - source.y;
     const distance = Math.max(Math.sqrt(dx * dx + dy * dy), 0.1);
-    const magnitude = (distance - 86) * 0.018;
+    // Rest length is both footprints plus one gap, so an edge between two big
+    // plates does not drag them into each other's marks.
+    const rest = radii.get(edge.source) + radii.get(edge.target) + restGap;
+    const magnitude = (distance - rest) * 0.018;
     const fx = magnitude * dx / distance;
     const fy = magnitude * dy / distance;
     force.get(edge.source).x += fx;
@@ -616,12 +648,46 @@ function layoutIteration(sorted, positions, edges) {
     force.get(edge.target).x -= fx;
     force.get(edge.target).y -= fy;
   }
+  const step = 8 * temperature;
   for (const node of sorted) {
     const position = positions.get(node.id);
     const delta = force.get(node.id);
-    position.x += Math.max(-8, Math.min(8, delta.x * 0.08 - position.x * 0.004));
-    position.y += Math.max(-8, Math.min(8, delta.y * 0.08 - position.y * 0.004));
+    position.x += Math.max(-step, Math.min(step, delta.x * 0.08 - position.x * 0.004));
+    position.y += Math.max(-step, Math.min(step, delta.y * 0.08 - position.y * 0.004));
   }
+}
+
+// The force loop leaves pairs that settled inside each other's marks; this
+// resolves what is left by pushing overlapping footprints apart along their
+// own axis. Visiting in id order keeps the correction seeded like the layout.
+function separationPass(sorted, positions, radii, gap) {
+  let moved = false;
+  for (let leftIndex = 0; leftIndex < sorted.length; leftIndex += 1) {
+    const left = positions.get(sorted[leftIndex].id);
+    const leftRadius = radii.get(sorted[leftIndex].id);
+    for (let rightIndex = leftIndex + 1; rightIndex < sorted.length; rightIndex += 1) {
+      const right = positions.get(sorted[rightIndex].id);
+      const minimum = leftRadius + radii.get(sorted[rightIndex].id) + gap;
+      let dx = right.x - left.x;
+      let dy = right.y - left.y;
+      let distance = Math.hypot(dx, dy);
+      if (distance >= minimum) continue;
+      if (distance < 0.01) {
+        dx = 1;
+        dy = (leftIndex + rightIndex) % 2 === 0 ? 0.5 : -0.5;
+        distance = Math.hypot(dx, dy);
+      }
+      const push = (minimum - distance) / 2;
+      const ux = dx / distance;
+      const uy = dy / distance;
+      left.x -= ux * push;
+      left.y -= uy * push;
+      right.x += ux * push;
+      right.y += uy * push;
+      moved = true;
+    }
+  }
+  return moved;
 }
 
 function nextFrame() {
@@ -659,16 +725,58 @@ function typicalSpacing(nodes, positions) {
   return Math.sqrt(VIEW_WIDTH * VIEW_HEIGHT / Math.max(nodes.length, 1));
 }
 
+// The iteration budget is spent where it buys a settled picture. A small
+// field converges long before the 2,400-node ceiling's cost matters, and a
+// large one keeps exactly the budget it had, so §25.8's floor is untouched.
+// Node count is the only input, so the budget is as seeded as the layout.
+function iterationBudget(count) {
+  if (count < 2) return 1;
+  return Math.min(420, Math.max(120, Math.round(3600 / Math.sqrt(count))));
+}
+
 async function calculateLayout(nodes, edges, generation) {
   const {sorted, positions} = initialPositions(nodes);
-  for (let iteration = 0; iteration < 120; iteration += 1) {
-    layoutIteration(sorted, positions, edges);
-    if ((iteration + 1) % 4 === 0) {
+  const radii = layoutRadii(sorted);
+  const restGap = 2.8 * plateRadius();
+  const iterations = iterationBudget(sorted.length);
+  // Yield on elapsed time, not on a fixed iteration count: a frame-locked
+  // yield made every field pay 60ths of a second per iteration whatever its
+  // size, so a small graph sat waiting on frames it did not need. The page
+  // still gives way often enough to stay responsive on a large one.
+  let lastYield = performance.now();
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const temperature = Math.max(0.05, 1 - iteration / iterations);
+    layoutIteration(sorted, positions, edges, radii, restGap, temperature);
+    if (performance.now() - lastYield > 8) {
       await nextFrame();
       if (generation !== renderGeneration) return null;
+      lastYield = performance.now();
     }
   }
   if (sorted.length === 0) return positions;
+  fitToFrame(sorted, positions);
+  // Overlap is the one layout fault a reader cannot work around: two plates
+  // in one place hide each other's state. It runs after the fit, in the frame
+  // units the reader actually sees — run before, the fit's own scaling would
+  // undo it. Passes are bounded, and the bound falls on big fields so the
+  // O(n²) sweep never outgrows §25.8's build budget.
+  const separationGap = 0.6 * plateRadius();
+  const separationPasses = sorted.length > 600 ? 4 : 24;
+  for (let pass = 0; pass < separationPasses; pass += 1) {
+    if (!separationPass(sorted, positions, radii, separationGap)) break;
+    clampToFrame(sorted, positions, radii);
+    if (performance.now() - lastYield > 8) {
+      await nextFrame();
+      if (generation !== renderGeneration) return null;
+      lastYield = performance.now();
+    }
+  }
+  return positions;
+}
+
+// Centre the settled layout in the viewBox with room for the marks and labels
+// that hang off a plate.
+function fitToFrame(sorted, positions) {
   const xs = sorted.map((node) => positions.get(node.id).x);
   const ys = sorted.map((node) => positions.get(node.id).y);
   const minX = Math.min(...xs);
@@ -683,7 +791,109 @@ async function calculateLayout(nodes, edges, generation) {
     position.x = VIEW_WIDTH / 2 + (position.x - centerX) * scale;
     position.y = VIEW_HEIGHT / 2 + (position.y - centerY) * scale;
   }
-  return positions;
+}
+
+// Separation may push a plate past the frame; the opening view shows the whole
+// field, so a pushed node returns to the margin rather than off screen.
+function clampToFrame(sorted, positions, radii) {
+  for (const node of sorted) {
+    const position = positions.get(node.id);
+    const margin = radii.get(node.id) + 2;
+    position.x = Math.max(margin, Math.min(VIEW_WIDTH - margin, position.x));
+    position.y = Math.max(margin, Math.min(VIEW_HEIGHT - margin, position.y));
+  }
+}
+
+// Where a label may start on each side of a node: past the plate, and past
+// the decision rail on the side that carries it.
+function labelAnchors(node) {
+  const drawn = glyphExtent(node);
+  const entry = STATE_TYPES.has(node.type)
+    ? accepted.graph.state[node.id] : undefined;
+  const dimensions = entry === undefined ? [] : railDimensions(node);
+  const bounds = dimensions.length ? railBounds(node, dimensions) : null;
+  return {
+    right: Math.max(drawn, bounds ? bounds.right : 0),
+    left: Math.max(drawn, bounds ? -bounds.left : 0),
+  };
+}
+
+// Slot order is fixed, so the chosen placement is a property of the graph and
+// not of the visiting order: the right of the node first — the anchor every
+// single-node render keeps — then the left, then a row above, then below.
+const LABEL_SLOTS = [
+  {side: "right", row: 0}, {side: "left", row: 0},
+  {side: "right", row: -1}, {side: "left", row: -1},
+  {side: "right", row: 1}, {side: "left", row: 1},
+  {side: "right", row: -2}, {side: "left", row: 2},
+];
+// Above this many nodes the collision sweep is skipped and every label takes
+// the first slot. The label channel has dropped whole well before a field
+// this dense (A11), so the sweep would cost O(n²) to place text nobody is
+// shown; the threshold reads off the node count alone, so the picture stays
+// seeded either way (§27.8).
+const LABEL_SWEEP_CEILING = 400;
+
+function boxesIntersect(left, right) {
+  return left.left < right.right && right.left < left.right
+    && left.top < right.bottom && right.top < left.bottom;
+}
+
+function labelBox(position, anchors, width, side, dy, line) {
+  const x = side === "right"
+    ? position.x + anchors.right + dy.gap
+    : position.x - anchors.left - dy.gap - width;
+  const top = position.y + dy.offset - line * 0.8;
+  return {left: x, right: x + width, top, bottom: top + line};
+}
+
+// §16.2 A11 makes labels a channel that drops whole; where they are drawn,
+// they have to be readable, and two titles in one place are not. Each label
+// takes the first slot around its node that clears every plate and every
+// label already placed. This moves no node and encodes nothing: a label's
+// side is legibility, never state (A10).
+function placeLabels(nodes, positions, radii) {
+  const sorted = [...nodes].sort((left, right) => left.id < right.id ? -1 : (left.id > right.id ? 1 : 0));
+  const gap = tokenNumber("--label-gap", 4);
+  const em = tokenNumber("--label-em", 5.8);
+  const line = tokenNumber("--label-line", 13);
+  const placements = new Map();
+  const fallback = {side: "right", offset: 4};
+  if (sorted.length > LABEL_SWEEP_CEILING) {
+    for (const node of sorted) placements.set(node.id, fallback);
+    return placements;
+  }
+  const obstacles = sorted.map((node) => {
+    const position = positions.get(node.id);
+    const radius = radii.get(node.id);
+    return {
+      left: position.x - radius, right: position.x + radius,
+      top: position.y - radius, bottom: position.y + radius,
+    };
+  });
+  for (const node of sorted) {
+    const position = positions.get(node.id);
+    const anchors = labelAnchors(node);
+    const width = displayTitle(node).length * em;
+    let chosen = null;
+    for (const slot of LABEL_SLOTS) {
+      const offset = 4 + slot.row * line;
+      const box = labelBox(
+        position, anchors, width, slot.side, {gap, offset}, line);
+      if (obstacles.some((obstacle) => boxesIntersect(box, obstacle))) continue;
+      chosen = {side: slot.side, offset, box};
+      break;
+    }
+    if (!chosen) {
+      const box = labelBox(
+        position, anchors, width, fallback.side,
+        {gap, offset: fallback.offset}, line);
+      chosen = {side: fallback.side, offset: fallback.offset, box};
+    }
+    obstacles.push(chosen.box);
+    placements.set(node.id, {side: chosen.side, offset: chosen.offset});
+  }
+  return placements;
 }
 
 async function renderField(field, nodes, edges, selected, banner) {
@@ -708,12 +918,17 @@ async function renderField(field, nodes, edges, selected, banner) {
   main.append(stage);
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const lanes = edgeLanes(renderedEdges);
   for (const edge of renderedEdges) {
-    viewport.append(makeEdge(edge, positions, nodeById));
+    viewport.append(makeEdge(edge, positions, nodeById, lanes.get(edge)));
   }
+  const radii = layoutRadii(nodes);
+  const placements = placeLabels(nodes, positions, radii);
   let selectedGroup = null;
   for (const node of nodes) {
-    const group = makeNode(node, positions.get(node.id), selected && selected.id === node.id);
+    const group = makeNode(
+      node, positions.get(node.id), selected && selected.id === node.id,
+      placements.get(node.id));
     viewport.append(group);
     if (selected && selected.id === node.id) selectedGroup = group;
   }
@@ -905,13 +1120,56 @@ function completeGlyphExtent(node, direction) {
   return extent;
 }
 
-function makeEdge(edge, positions, nodeById) {
+// One pair of nodes can carry several edges — a concept may both relate_to
+// and demonstrate another, and each says a different thing. Drawn on the one
+// axis they stack exactly, and the field shows a single claim where the graph
+// holds two. Each edge of such a pair takes its own lane along the shared
+// normal. A lane is a slot for telling strokes apart, never a weight and
+// never a rank: the order is the edge's own (type, source, target), so the
+// same graph lands the same picture (§27.8, A3).
+function edgeLanes(edges) {
+  const groups = new Map();
+  for (const edge of edges) {
+    const key = edge.source < edge.target
+      ? edge.source + " " + edge.target
+      : edge.target + " " + edge.source;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(edge);
+  }
+  const lanes = new Map();
+  for (const group of groups.values()) {
+    if (group.length < 2) {
+      lanes.set(group[0], 0);
+      continue;
+    }
+    const ordered = [...group].sort((left, right) => {
+      const leftKey = left.type + " " + left.source + " " + left.target;
+      const rightKey = right.type + " " + right.source + " " + right.target;
+      return leftKey < rightKey ? -1 : (leftKey > rightKey ? 1 : 0);
+    });
+    ordered.forEach((edge, index) => {
+      lanes.set(edge, index - (ordered.length - 1) / 2);
+    });
+  }
+  return lanes;
+}
+
+function makeEdge(edge, positions, nodeById, lane) {
   let source = positions.get(edge.source);
   let target = positions.get(edge.target);
   // At plate scale an untrimmed stroke buries its arrowhead under the target
   // glyph; ends stop at every mark on their approach ray so direction stays
   // readable without leaving rail-sized gaps on the opposite side.
   const rawAxis = edgeAxis(source, target);
+  if (rawAxis && lane) {
+    // A parallel translation: the approach direction is unchanged, so the
+    // trims below stay valid and a laned end clears its plate by more, never
+    // less, than a centred one.
+    const spacing = tokenNumber("--edge-lane", 7);
+    const normal = {x: -rawAxis.unit.y, y: rawAxis.unit.x};
+    source = offsetFrom(source, normal, lane * spacing);
+    target = offsetFrom(target, normal, lane * spacing);
+  }
   if (rawAxis) {
     const sourceTrim = completeGlyphExtent(
       nodeById.get(edge.source), rawAxis.unit,
@@ -1195,7 +1453,7 @@ function makeCartouche(leftExtent, rightExtent, halfHeight) {
     leftExtent + rightExtent + 2 * pad, 2 * (halfHeight + pad));
 }
 
-function makeNode(node, position, selected) {
+function makeNode(node, position, selected, placement) {
   const u = plateUnit();
   const entry = STATE_TYPES.has(node.type) ? accepted.graph.state[node.id] : undefined;
   const texture = STATE_TYPES.has(node.type) ? plateTexture(node, entry) : null;
@@ -1248,8 +1506,16 @@ function makeNode(node, position, selected) {
       drawnExtent, Math.max(rightExtent, drawnExtent), halfHeight));
   }
   const label = svgElement("text", "node-label");
-  label.setAttribute("x", (rightExtent + 4).toFixed(2));
-  label.setAttribute("y", "4");
+  const gap = tokenNumber("--label-gap", 4);
+  const slot = placement || {side: "right", offset: 4};
+  if (slot.side === "left") {
+    const leftExtent = Math.max(drawnExtent, bounds ? -bounds.left : 0);
+    label.setAttribute("x", (-(leftExtent + gap)).toFixed(2));
+    label.setAttribute("text-anchor", "end");
+  } else {
+    label.setAttribute("x", (rightExtent + gap).toFixed(2));
+  }
+  label.setAttribute("y", slot.offset.toFixed(2));
   label.textContent = displayTitle(node);
   group.append(label);
   group.addEventListener("click", (event) => {

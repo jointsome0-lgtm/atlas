@@ -101,6 +101,15 @@
   --chronic-stripe-opacity: 0.30; /* on focus only (A6) */
   --hairline: 0.75px;
   --cartouche-pad: 4px; /* field-undefined frame — a dash on a boundary is freshness (A4) */
+  --label-gap: 4px; /* clearance between a label and the last drawn mark on its side */
+  /* Label box estimates for collision-free placement. They size a rectangle
+     the renderer never draws — the label channel itself is A11's, and these
+     two never touch what a mark means. Advance is the mean glyph width at
+     --t-02 in --f-ui; measuring per string would make layout depend on font
+     load order, and the seeded picture must not (§27.8). */
+  --label-em: 5.8;
+  --label-line: 13;
+  --edge-lane: 7px; /* spacing between the strokes of one node pair */
 
   /* §16.2 A11 density tiers, as multiples of --plate-r: a channel drops when
      the typical on-screen node spacing falls under tier × plate radius. The

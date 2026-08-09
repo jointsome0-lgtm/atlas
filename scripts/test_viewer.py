@@ -2190,6 +2190,94 @@ class ViewerBrowserTests(unittest.TestCase):
             self.page.locator("svg .viewport").get_attribute("transform"),
         )
 
+    def test_plates_never_settle_on_top_of_one_another(self):
+        # Two plates in one place hide each other's state: the reader cannot
+        # tell one texture, boundary, or rail from the other, and A11's drop
+        # order has no tier that would rescue it. The separation pass runs in
+        # frame units after the fit, so the guarantee is what is drawn.
+        self.open_state("#mode=field", "FIELD")
+        overlaps = self.page.evaluate(
+            """() => {
+                const boxes = [...document.querySelectorAll("svg .node")]
+                    .map((node) => ({
+                        id: node.dataset.nodeId,
+                        box: node.querySelector(".node-shape").getBoundingClientRect(),
+                    }));
+                const hits = [];
+                for (let i = 0; i < boxes.length; i += 1) {
+                    for (let j = i + 1; j < boxes.length; j += 1) {
+                        const a = boxes[i].box, b = boxes[j].box;
+                        if (a.left < b.right && b.left < a.right
+                            && a.top < b.bottom && b.top < a.bottom) {
+                            hits.push(boxes[i].id + " / " + boxes[j].id);
+                        }
+                    }
+                }
+                return hits;
+            }"""
+        )
+        self.assertEqual([], overlaps)
+
+    def test_labels_clear_each_other_and_stay_seeded(self):
+        # A label that lands on its neighbour's label is the label channel
+        # drawn and unreadable at once. Each takes the first free slot around
+        # its node; the slot order is fixed, so the same graph keeps the same
+        # sides and the picture stays seeded (§27.8).
+        self.open_state("#mode=field", "FIELD")
+        read_labels = """() => [...document.querySelectorAll("svg .node")]
+            .map((node) => {
+                const label = node.querySelector(".node-label");
+                const box = label.getBoundingClientRect();
+                return {
+                    id: node.dataset.nodeId,
+                    anchor: label.getAttribute("text-anchor") || "start",
+                    x: label.getAttribute("x"),
+                    y: label.getAttribute("y"),
+                    box: {left: box.left, right: box.right,
+                          top: box.top, bottom: box.bottom},
+                };
+            })"""
+        labels = self.page.evaluate(read_labels)
+        overlaps = []
+        for index, left in enumerate(labels):
+            for right in labels[index + 1:]:
+                a, b = left["box"], right["box"]
+                if (a["left"] < b["right"] and b["left"] < a["right"]
+                        and a["top"] < b["bottom"] and b["top"] < a["bottom"]):
+                    overlaps.append(f"{left['id']} / {right['id']}")
+        self.assertEqual([], overlaps)
+        # The demo field is crowded enough that clearing the collisions needs
+        # the left side, so the sweep is proved to do something here.
+        self.assertIn("end", {label["anchor"] for label in labels})
+
+        self.page.reload(wait_until="domcontentloaded")
+        self.page.wait_for_selector('#main[data-state="FIELD"]')
+        repeated = self.page.evaluate(read_labels)
+        self.assertEqual(
+            [(label["id"], label["anchor"], label["x"], label["y"])
+             for label in labels],
+            [(label["id"], label["anchor"], label["x"], label["y"])
+             for label in repeated],
+        )
+
+    def test_edges_of_one_pair_are_drawn_apart(self):
+        # The demo graph joins some pairs by more than one edge — related_to
+        # and alternative_to say different things about the same two nodes.
+        # Stacked on one axis the field would show one stroke where the graph
+        # holds several, so each takes its own lane.
+        self.open_state("#mode=field", "FIELD")
+        spans = self.page.evaluate(
+            """() => [...document.querySelectorAll("svg .edge-group")]
+                .map((group) => {
+                    const line = group.querySelector(
+                        ".weight-dropped") || group.querySelector(".edge-line");
+                    return ["x1", "y1", "x2", "y2"]
+                        .map((name) => Number(line.getAttribute(name)).toFixed(1))
+                        .join(",");
+                })"""
+        )
+        self.assertEqual(len(spans), len(set(spans)))
+
 
 if __name__ == "__main__":
     unittest.main()
