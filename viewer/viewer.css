@@ -833,34 +833,41 @@ aside {
    arrowhead is a marker filled with context-stroke, which copies the paint
    but not the stroke's own opacity. A9 gives focus feedback the one transition
    there is, and reduced motion collapses it to zero below. The trail is
-   exempt (A7). */
+   exempt (A7).
+   Each amount is divided by how much of its own mark is actually painted. A
+   stroke narrower than a pixel does not paint a thin line, it paints a pale
+   one — the width is the coverage — so a family already spending part of its
+   presence on being drawn at all has that much less to spend on being quiet,
+   and the amount measured at full width would land it under the floor.
+   --edge-cover is that fraction: the family's own width in units, at the size
+   the picture is drawn (never under the lift's floor), capped at the pixel
+   where coverage is whole. At full size it is 1 and the division is the
+   identity. Compensating in the width instead is not open: the lift would have
+   to differ per family and width carries family alone (A3). Where even the
+   whole amount cannot be spent the quiet stands down at 1, which is the answer
+   forced colours already get; the selection still answers through the ring and
+   through the panel's words (A8). */
 .viewport.has-selection .edge-group:not(.incident) {
-  --edge-recede: var(--recede-derived);
+  --edge-units: 1;
+  --edge-cover: min(1, calc(
+    var(--edge-units) * max(var(--screen-scale, 1), var(--edge-hairline))));
+  --edge-recede: min(1, calc(var(--recede-derived) / var(--edge-cover)));
+}
+
+.viewport.has-selection .edge-group:not(.incident)[data-family="journal"] {
+  --edge-units: 1.25;
 }
 
 .viewport.has-selection .edge-group:not(.incident)[data-family="authored"] {
-  --edge-recede: var(--recede-authored);
+  --edge-units: 1.5; /* --w-stroke, as a number */
+  --edge-recede: min(1, calc(var(--recede-authored) / var(--edge-cover)));
 }
 
 .viewport.has-selection .edge-group:not(.incident)[data-family="route"] {
-  --edge-recede: var(--recede-route);
+  --edge-recede: min(1, calc(var(--recede-route) / var(--edge-cover)));
 }
 
 .viewport.has-selection .edge-group:not(.incident)[data-family="trail"] {
-  --edge-recede: 1;
-}
-
-/* Where the floor is already lifting the stroke there is no room left under
-   it: a width below a pixel is coverage, and the recession multiplies that
-   coverage, so each amount — measured at the width the field was authored
-   for — would land the quieted family under the hairline the floor exists to
-   hold. Compensating in the width is not available either: the lift would
-   then have to differ per family and width carries family alone (A3). So
-   rather than break the floor the emphasis stands down, which is the answer
-   forced colours already get; the selection still answers through the ring
-   and through the panel's words (A8). Last of the four, so it takes the tie
-   with the per-family amounts above. */
-.viewport.floored.has-selection .edge-group:not(.incident) {
   --edge-recede: 1;
 }
 

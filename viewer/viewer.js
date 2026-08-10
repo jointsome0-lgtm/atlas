@@ -1495,6 +1495,18 @@ function makeEdge(edge, positions, nodeById, lane) {
     // A parallel translation. The normal is taken along the pair's own axis,
     // low id to high: derived from the edge's direction, a reciprocal a→b /
     // b→a pair would cancel back onto one offset.
+    // In layout units, unlike the stroke width, the dash period and the hit
+    // band, which are all held at screen scale. Those three do not move an
+    // endpoint; a lane does, and a lateral offset held at screen scale grows
+    // without bound as the picture shrinks — at the 700-node opening fit the
+    // seven units would become 124, which is the measured median gap between
+    // neighbouring plates there, so the pair's relations would be drawn a
+    // whole plate away from the pair. Position is geometry (A10). At that fit
+    // the lanes do collapse under a pixel and the hand reaches the topmost of
+    // the two; that is not the lane's doing — the hit band is 12 CSS px and
+    // the median plate gap is 6.9, so every relation's band already overlaps
+    // its neighbours'. What answers a field drawn that small is the focus
+    // horizon and A11's fallback, not a wider lane.
     const spacing = tokenNumber("--edge-lane", 7);
     const sense = edge.source < edge.target ? 1 : -1;
     const normal = {x: -rawAxis.unit.y * sense, y: rawAxis.unit.x * sense};
@@ -2007,7 +2019,8 @@ function applyScreenScale(transform) {
   // The head is sized in stroke-width units, so the stroke's own floor would
   // multiply it by the same lift and a direction mark would outgrow the plate
   // it points at. The head keeps the picture's scale.
-  const lift = Math.max(1, tokenNumber("--edge-hairline", 0.58) / screen);
+  const hairline = tokenNumber("--edge-hairline", 0.58);
+  const lift = Math.max(1, hairline / screen);
   // A round cap runs half the stroke past its own endpoint, and the endpoints
   // were trimmed to clear the plate at the width the field was solved at. Once
   // the floor lifts the stroke the cap reaches back over the glyph — so where

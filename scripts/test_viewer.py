@@ -560,25 +560,31 @@ class ViewerBrowserTests(unittest.TestCase):
         receded = self.page.evaluate(
             """() => {
                 const root = getComputedStyle(document.documentElement);
+                const viewport = document.querySelector(".viewport");
+                const screen = Number(getComputedStyle(viewport)
+                    .getPropertyValue("--screen-scale"));
                 const out = {};
-                for (const group of document.querySelectorAll(
-                        "svg .edge-group:not(.incident)")) {
+                for (const group of viewport.querySelectorAll(
+                        ".edge-group:not(.incident)")) {
                     const family = group.dataset.family;
                     if (family === "trail") continue;
                     const token = family === "authored" ? "--recede-authored"
                         : family === "route" ? "--recede-route"
                         : "--recede-derived";
-                    out[family] = [
-                        getComputedStyle(
-                            group.querySelector(".edge-line")).opacity,
-                        String(Number(root.getPropertyValue(token)))];
+                    // The amount as it lands, not as it is written: a stroke
+                    // under a pixel paints its width, and the sheet divides
+                    // the amount by that before spending it.
+                    const style = getComputedStyle(group.querySelector(".edge-line"));
+                    const laid = Math.min(1, Number.parseFloat(style.strokeWidth) * screen)
+                        * Number(style.opacity);
+                    out[family] = [laid, Number(root.getPropertyValue(token))];
                 }
                 return out;
             }""")
         self.assertGreater(len(receded), 1)
         for family, (drawn, authored) in receded.items():
-            self.assertEqual(
-                authored, str(round(float(drawn), 4)),
+            self.assertAlmostEqual(
+                authored, drawn, 2,
                 f"{family} does not recede to its own token")
         panel = self.page.locator("#details").inner_text()
         for named in ("concept:rest-api", "part:mdn-http-methods/idempotency"):
@@ -1066,36 +1072,63 @@ class ViewerBrowserTests(unittest.TestCase):
             }""")
         self.assertGreaterEqual(band, 11.5)
 
-    def test_the_quiet_stands_down_where_the_floor_is_already_working(self):
-        # The floor lifts the thinnest family to the coverage --rule's contrast
-        # needs, and that coverage is the whole of it: below a pixel a stroke
-        # paints its own width, so a recession multiplying it lands the quieted
-        # family under the very floor. Compensating in the width is not open —
-        # the lift would differ per family and width carries family alone (A3).
-        # So the emphasis stands down instead, as it does under forced colours.
-        self.page.set_viewport_size({"width": 450, "height": 325})
-        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
-        self.assertEqual(1, self.page.locator("svg .viewport.floored.has-selection").count())
-        quiet = self.page.locator('svg .edge-group:not(.incident)')
-        self.assertGreater(quiet.count(), 0)
-        self.page.wait_for_timeout(300)
-        self.assertEqual(
-            ["1"] * quiet.count(),
-            quiet.evaluate_all(
-                """groups => groups.map((g) => getComputedStyle(
-                    g.querySelector(".edge-line")).opacity)"""))
-        # And it is the floor doing that, not the selection having stopped
-        # answering: at the field's own scale the same picture still quiets.
-        self.page.set_viewport_size({"width": 1280, "height": 900})
-        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
-        self.assertEqual(0, self.page.locator("svg .viewport.floored").count())
-        self.page.wait_for_timeout(300)
-        settled = quiet.evaluate_all(
-            """groups => groups.map((g) => Number(getComputedStyle(
-                g.querySelector(".edge-line")).opacity))""")
-        self.assertTrue(
-            any(value < 1 for value in settled),
-            f"nothing receded at the field's own scale: {settled}")
+    # What a quieted relation actually lays down: the painted width capped at a
+    # pixel is the coverage, and the opacity is spent on top of it.
+    QUIET_COVERAGE_JS = """() => {
+      const viewport = document.querySelector(".viewport");
+      const screen = Number(
+        getComputedStyle(viewport).getPropertyValue("--screen-scale"));
+      const root = getComputedStyle(document.documentElement);
+      // structural and journal are the two derived families; the sheet quiets
+      // them by the one derived amount.
+      const wanted = {
+        authored: Number(root.getPropertyValue("--recede-authored")),
+        structural: Number(root.getPropertyValue("--recede-derived")),
+        journal: Number(root.getPropertyValue("--recede-derived")),
+        route: Number(root.getPropertyValue("--recede-route")),
+        trail: 1,
+      };
+      const out = {screen, families: {}, floored: viewport.classList.contains("floored")};
+      for (const group of viewport.querySelectorAll(".edge-group:not(.incident)")) {
+        const line = group.querySelector(".edge-line");
+        const style = getComputedStyle(line);
+        const drawn = Number.parseFloat(style.strokeWidth) * screen;
+        const laid = Math.min(1, drawn) * Number(style.opacity);
+        const family = group.dataset.family;
+        out.families[family] = Math.min(
+          out.families[family] === undefined ? Infinity : out.families[family], laid);
+      }
+      return {...out, wanted};
+    }"""
+
+    def test_the_quiet_is_spent_out_of_what_the_stroke_actually_lays_down(self):
+        # A stroke narrower than a pixel does not paint a thin line, it paints
+        # a pale one — the width is the coverage. So a family already spending
+        # part of its presence on being drawn has that much less to spend on
+        # being quiet, and the amount measured at full width would take it
+        # under §16.3's floor. Three frames: the lift working, the stretch
+        # above the hairline where it has not started but the one-unit families
+        # are already under a pixel, and the field at its own size.
+        for width, height in ((450, 325), (1000, 720), (1280, 900)):
+            with self.subTest(frame=f"{width}x{height}"):
+                self.page.set_viewport_size({"width": width, "height": height})
+                self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+                # Read once A9's transition has settled.
+                self.page.wait_for_timeout(300)
+                measured = self.page.evaluate(self.QUIET_COVERAGE_JS)
+                self.assertGreater(len(measured["families"]), 0)
+                for family, laid in measured["families"].items():
+                    self.assertGreaterEqual(
+                        laid, measured["wanted"][family] - 0.005,
+                        f"{family} lays down {laid:.3f} of the "
+                        f"{measured['wanted'][family]} the floor asks, "
+                        f"at screen scale {measured['screen']}")
+        # And the quiet is still a quiet: at its own size the field recedes by
+        # exactly the sheet's amounts, the division being the identity there.
+        self.assertGreaterEqual(measured["screen"], 1)
+        self.assertFalse(measured["floored"])
+        for family, laid in measured["families"].items():
+            self.assertAlmostEqual(measured["wanted"][family], laid, 2)
 
     def test_a_lifted_stroke_does_not_cap_back_over_the_plate(self):
         # The endpoints were trimmed to clear the glyph at the width the field
