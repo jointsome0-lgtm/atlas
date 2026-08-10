@@ -370,6 +370,37 @@ class ViewerBrowserTests(unittest.TestCase):
         self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
         self.open_state("#mode=field&focus=concept:n-0", "LIST")
 
+    def test_a_horizon_holding_a_hub_back_still_meets_the_ceiling(self):
+        # A hop radius can leave two plates in view and the whole rest of the
+        # field cut at the rim — and every cut relation is drawn: a group, a
+        # stroke, a hit band and a label apiece. Counting plates alone lets a
+        # hub slip under §25.8's line and hand the frame a hundred thousand
+        # marks it never agreed to.
+        nodes = [
+            {"id": f"concept:h-{index}", "type": "concept",
+             "title": f"Node {index}", "fields": ["knowledge"], "aliases": []}
+            for index in range(3000)
+        ]
+        edges = [{"source": "concept:h-0", "target": "concept:h-1",
+                  "type": "related_to", "provenance": ["concept:h-0"],
+                  "weight": "unassessed"}]
+        edges += [
+            {"source": "concept:h-1", "target": f"concept:h-{index}",
+             "type": "related_to", "provenance": ["concept:h-1"],
+             "weight": "unassessed"}
+            for index in range(2, 3000)
+        ]
+        # §20.3: the builder emits relations in canonical identity order, and
+        # the viewer rejects a shuffle rather than lay one out input-driven.
+        edges.sort(key=lambda edge: (edge["type"], edge["source"], edge["target"]))
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field&focus=concept:h-0", "LIST")
+        self.page.locator("#horizon-select").select_option("1")
+        # Two plates in view, and the fallback still holds: the rim is the
+        # rest of the field.
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.assertTrue(self.page.locator("#graph-view").is_disabled())
+
     def test_a_horizon_can_bring_an_oversized_field_back_into_the_picture(self):
         # Past the ceiling the list is forced, and the radius is the one
         # control that can bring the field back under it. Standing it down
@@ -681,7 +712,7 @@ class ViewerBrowserTests(unittest.TestCase):
       return {count: drawn.length, overlaps};
     }"""
 
-    def wide_titled_field(self, title):
+    def wide_titled_field(self, title, count=11):
         # A chain of eleven, which the seeded layout spreads far enough that
         # every one of these labels has a free slot to be put in. So a label
         # sitting on a plate here is the estimate being wrong and not the
@@ -689,7 +720,7 @@ class ViewerBrowserTests(unittest.TestCase):
         nodes = [
             {"id": f"concept:w{index:02d}", "type": "concept",
              "title": title, "fields": ["knowledge"], "aliases": []}
-            for index in range(11)
+            for index in range(count)
         ]
         edges = [
             {"source": f"concept:w{index:02d}",
@@ -714,6 +745,30 @@ class ViewerBrowserTests(unittest.TestCase):
                 drawn = self.page.evaluate(self.LABEL_INK_JS)
                 self.assertEqual(11, drawn["count"])
                 self.assertEqual([], drawn["overlaps"])
+
+    def test_a_title_at_the_boundary_is_inside_the_opening_frame(self):
+        # The opening fit is what the reader is handed before touching
+        # anything. A label is drawn beside its plate and reaches further out
+        # than the plate does, so a fit taken from the radii alone hands a
+        # boundary node's title to the edge of the frame and cuts it there —
+        # with no tier having dropped it and nothing said (A11).
+        self.page.set_viewport_size({"width": 700, "height": 900})
+        self.wide_titled_field("W" * 15, count=40)
+        outside = self.page.evaluate(
+            """() => {
+                const svg = document.querySelector("svg.graph-svg")
+                    .getBoundingClientRect();
+                return [...document.querySelectorAll("svg .node-label")]
+                    // A tier that dropped a label leaves nothing drawn, and an
+                    // undrawn box is not a clipped one (A11).
+                    .map((label) => label.getBoundingClientRect())
+                    .filter((box) => box.width > 0)
+                    .map((box) => Math.max(
+                        svg.left - box.left, box.right - svg.right,
+                        svg.top - box.top, box.bottom - svg.bottom))
+                    .filter((over) => over > 0.5);
+            }""")
+        self.assertEqual([], outside)
 
     def test_the_emphasis_stands_down_under_forced_colours(self):
         # The system palette has no rank below its own text, so there is no

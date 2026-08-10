@@ -365,9 +365,13 @@ async function dispatch() {
   const view = horizon === null
     ? {nodes, edges, cut: [], continues: false}
     : neighbourhood(nodes, edges, selected, horizon);
-  // §25.8's fallback line counts nodes *in view*, and a horizon is what is
-  // in view.
-  const pastCeiling = view.nodes.length > RENDER_NODE_LINK_CEILING;
+  // §25.8's fallback line counts what the node-link view has to put on the
+  // screen, and a horizon is what is in view. A cut relation counts with the
+  // plates: it is not laid out, but it is drawn — group, stroke, hit band and
+  // label apiece — so one node holding a hundred thousand relations back at
+  // the rim would otherwise slip under a line meant to keep the frame.
+  const pastCeiling =
+    view.nodes.length + view.cut.length > RENDER_NODE_LINK_CEILING;
   const listing = pastCeiling || viewMode === "list";
   setLensControls(pastCeiling);
   // Stood down only for a list the reader asked for *and can leave*. Past the
@@ -967,9 +971,15 @@ function fitToFrame(buffer) {
 
 // Zoom out only, until the drawn bounds fit the frame. Every input is the
 // settled layout, not the window, so the picture stays seeded (§27.8).
-function frameFit(sorted, positions, radii) {
-  const identity = {zoom: 1, x: 0, y: 0};
-  if (sorted.length === 0) return identity;
+//
+// A label is drawn beside its plate and can reach further out than any plate
+// does, so the bounds are the placed boxes too: a fit taken from the radii
+// alone leaves a boundary node's title outside the frame, cut off with no
+// tier having dropped it and nothing said (A11). The picture is centred on
+// those bounds even when it already fits, since a label reaching past the
+// frame on one side is clipped whether or not the whole of it would fit.
+function frameFit(sorted, positions, radii, placements) {
+  if (sorted.length === 0) return {zoom: 1, x: 0, y: 0};
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
@@ -981,9 +991,14 @@ function frameFit(sorted, positions, radii) {
     maxX = Math.max(maxX, position.x + margin);
     minY = Math.min(minY, position.y - margin);
     maxY = Math.max(maxY, position.y + margin);
+    const box = placements === undefined ? undefined : placements.get(node.id)?.box;
+    if (box === undefined) continue;
+    minX = Math.min(minX, box.left);
+    maxX = Math.max(maxX, box.right);
+    minY = Math.min(minY, box.top);
+    maxY = Math.max(maxY, box.bottom);
   }
   const zoom = Math.min(1, (VIEW_WIDTH - 40) / Math.max(maxX - minX, 1), (VIEW_HEIGHT - 40) / Math.max(maxY - minY, 1));
-  if (zoom >= 1) return identity;
   return {
     zoom,
     x: VIEW_WIDTH / 2 - zoom * (minX + maxX) / 2,
@@ -1099,7 +1114,10 @@ function placeLabels(nodes, positions, radii) {
       chosen = {side: fallback.side, offset: fallback.offset, box};
     }
     obstacles.push(chosen.box);
-    placements.set(node.id, {side: chosen.side, offset: chosen.offset});
+    // The box travels with the placement: the opening fit has to see how far
+    // the title reaches, and it is this sweep that knows.
+    placements.set(
+      node.id, {side: chosen.side, offset: chosen.offset, box: chosen.box});
   }
   return placements;
 }
@@ -1166,7 +1184,7 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
   }
 
   const focusedPosition = selected ? positions.get(selected.id) : null;
-  const fit = frameFit(nodes, positions, radii);
+  const fit = frameFit(nodes, positions, radii, placements);
   // A focused node is read at its own scale; unfocused, the view opens on
   // the whole field.
   const transform = focusedPosition
