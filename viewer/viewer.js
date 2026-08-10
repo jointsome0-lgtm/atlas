@@ -1631,6 +1631,19 @@ function makeStubs(cutEdges, positions, nodeById, focusPosition) {
     const reach = Math.hypot(outward.x, outward.y);
     outward = reach < 0.01 ? {x: 0, y: -1} : {x: outward.x / reach, y: outward.y / reach};
     cuts.forEach(({edge}, at) => {
+      // One radian however many are held back, and a wider one would not buy
+      // a hand anything. A stub is 14 units long and its band is 12 CSS px
+      // wide, so two neighbours' bands already overlap along their whole
+      // length from the third stub on — at any spread, because the stub is
+      // shorter than the band is wide. Holding them apart needs about half a
+      // radian each: the whole circle keeps thirteen, and a fan that wide
+      // would swing stubs back across the plate's own drawn relations and
+      // read as a direction the field does not have (A10). What the hand
+      // loses is one word — a stub's hover says its family and "past the
+      // horizon", never the far id (§16.3), so two of a family say the same
+      // thing, and where families differ the difference is already in the
+      // stroke every stub is drawn with (A3). A rim this crowded is answered
+      // by a narrower radius and by §25.8's fallback, which now counts these.
       const turn = cuts.length > 1 ? -fan / 2 + fan * at / (cuts.length - 1) : 0;
       const unit = {
         x: outward.x * Math.cos(turn) - outward.y * Math.sin(turn),
