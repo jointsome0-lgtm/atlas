@@ -15,6 +15,11 @@ const VIEW_WIDTH = 900;
 const VIEW_HEIGHT = 650;
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5;
+// Screen pixels a press may wander and still count as a press, not a pan.
+const DRAG_SLOP = 4;
+// The arrowhead's side in stroke-width units, before applyScreenScale divides
+// the stroke's low-zoom lift back out of it.
+const ARROW_UNITS = 6;
 const ROUTE_TYPES = new Set(["step_of_route", "suggested_next"]);
 const TRAIL_TYPES = new Set(["moved_to", "via", "produced_artifact"]);
 const AUTHORED_TYPES = new Set(["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"]);
@@ -114,6 +119,7 @@ const closeDetails = document.querySelector("#close-details");
 const fieldChip = document.querySelector("#field-chip");
 const statusBar = document.querySelector("#status-bar");
 const routesToggle = document.querySelector("#routes-toggle");
+const horizonSelect = document.querySelector("#horizon-select");
 const graphView = document.querySelector("#graph-view");
 const listView = document.querySelector("#list-view");
 const legendToggle = document.querySelector("#legend-toggle");
@@ -126,6 +132,7 @@ let renderGeneration = 0;
 let currentTransform = null;
 let densityResizeObserver = null;
 let viewMode = "graph";
+let fieldContinuesPastHorizon = false;
 
 function htmlElement(tag, className, text) {
   const element = document.createElement(tag);
@@ -297,6 +304,10 @@ async function dispatch() {
     return;
   }
   setLensControls(false);
+  // Every screen that is not a drawn field has no horizon and nothing outside
+  // one; the render below re-arms both once it knows there is a focus.
+  setHorizonControl(false);
+  fieldContinuesPastHorizon = false;
   // §16.5: address hardening never depends on graph content — a bad
   // address is the generic error and no render, empty graph included.
   const raw = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
@@ -350,13 +361,37 @@ async function dispatch() {
   const nodes = accepted.graph.nodes.filter((node) => node.fields.includes(field) || (field === DEFAULT_FIELD && node.fields.length === 0));
   const ids = new Set(nodes.map((node) => node.id));
   const edges = accepted.graph.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
-  const pastCeiling = nodes.length > RENDER_NODE_LINK_CEILING;
+  const horizon = selected === null ? null : horizonHops();
+  const view = horizon === null
+    ? {nodes, edges, cut: [], continues: false}
+    : neighbourhood(nodes, edges, selected, horizon);
+  // §25.8's fallback line counts what the node-link view has to put on the
+  // screen, and a horizon is what is in view. A cut relation counts with the
+  // plates: it is not laid out, but it is drawn — group, stroke, hit band and
+  // label apiece — so one node holding a hundred thousand relations back at
+  // the rim would otherwise slip under a line meant to keep the frame.
+  const pastCeiling =
+    view.nodes.length + view.cut.length > RENDER_NODE_LINK_CEILING;
+  const listing = pastCeiling || viewMode === "list";
   setLensControls(pastCeiling);
-  if (pastCeiling || viewMode === "list") {
+  // Stood down only for a list the reader asked for *and can leave*. Past the
+  // ceiling the radius is the one control that can bring the field back under
+  // it, so neither the forced fallback nor a list asked for on top of one may
+  // be the state that takes it away — the second is how the reader reaches a
+  // list with the graph shut and the radius gone.
+  setHorizonControl(
+    selected !== null, viewMode === "list" && !pastCeiling, pastCeiling);
+  if (listing) {
+    // §16.3 bounds the node-link view alone. The list is A11's fallback and
+    // carries the field's own channels as columns, so a hop radius must not
+    // thin it — a cut relation has a stub in the picture and would have
+    // nothing here.
+    fieldContinuesPastHorizon = false;
     renderList(field, nodes, edges, selected, banner, pastCeiling);
     return;
   }
-  await renderField(field, nodes, edges, selected, banner);
+  fieldContinuesPastHorizon = view.continues;
+  await renderField(field, view.nodes, view.edges, selected, banner, view.cut);
 }
 
 function setLensControls(pastCeiling) {
@@ -369,6 +404,57 @@ function setLensControls(pastCeiling) {
   }
   graphView.setAttribute("aria-pressed", String(effectiveMode === "graph"));
   listView.setAttribute("aria-pressed", String(effectiveMode === "list"));
+}
+
+// A reader control, not an address: §16.4's fragment carries mode, focus and
+// field, and an extra key there would be a contract edit.
+function setHorizonControl(focused, listing, pastCeiling) {
+  horizonSelect.disabled = !focused || listing;
+  if (listing) horizonSelect.title = "The list carries the whole field";
+  else if (!focused) horizonSelect.title = "Open a node to look around it";
+  else if (pastCeiling) horizonSelect.title = "Narrow the field to draw it";
+  else horizonSelect.removeAttribute("title");
+}
+
+function horizonHops() {
+  const value = Number.parseInt(horizonSelect.value, 10);
+  return Number.isNaN(value) ? null : value;
+}
+
+// #99: the field is drawn out to a horizon in hops and no further, with
+// nothing — no cluster, count, or heat — drawn in its place (A5, A11). Hops
+// run over the edges the reader can see, so hiding a family narrows the
+// horizon with it.
+function neighbourhood(nodes, edges, selected, horizon) {
+  const neighbours = new Map(nodes.map((node) => [node.id, []]));
+  if (!neighbours.has(selected.id)) return {nodes, edges, cut: [], continues: false};
+  for (const edge of visibleEdges(edges)) {
+    neighbours.get(edge.source).push(edge.target);
+    neighbours.get(edge.target).push(edge.source);
+  }
+  const reached = new Set([selected.id]);
+  let frontier = [selected.id];
+  for (let hop = 0; hop < horizon; hop += 1) {
+    const next = [];
+    for (const id of frontier) {
+      for (const other of neighbours.get(id)) {
+        if (reached.has(other)) continue;
+        reached.add(other);
+        next.push(other);
+      }
+    }
+    frontier = next;
+  }
+  // Cut, not gone: drawn as far as the view reaches and then stopped (#99).
+  // Taken from the visible set so a hidden family leaves no stub behind.
+  const cut = visibleEdges(edges).filter(
+    (edge) => reached.has(edge.source) !== reached.has(edge.target));
+  return {
+    nodes: nodes.filter((node) => reached.has(node.id)),
+    edges: edges.filter((edge) => reached.has(edge.source) && reached.has(edge.target)),
+    cut,
+    continues: reached.size < nodes.length
+  };
 }
 
 // An accepted graph may hold up to the §25.8 node ceiling; the list stays
@@ -575,53 +661,154 @@ function initialPositions(nodes) {
   return {sorted, positions};
 }
 
-function layoutIteration(sorted, positions, edges) {
-  const force = new Map(sorted.map((node) => [node.id, {x: 0, y: 0}]));
-  for (let leftIndex = 0; leftIndex < sorted.length; leftIndex += 1) {
-    const left = positions.get(sorted[leftIndex].id);
-    for (let rightIndex = leftIndex + 1; rightIndex < sorted.length; rightIndex += 1) {
-      const right = positions.get(sorted[rightIndex].id);
-      let dx = right.x - left.x;
-      let dy = right.y - left.y;
+// The room a node's own marks occupy, as a radius. Clearance only — position
+// and size stay geometry, never state (A10).
+function layoutRadius(node) {
+  let radius = glyphExtent(node);
+  const entry = STATE_TYPES.has(node.type)
+    ? accepted.graph.state[node.id] : undefined;
+  if (entry !== undefined) {
+    const dimensions = railDimensions(node);
+    if (dimensions.length) {
+      const bounds = railBounds(node, dimensions);
+      radius = Math.max(
+        radius, bounds.right, -bounds.left, bounds.bottom, -bounds.top);
+    }
+  }
+  return radius;
+}
+
+function layoutRadii(sorted) {
+  return new Map(sorted.map((node) => [node.id, layoutRadius(node)]));
+}
+
+// Typed arrays for the O(n²) pair loop: same arithmetic in the same order, so
+// the same graph still settles into the same picture (§27.8).
+function layoutBuffer(sorted, positions, radii, edges) {
+  const count = sorted.length;
+  const index = new Map();
+  const x = new Float64Array(count);
+  const y = new Float64Array(count);
+  const radius = new Float64Array(count);
+  sorted.forEach((node, at) => {
+    const position = positions.get(node.id);
+    index.set(node.id, at);
+    x[at] = position.x;
+    y[at] = position.y;
+    radius[at] = radii.get(node.id);
+  });
+  const springs = [];
+  for (const edge of edges) {
+    const source = index.get(edge.source);
+    const target = index.get(edge.target);
+    if (source === undefined || target === undefined) continue;
+    springs.push(source, target);
+  }
+  return {
+    count,
+    x,
+    y,
+    radius,
+    springs: Int32Array.from(springs),
+    forceX: new Float64Array(count),
+    forceY: new Float64Array(count),
+    writeBack() {
+      sorted.forEach((node, at) => {
+        const position = positions.get(node.id);
+        position.x = x[at];
+        position.y = y[at];
+      });
+    }
+  };
+}
+
+// Cooling: the step ceiling falls with the temperature, so late iterations
+// settle instead of wandering. Seeded and clamped (§27.8).
+function layoutIteration(buffer, restGap, temperature) {
+  const {count, x, y, radius, springs, forceX, forceY} = buffer;
+  forceX.fill(0);
+  forceY.fill(0);
+  for (let left = 0; left < count; left += 1) {
+    const leftX = x[left];
+    const leftY = y[left];
+    const leftRadius = radius[left];
+    for (let right = left + 1; right < count; right += 1) {
+      let dx = x[right] - leftX;
+      let dy = y[right] - leftY;
       let distanceSquared = dx * dx + dy * dy;
       if (distanceSquared < 0.01) {
-        dx = 0.1 + leftIndex * 0.001;
-        dy = 0.1 + rightIndex * 0.001;
+        dx = 0.1 + left * 0.001;
+        dy = 0.1 + right * 0.001;
         distanceSquared = dx * dx + dy * dy;
       }
       const distance = Math.sqrt(distanceSquared);
       // Repulsion sized for plate-scale nodes (#98): weakly connected nodes
       // must clear a full plate-and-rail footprint, not the old 7-unit dot.
-      const magnitude = 3600 / distanceSquared;
+      // Scaling by the pair's own clearance keeps that true for every kind.
+      const clearance = leftRadius + radius[right];
+      const magnitude = 3 * clearance * clearance / distanceSquared;
       const fx = magnitude * dx / distance;
       const fy = magnitude * dy / distance;
-      force.get(sorted[leftIndex].id).x -= fx;
-      force.get(sorted[leftIndex].id).y -= fy;
-      force.get(sorted[rightIndex].id).x += fx;
-      force.get(sorted[rightIndex].id).y += fy;
+      forceX[left] -= fx;
+      forceY[left] -= fy;
+      forceX[right] += fx;
+      forceY[right] += fy;
     }
   }
-  for (const edge of edges) {
-    const source = positions.get(edge.source);
-    const target = positions.get(edge.target);
-    if (!source || !target) continue;
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
+  for (let at = 0; at < springs.length; at += 2) {
+    const source = springs[at];
+    const target = springs[at + 1];
+    const dx = x[target] - x[source];
+    const dy = y[target] - y[source];
     const distance = Math.max(Math.sqrt(dx * dx + dy * dy), 0.1);
-    const magnitude = (distance - 86) * 0.018;
+    // Rest length is both footprints plus one gap, so an edge between two big
+    // plates does not drag them into each other's marks.
+    const rest = radius[source] + radius[target] + restGap;
+    const magnitude = (distance - rest) * 0.018;
     const fx = magnitude * dx / distance;
     const fy = magnitude * dy / distance;
-    force.get(edge.source).x += fx;
-    force.get(edge.source).y += fy;
-    force.get(edge.target).x -= fx;
-    force.get(edge.target).y -= fy;
+    forceX[source] += fx;
+    forceY[source] += fy;
+    forceX[target] -= fx;
+    forceY[target] -= fy;
   }
-  for (const node of sorted) {
-    const position = positions.get(node.id);
-    const delta = force.get(node.id);
-    position.x += Math.max(-8, Math.min(8, delta.x * 0.08 - position.x * 0.004));
-    position.y += Math.max(-8, Math.min(8, delta.y * 0.08 - position.y * 0.004));
+  const step = 8 * temperature;
+  for (let at = 0; at < count; at += 1) {
+    x[at] += Math.max(-step, Math.min(step, forceX[at] * 0.08 - x[at] * 0.004));
+    y[at] += Math.max(-step, Math.min(step, forceY[at] * 0.08 - y[at] * 0.004));
   }
+}
+
+// Pushes footprints the force loop left overlapping apart along their own
+// axis. Visited in id order, so the correction is seeded like the layout.
+function separationPass(buffer, gap) {
+  const {count, x, y, radius} = buffer;
+  let moved = false;
+  for (let left = 0; left < count; left += 1) {
+    const leftRadius = radius[left];
+    for (let right = left + 1; right < count; right += 1) {
+      const minimum = leftRadius + radius[right] + gap;
+      // Read live: a push earlier in this pass has already moved both ends.
+      let dx = x[right] - x[left];
+      let dy = y[right] - y[left];
+      let distance = Math.hypot(dx, dy);
+      if (distance >= minimum) continue;
+      if (distance < 0.01) {
+        dx = 1;
+        dy = (left + right) % 2 === 0 ? 0.5 : -0.5;
+        distance = Math.hypot(dx, dy);
+      }
+      const push = (minimum - distance) / 2;
+      const ux = dx / distance;
+      const uy = dy / distance;
+      x[left] -= ux * push;
+      y[left] -= uy * push;
+      x[right] += ux * push;
+      y[right] += uy * push;
+      moved = true;
+    }
+  }
+  return moved;
 }
 
 function nextFrame() {
@@ -659,43 +846,300 @@ function typicalSpacing(nodes, positions) {
   return Math.sqrt(VIEW_WIDTH * VIEW_HEIGHT / Math.max(nodes.length, 1));
 }
 
+// Node count is the only input, so the budget is as seeded as the layout.
+function iterationBudget(count) {
+  if (count < 2) return 1;
+  return Math.min(420, Math.max(120, Math.round(3600 / Math.sqrt(count))));
+}
+
+// View-time only: this tab, dying with it, so nothing derived is stored
+// (§31.8).
+//
+// EVERY INPUT calculateLayout READS MUST BE DECLARED IN layoutKey BELOW; one
+// that is not is a silently wrong picture. Today: the drawn node set, the
+// drawn edge set in order, and the tokens layoutRadius reads through
+// plateRadius and railGeometry.
+const LAYOUT_MEMO_LIMIT = 4;
+const layoutMemo = new Map();
+let layoutOrdinals = null;
+
+// Ordinals into the accepted graph, not ids: both drawn arrays are
+// order-preserving filters of it, so equal ordinals means equal input. Never a
+// hash — a collision would draw the wrong picture with no symptom.
+function graphOrdinals() {
+  if (!layoutOrdinals) {
+    layoutOrdinals = {
+      node: new Map(accepted.graph.nodes.map((node, at) => [node.id, at])),
+      edge: new Map(accepted.graph.edges.map((edge, at) => [edge, at]))
+    };
+  }
+  return layoutOrdinals;
+}
+
+function layoutKey(field, nodes, edges) {
+  const ordinals = graphOrdinals();
+  const rails = railGeometry();
+  return [
+    field, plateRadius(), rails.gap, rails.width, rails.slotH, rails.pitch,
+    nodes.map((node) => ordinals.node.get(node.id)).join(","),
+    edges.map((edge) => ordinals.edge.get(edge)).join(",")
+  ].join("|");
+}
+
+function rememberLayout(key, nodes, positions) {
+  const entry = {
+    // By reference, never mutated by the renderer: dragging a plate (#116)
+    // must write through this entry or evict it.
+    positions,
+    radii: layoutRadii(nodes),
+    spacing: typicalSpacing(nodes, positions)
+  };
+  layoutMemo.delete(key);
+  layoutMemo.set(key, entry);
+  while (layoutMemo.size > LAYOUT_MEMO_LIMIT) {
+    layoutMemo.delete(layoutMemo.keys().next().value);
+  }
+  return entry;
+}
+
+function recallLayout(key) {
+  const entry = layoutMemo.get(key);
+  if (!entry) return null;
+  layoutMemo.delete(key);
+  layoutMemo.set(key, entry);
+  return entry;
+}
+
 async function calculateLayout(nodes, edges, generation) {
   const {sorted, positions} = initialPositions(nodes);
-  for (let iteration = 0; iteration < 120; iteration += 1) {
-    layoutIteration(sorted, positions, edges);
-    if ((iteration + 1) % 4 === 0) {
+  const radii = layoutRadii(sorted);
+  const buffer = layoutBuffer(sorted, positions, radii, edges);
+  const restGap = 2.8 * plateRadius();
+  const iterations = iterationBudget(sorted.length);
+  // Yield on elapsed time, not per iteration: a frame-locked yield made a
+  // small field wait on frames it did not need.
+  let lastYield = performance.now();
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const temperature = Math.max(0.05, 1 - iteration / iterations);
+    layoutIteration(buffer, restGap, temperature);
+    if (performance.now() - lastYield > 8) {
       await nextFrame();
       if (generation !== renderGeneration) return null;
+      lastYield = performance.now();
     }
   }
   if (sorted.length === 0) return positions;
-  const xs = sorted.map((node) => positions.get(node.id).x);
-  const ys = sorted.map((node) => positions.get(node.id).y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const scale = Math.min((VIEW_WIDTH - 110) / Math.max(maxX - minX, 1), (VIEW_HEIGHT - 100) / Math.max(maxY - minY, 1));
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  for (const node of sorted) {
-    const position = positions.get(node.id);
-    position.x = VIEW_WIDTH / 2 + (position.x - centerX) * scale;
-    position.y = VIEW_HEIGHT / 2 + (position.y - centerY) * scale;
+  fitToFrame(buffer);
+  // After the fit, which only ever spreads: nothing rescales the clearance
+  // this pass wins. Bounded so the O(n²) sweep stays inside §25.8's budget.
+  const separationGap = 0.6 * plateRadius();
+  const separationPasses = sorted.length > 600 ? 4 : 24;
+  for (let pass = 0; pass < separationPasses; pass += 1) {
+    if (!separationPass(buffer, separationGap)) break;
+    if (performance.now() - lastYield > 8) {
+      await nextFrame();
+      if (generation !== renderGeneration) return null;
+      lastYield = performance.now();
+    }
   }
+  buffer.writeBack();
   return positions;
 }
 
-async function renderField(field, nodes, edges, selected, banner) {
+// Centre the settled layout in the viewBox, growth only: shrinking squeezed
+// positions while glyphs kept their size. A larger field is fitted by zoom.
+function fitToFrame(buffer) {
+  const {count, x, y} = buffer;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let at = 0; at < count; at += 1) {
+    minX = Math.min(minX, x[at]);
+    maxX = Math.max(maxX, x[at]);
+    minY = Math.min(minY, y[at]);
+    maxY = Math.max(maxY, y[at]);
+  }
+  const scale = Math.max(1, Math.min((VIEW_WIDTH - 110) / Math.max(maxX - minX, 1), (VIEW_HEIGHT - 100) / Math.max(maxY - minY, 1)));
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  for (let at = 0; at < count; at += 1) {
+    x[at] = VIEW_WIDTH / 2 + (x[at] - centerX) * scale;
+    y[at] = VIEW_HEIGHT / 2 + (y[at] - centerY) * scale;
+  }
+}
+
+// Zoom out only, until the drawn bounds fit the frame. Every input is the
+// settled layout, not the window, so the picture stays seeded (§27.8).
+//
+// A label is drawn beside its plate and can reach further out than any plate
+// does, so the bounds are the placed boxes too: a fit taken from the radii
+// alone leaves a boundary node's title outside the frame, cut off with no
+// tier having dropped it and nothing said (A11). The picture is centred on
+// those bounds even when it already fits, since a label reaching past the
+// frame on one side is clipped whether or not the whole of it would fit.
+function frameFit(sorted, positions, radii, placements) {
+  if (sorted.length === 0) return {zoom: 1, x: 0, y: 0};
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const node of sorted) {
+    const position = positions.get(node.id);
+    const margin = radii.get(node.id) + 2;
+    minX = Math.min(minX, position.x - margin);
+    maxX = Math.max(maxX, position.x + margin);
+    minY = Math.min(minY, position.y - margin);
+    maxY = Math.max(maxY, position.y + margin);
+    const box = placements === undefined ? undefined : placements.get(node.id)?.box;
+    if (box === undefined) continue;
+    minX = Math.min(minX, box.left);
+    maxX = Math.max(maxX, box.right);
+    minY = Math.min(minY, box.top);
+    maxY = Math.max(maxY, box.bottom);
+  }
+  const zoom = Math.min(1, (VIEW_WIDTH - 40) / Math.max(maxX - minX, 1), (VIEW_HEIGHT - 40) / Math.max(maxY - minY, 1));
+  return {
+    zoom,
+    x: VIEW_WIDTH / 2 - zoom * (minX + maxX) / 2,
+    y: VIEW_HEIGHT / 2 - zoom * (minY + maxY) / 2
+  };
+}
+
+// Where a label may start on each side of a node: past the plate, and past
+// the decision rail on the side that carries it.
+function labelAnchors(node) {
+  const drawn = glyphExtent(node);
+  const entry = STATE_TYPES.has(node.type)
+    ? accepted.graph.state[node.id] : undefined;
+  const dimensions = entry === undefined ? [] : railDimensions(node);
+  const bounds = dimensions.length ? railBounds(node, dimensions) : null;
+  return {
+    right: Math.max(drawn, bounds ? bounds.right : 0),
+    left: Math.max(drawn, bounds ? -bounds.left : 0),
+  };
+}
+
+// Fixed order, so a placement is a property of the graph and not of the
+// visiting order.
+const LABEL_SLOTS = [
+  {side: "right", row: 0}, {side: "left", row: 0},
+  {side: "right", row: -1}, {side: "left", row: -1},
+  {side: "right", row: 1}, {side: "left", row: 1},
+  {side: "right", row: -2}, {side: "left", row: 2},
+];
+// Above this the sweep is skipped: A11 has dropped the label channel whole
+// well before a field this dense. Node count only, so still seeded (§27.8).
+const LABEL_SWEEP_CEILING = 400;
+
+// Glyph advances for the label box, as fractions of the type size. Measuring
+// the string would be exact and would depend on the font the reader's machine
+// actually resolves, and the picture is seeded (§27.8) — so each glyph is
+// charged its class instead, and a class is an upper bound rather than a mean.
+// The mean is right for mixed-case Latin and understates a title of capitals
+// or of CJK by most of its width, and an understated box is a slot the sweep
+// accepts and the text then runs out of. Over-charging costs a slot further
+// down the list, never the label: the sweep falls back rather than drops.
+// First class that matches wins.
+const LABEL_ADVANCE = [
+  // full-width scripts and pictographs — an em box each, never averaged down
+  [/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}！-｠￠-￦]|\p{Extended_Pictographic}/u, 1.05],
+  // the widest Latin glyphs and the wide punctuation
+  [/[MWmw@#%&—–…]/u, 0.95],
+  [/\p{Lu}/u, 0.70],
+];
+
+function labelWidth(title, em, size) {
+  let width = 0;
+  // By code point, so a pictograph outside the basic plane is charged once.
+  for (const glyph of title) {
+    const advance = LABEL_ADVANCE.find(([match]) => match.test(glyph));
+    width += advance ? advance[1] * size : em;
+  }
+  return width;
+}
+
+function boxesIntersect(left, right) {
+  return left.left < right.right && right.left < left.right
+    && left.top < right.bottom && right.top < left.bottom;
+}
+
+function labelBox(position, anchors, width, side, dy, line) {
+  const x = side === "right"
+    ? position.x + anchors.right + dy.gap
+    : position.x - anchors.left - dy.gap - width;
+  const top = position.y + dy.offset - line * 0.8;
+  return {left: x, right: x + width, top, bottom: top + line};
+}
+
+// First slot that clears every plate and every label already placed. Moves no
+// node and encodes nothing — a label's side is legibility, never state (A10).
+function placeLabels(nodes, positions, radii) {
+  const sorted = [...nodes].sort((left, right) => left.id < right.id ? -1 : (left.id > right.id ? 1 : 0));
+  const gap = tokenNumber("--label-gap", 4);
+  const em = tokenNumber("--label-em", 5.8);
+  const size = tokenNumber("--t-02", 11);
+  const line = tokenNumber("--label-line", 13);
+  const placements = new Map();
+  const fallback = {side: "right", offset: 4};
+  if (sorted.length > LABEL_SWEEP_CEILING) {
+    for (const node of sorted) placements.set(node.id, fallback);
+    return placements;
+  }
+  const obstacles = sorted.map((node) => {
+    const position = positions.get(node.id);
+    const radius = radii.get(node.id);
+    return {
+      left: position.x - radius, right: position.x + radius,
+      top: position.y - radius, bottom: position.y + radius,
+    };
+  });
+  for (const node of sorted) {
+    const position = positions.get(node.id);
+    const anchors = labelAnchors(node);
+    const width = labelWidth(displayTitle(node), em, size);
+    let chosen = null;
+    for (const slot of LABEL_SLOTS) {
+      const offset = 4 + slot.row * line;
+      const box = labelBox(
+        position, anchors, width, slot.side, {gap, offset}, line);
+      if (obstacles.some((obstacle) => boxesIntersect(box, obstacle))) continue;
+      chosen = {side: slot.side, offset, box};
+      break;
+    }
+    if (!chosen) {
+      const box = labelBox(
+        position, anchors, width, fallback.side,
+        {gap, offset: fallback.offset}, line);
+      chosen = {side: fallback.side, offset: fallback.offset, box};
+    }
+    obstacles.push(chosen.box);
+    // The box travels with the placement: the opening fit has to see how far
+    // the title reaches, and it is this sweep that knows.
+    placements.set(
+      node.id, {side: chosen.side, offset: chosen.offset, box: chosen.box});
+  }
+  return placements;
+}
+
+async function renderField(field, nodes, edges, selected, banner, cutEdges = []) {
+  const key = layoutKey(field, nodes, edges);
+  if (repaintSelection(key, selected, banner, cutEdges)) return;
   resetScreen(field);
   const generation = renderGeneration;
   const renderedEdges = visibleEdges(edges);
-  setMainState("LAYOUT");
-  main.append(htmlElement("div", "layout-message", "Laying out " + nodes.length + " nodes…"));
   setStatus(nodes.length, renderedEdges.length);
-  const positions = await calculateLayout(nodes, edges, generation);
-  if (!positions || generation !== renderGeneration) return;
-  main.replaceChildren();
+  let layout = recallLayout(key);
+  if (!layout) {
+    setMainState("LAYOUT");
+    main.append(htmlElement("div", "layout-message", "Laying out " + nodes.length + " nodes…"));
+    const settled = await calculateLayout(nodes, edges, generation);
+    // Half a settling must never reach the memo.
+    if (!settled || generation !== renderGeneration) return;
+    layout = rememberLayout(key, nodes, settled);
+    main.replaceChildren();
+  }
+  const {positions, radii} = layout;
   setMainState("FIELD");
   const stage = htmlElement("div", "graph-stage");
   const svg = svgElement("svg", "graph-svg");
@@ -708,31 +1152,130 @@ async function renderField(field, nodes, edges, selected, banner) {
   main.append(stage);
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const lanes = edgeLanes(renderedEdges);
+  // Which relations touch which plate, kept as the drawn groups themselves:
+  // answering a selection is then a class on what is already on screen.
+  const incidence = new Map();
+  const touches = (id, group) => {
+    if (!incidence.has(id)) incidence.set(id, []);
+    incidence.get(id).push(group);
+  };
   for (const edge of renderedEdges) {
-    viewport.append(makeEdge(edge, positions, nodeById));
-  }
-  let selectedGroup = null;
-  for (const node of nodes) {
-    const group = makeNode(node, positions.get(node.id), selected && selected.id === node.id);
+    const group = makeEdge(edge, positions, nodeById, lanes.get(edge));
     viewport.append(group);
-    if (selected && selected.id === node.id) selectedGroup = group;
+    touches(edge.source, group);
+    touches(edge.target, group);
+  }
+  if (selected && positions.has(selected.id)) {
+    // The whole graph, not the drawn set: a stub's family can turn on the
+    // node the horizon is holding back (§16.3).
+    const everyNode = new Map(accepted.graph.nodes.map((node) => [node.id, node]));
+    for (const stub of makeStubs(cutEdges, positions, everyNode, positions.get(selected.id))) {
+      viewport.append(stub);
+      touches(stub.dataset.source, stub);
+    }
+  }
+  const placements = placeLabels(nodes, positions, radii);
+  const nodeGroups = new Map();
+  for (const node of nodes) {
+    const group = makeNode(node, positions.get(node.id), placements.get(node.id));
+    viewport.append(group);
+    nodeGroups.set(node.id, group);
   }
 
   const focusedPosition = selected ? positions.get(selected.id) : null;
-  const transform = {
-    x: focusedPosition ? VIEW_WIDTH / 2 - focusedPosition.x : 0,
-    y: focusedPosition ? VIEW_HEIGHT / 2 - focusedPosition.y : 0,
-    zoom: 1,
-    spacing: typicalSpacing(nodes, positions)
+  const fit = frameFit(nodes, positions, radii, placements);
+  // A focused node is read at its own scale; unfocused, the view opens on
+  // the whole field.
+  const transform = focusedPosition
+    ? {x: VIEW_WIDTH / 2 - focusedPosition.x, y: VIEW_HEIGHT / 2 - focusedPosition.y, zoom: 1}
+    : {x: fit.x, y: fit.y, zoom: fit.zoom};
+  transform.minZoom = Math.min(ZOOM_MIN, fit.zoom);
+  transform.spacing = layout.spacing;
+  currentTransform = {
+    svg, viewport, key, positions, nodeGroups, incidence, selectedId: null,
+    routes: routesToggle.checked, stubs: cutEdges.length > 0, ...transform
   };
-  currentTransform = {svg, viewport, ...transform};
   applyTransform(currentTransform);
   installDensityResize(currentTransform);
   installPanZoom(currentTransform);
   installKeyboardPanZoom(stage, currentTransform);
+  paintSelection(selected, banner);
+}
+
+// §16.2 A9's focus feedback, and the only place it is expressed: a rebuilt
+// field and a repainted one cannot disagree about what is selected.
+function paintSelection(selected, banner) {
+  const transform = currentTransform;
+  if (!transform) return;
+  const previous = transform.selectedId;
+  if (previous !== null) {
+    const stale = transform.nodeGroups.get(previous);
+    if (stale) {
+      stale.classList.remove("selected");
+      stale.setAttribute("tabindex", "-1");
+    }
+    for (const group of transform.incidence.get(previous) || []) {
+      group.classList.remove("incident");
+    }
+  }
+  const group = selected ? transform.nodeGroups.get(selected.id) || null : null;
+  transform.selectedId = group ? selected.id : null;
+  if (group) {
+    group.classList.add("selected");
+    group.setAttribute("tabindex", "0");
+    for (const edgeGroup of transform.incidence.get(selected.id) || []) {
+      edgeGroup.classList.add("incident");
+    }
+  }
+  // A focus the field could not draw leaves the picture whole.
+  transform.viewport.classList.toggle("has-selection", group !== null);
+  for (const stale of main.querySelectorAll(".banner")) stale.remove();
   if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
+  else closePanel();
   if (banner) appendBanner(banner.kind, banner.value);
-  if (selectedGroup && focusOrphaned()) selectedGroup.focus({preventScroll: true});
+  renderStatus();
+  if (group && focusOrphaned()) group.focus({preventScroll: true});
+}
+
+// Same drawn set, same lens, same token sheet: repaint rather than rebuild.
+// currentTransform is non-null only after a completed render and while none
+// is in flight (resetScreen is its sole writer of null), so it guards itself.
+function repaintSelection(key, selected, banner, cutEdges) {
+  const transform = currentTransform;
+  if (!transform) return false;
+  if (main.dataset.state !== "FIELD") return false;
+  if (!transform.svg.isConnected) return false;
+  if (transform.key !== key) return false;
+  // The Routes lens keeps the layout and changes the drawn edges, so an equal
+  // key is not an equal picture across it.
+  if (transform.routes !== routesToggle.checked) return false;
+  // A stub fan aims away from the focus (#99), so two focuses over one reached
+  // set are two different pictures.
+  if (transform.stubs || cutEdges.length > 0) return false;
+  paintSelection(selected, banner);
+  bringSelectionIntoFrame(transform, selected);
+  return true;
+}
+
+// The camera is the reader's, up to the point where it stops being readable:
+// a selection inside an engaged density tier (A11) returns to the node's own
+// scale, and otherwise the picture only moves if the selection is off frame.
+function bringSelectionIntoFrame(transform, selected) {
+  if (!selected) return;
+  const position = transform.positions.get(selected.id);
+  if (!position) return;
+  const margin = 3 * plateRadius();
+  const screenX = position.x * transform.zoom + transform.x;
+  const screenY = position.y * transform.zoom + transform.y;
+  const unreadable = (transform.dropped || []).length > 0;
+  const offFrame = screenX < margin || screenX > VIEW_WIDTH - margin
+    || screenY < margin || screenY > VIEW_HEIGHT - margin;
+  if (!unreadable && !offFrame) return;
+  if (unreadable) transform.zoom = 1;
+  transform.x = VIEW_WIDTH / 2 - position.x * transform.zoom;
+  transform.y = VIEW_HEIGHT / 2 - position.y * transform.zoom;
+  applyTransform(transform);
 }
 
 // §16.2: the Routes lens is coherent across surfaces — hidden routes leave
@@ -749,6 +1292,9 @@ function renderStatus() {
   if (!statusCounts) return;
   let copy = statusCounts.nodes + " nodes · " + statusCounts.edges + " edges in view";
   if (accepted.graph.generated_at) copy += " · as of " + accepted.graph.generated_at.slice(0, 10);
+  // #99: words, never a count — a running total of what lies ahead is a
+  // progress reading (§3, §4).
+  if (fieldContinuesPastHorizon) copy += " · the field continues past the focus horizon — widen it to see further";
   const dropped = currentTransform && currentTransform.dropped ? currentTransform.dropped : [];
   if (dropped.length) copy += " · not drawn at this density: " + dropped.join(", ") + " — open a node to read them";
   statusBar.textContent = copy;
@@ -768,8 +1314,8 @@ function makeDefinitions() {
   // extends back toward the source, outside the target's glyph clearance.
   marker.setAttribute("refX", "10");
   marker.setAttribute("refY", "5");
-  marker.setAttribute("markerWidth", "6");
-  marker.setAttribute("markerHeight", "6");
+  marker.setAttribute("markerWidth", String(ARROW_UNITS));
+  marker.setAttribute("markerHeight", String(ARROW_UNITS));
   marker.setAttribute("orient", "auto-start-reverse");
   const path = svgElement("path");
   path.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
@@ -819,12 +1365,16 @@ function isRouteEdge(edge, nodeById) {
   return target && target.type === "suggested_route";
 }
 
+function edgeFamily(edge, nodeById) {
+  if (isRouteEdge(edge, nodeById)) return "route";
+  if (TRAIL_TYPES.has(edge.type)) return "trail";
+  if (AUTHORED_TYPES.has(edge.type)) return "authored";
+  if (STRUCTURAL_TYPES.has(edge.type)) return "structural";
+  return "journal";
+}
+
 function edgeClass(edge, nodeById) {
-  if (isRouteEdge(edge, nodeById)) return EDGE_FAMILY_CLASSES.route;
-  if (TRAIL_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.trail;
-  if (AUTHORED_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.authored;
-  if (STRUCTURAL_TYPES.has(edge.type)) return EDGE_FAMILY_CLASSES.structural;
-  return EDGE_FAMILY_CLASSES.journal;
+  return EDGE_FAMILY_CLASSES[edgeFamily(edge, nodeById)];
 }
 
 function setEnds(item, from, to) {
@@ -884,12 +1434,26 @@ function rayRectExit(direction, left, top, right, bottom) {
 // mark on that ray. The primary shape keeps its conservative circumradius;
 // asymmetric payload dots and decision rails extend only the approaches that
 // actually cross them.
-function completeGlyphExtent(node, direction) {
+// How far a ray must run to leave everything the plate draws. The ray starts
+// at the node's centre unless a lane has moved it: an offset ray meets marks
+// the centre one misses, so the marks are shifted under it rather than the
+// centre extent reused (#117).
+function completeGlyphExtent(node, direction, offset = {x: 0, y: 0}) {
   const u = plateUnit();
-  let extent = radialExtent(node.type);
-  if (node.type === "question") extent = Math.max(extent, glyphExtent(node));
+  const shifted = (x, y) => [x - offset.x, y - offset.y];
+  let extent = rayCircleExit(
+    direction, ...shifted(0, 0), radialExtent(node.type),
+  ) ?? 0;
+  if (node.type === "question") {
+    const glyphExit = rayCircleExit(
+      direction, ...shifted(0, 0), glyphExtent(node),
+    );
+    if (glyphExit !== null) extent = Math.max(extent, glyphExit);
+  }
   if (node.sensitivity) {
-    const dotExit = rayCircleExit(direction, 8 * u, -8 * u, 2.5 * u);
+    const dotExit = rayCircleExit(
+      direction, ...shifted(8 * u, -8 * u), 2.5 * u,
+    );
     if (dotExit !== null) extent = Math.max(extent, dotExit);
   }
   const entry = STATE_TYPES.has(node.type)
@@ -898,27 +1462,83 @@ function completeGlyphExtent(node, direction) {
   if (dimensions.length) {
     const bounds = railBounds(node, dimensions);
     const railExit = rayRectExit(
-      direction, bounds.left, bounds.top, bounds.right, bounds.bottom,
+      direction,
+      bounds.left - offset.x, bounds.top - offset.y,
+      bounds.right - offset.x, bounds.bottom - offset.y,
     );
     if (railExit !== null) extent = Math.max(extent, railExit);
   }
   return extent;
 }
 
-function makeEdge(edge, positions, nodeById) {
+// Several edges between one pair stack exactly on the shared axis. Each takes
+// its own lane — a slot for telling strokes apart, never a weight or a rank
+// (A3) — ordered by (type, source, target), so the picture is seeded (§27.8).
+function edgeLanes(edges) {
+  const groups = new Map();
+  for (const edge of edges) {
+    const key = edge.source < edge.target
+      ? edge.source + "\0" + edge.target
+      : edge.target + "\0" + edge.source;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(edge);
+  }
+  const lanes = new Map();
+  for (const group of groups.values()) {
+    if (group.length < 2) {
+      lanes.set(group[0], 0);
+      continue;
+    }
+    const ordered = [...group].sort((left, right) => {
+      const leftKey = left.type + "\0" + left.source + "\0" + left.target;
+      const rightKey = right.type + "\0" + right.source + "\0" + right.target;
+      return leftKey < rightKey ? -1 : (leftKey > rightKey ? 1 : 0);
+    });
+    ordered.forEach((edge, index) => {
+      lanes.set(edge, index - (ordered.length - 1) / 2);
+    });
+  }
+  return lanes;
+}
+
+function makeEdge(edge, positions, nodeById, lane) {
   let source = positions.get(edge.source);
   let target = positions.get(edge.target);
   // At plate scale an untrimmed stroke buries its arrowhead under the target
   // glyph; ends stop at every mark on their approach ray so direction stays
   // readable without leaving rail-sized gaps on the opposite side.
   const rawAxis = edgeAxis(source, target);
+  let laneOffset = {x: 0, y: 0};
+  if (rawAxis && lane) {
+    // A parallel translation. The normal is taken along the pair's own axis,
+    // low id to high: derived from the edge's direction, a reciprocal a→b /
+    // b→a pair would cancel back onto one offset.
+    // In layout units, unlike the stroke width, the dash period and the hit
+    // band, which are all held at screen scale. Those three do not move an
+    // endpoint; a lane does, and a lateral offset held at screen scale grows
+    // without bound as the picture shrinks — at the 700-node opening fit the
+    // seven units would become 124, which is the measured median gap between
+    // neighbouring plates there, so the pair's relations would be drawn a
+    // whole plate away from the pair. Position is geometry (A10). At that fit
+    // the lanes do collapse under a pixel and the hand reaches the topmost of
+    // the two; that is not the lane's doing — the hit band is 12 CSS px and
+    // the median plate gap is 6.9, so every relation's band already overlaps
+    // its neighbours'. What answers a field drawn that small is the focus
+    // horizon and A11's fallback, not a wider lane.
+    const spacing = tokenNumber("--edge-lane", 7);
+    const sense = edge.source < edge.target ? 1 : -1;
+    const normal = {x: -rawAxis.unit.y * sense, y: rawAxis.unit.x * sense};
+    laneOffset = {x: normal.x * lane * spacing, y: normal.y * lane * spacing};
+    source = offsetFrom(source, normal, lane * spacing);
+    target = offsetFrom(target, normal, lane * spacing);
+  }
   if (rawAxis) {
     const sourceTrim = completeGlyphExtent(
-      nodeById.get(edge.source), rawAxis.unit,
+      nodeById.get(edge.source), rawAxis.unit, laneOffset,
     ) + 2;
     const targetTrim = completeGlyphExtent(
       nodeById.get(edge.target),
-      {x: -rawAxis.unit.x, y: -rawAxis.unit.y},
+      {x: -rawAxis.unit.x, y: -rawAxis.unit.y}, laneOffset,
     ) + 2;
     if (rawAxis.length > sourceTrim + targetTrim + 8) {
       source = offsetFrom(source, rawAxis.unit, sourceTrim);
@@ -926,6 +1546,13 @@ function makeEdge(edge, positions, nodeById) {
     }
   }
   const group = svgElement("g", "edge-group");
+  // Endpoints and family ride the group so a selection restyles what is drawn
+  // (A9) instead of drawing it again. Family is data, not a class: a family
+  // class here would dash the invisible hit stroke, which would then only
+  // answer the hand between the dashes.
+  group.dataset.source = edge.source;
+  group.dataset.target = edge.target;
+  group.dataset.family = edgeFamily(edge, nodeById);
   const lineClass = "edge-line " + edgeClass(edge, nodeById);
   const hit = svgElement("line", "edge-hit");
   setEnds(hit, source, target);
@@ -973,6 +1600,78 @@ function makeEdge(edge, positions, nodeById) {
   group.addEventListener("mouseleave", () => label.classList.remove("visible"));
   group.append(...strokes, hit, label);
   return group;
+}
+
+// #99: a bound on the view must not read as a bound in the graph, so an edge
+// cut by the horizon is drawn from its own plate outward and stops. It claims
+// nothing about the far node — family and nothing else, no arrowhead and no
+// weight tick, with the relation still named in the panel (A3, A5, A8). Order
+// is fixed by id, so the fan is the same picture on every render (§27.8).
+function makeStubs(cutEdges, positions, nodeById, focusPosition) {
+  const byInside = new Map();
+  for (const edge of cutEdges) {
+    const insideId = positions.has(edge.source) ? edge.source : edge.target;
+    const outsideId = insideId === edge.source ? edge.target : edge.source;
+    if (!positions.has(insideId)) continue;
+    if (!byInside.has(insideId)) byInside.set(insideId, []);
+    byInside.get(insideId).push({edge, outsideId});
+  }
+  const length = tokenNumber("--edge-stub", 14);
+  const fan = tokenNumber("--edge-stub-fan", 1);
+  const groups = [];
+  for (const insideId of [...byInside.keys()].sort()) {
+    const cuts = byInside.get(insideId).sort((left, right) => {
+      if (left.edge.type !== right.edge.type) return left.edge.type < right.edge.type ? -1 : 1;
+      return left.outsideId < right.outsideId ? -1 : (left.outsideId > right.outsideId ? 1 : 0);
+    });
+    const position = positions.get(insideId);
+    // Outward is away from where the reader is standing: the horizon is a
+    // disc around the focus, so its rim is the direction the field continues.
+    let outward = {x: position.x - focusPosition.x, y: position.y - focusPosition.y};
+    const reach = Math.hypot(outward.x, outward.y);
+    outward = reach < 0.01 ? {x: 0, y: -1} : {x: outward.x / reach, y: outward.y / reach};
+    cuts.forEach(({edge}, at) => {
+      // One radian however many are held back, and a wider one would not buy
+      // a hand anything. A stub is 14 units long and its band is 12 CSS px
+      // wide, so two neighbours' bands already overlap along their whole
+      // length from the third stub on — at any spread, because the stub is
+      // shorter than the band is wide. Holding them apart needs about half a
+      // radian each: the whole circle keeps thirteen, and a fan that wide
+      // would swing stubs back across the plate's own drawn relations and
+      // read as a direction the field does not have (A10). What the hand
+      // loses is one word — a stub's hover says its family and "past the
+      // horizon", never the far id (§16.3), so two of a family say the same
+      // thing, and where families differ the difference is already in the
+      // stroke every stub is drawn with (A3). A rim this crowded is answered
+      // by a narrower radius and by §25.8's fallback, which now counts these.
+      const turn = cuts.length > 1 ? -fan / 2 + fan * at / (cuts.length - 1) : 0;
+      const unit = {
+        x: outward.x * Math.cos(turn) - outward.y * Math.sin(turn),
+        y: outward.x * Math.sin(turn) + outward.y * Math.cos(turn)
+      };
+      const trim = completeGlyphExtent(nodeById.get(insideId), unit) + 2;
+      const group = svgElement("g", "edge-group edge-stub-group");
+      // Only the on-screen end is named: the far id is what the horizon is
+      // holding back (§16.3).
+      group.dataset.source = insideId;
+      group.dataset.family = edgeFamily(edge, nodeById);
+      const line = svgElement("line", "edge-line edge-stub " + edgeClass(edge, nodeById));
+      const from = offsetFrom(position, unit, trim);
+      const to = offsetFrom(position, unit, trim + length);
+      setEnds(line, from, to);
+      const hit = svgElement("line", "edge-hit");
+      setEnds(hit, from, to);
+      const label = svgElement("text", "edge-label");
+      label.setAttribute("x", ((from.x + to.x) / 2).toFixed(3));
+      label.setAttribute("y", ((from.y + to.y) / 2 - 6).toFixed(3));
+      label.textContent = edge.type + " — past the horizon";
+      group.addEventListener("mouseenter", () => label.classList.add("visible"));
+      group.addEventListener("mouseleave", () => label.classList.remove("visible"));
+      group.append(line, hit, label);
+      groups.push(group);
+    });
+  }
+  return groups;
 }
 
 function polygon(points, u) {
@@ -1195,12 +1894,15 @@ function makeCartouche(leftExtent, rightExtent, halfHeight) {
     leftExtent + rightExtent + 2 * pad, 2 * (halfHeight + pad));
 }
 
-function makeNode(node, position, selected) {
+// The selection is not baked in here. Every plate is drawn the same way and
+// the one that is selected is marked afterwards by paintSelection, so both
+// render paths build the identical tree and a change of focus never has to
+// rebuild one.
+function makeNode(node, position, placement) {
   const u = plateUnit();
   const entry = STATE_TYPES.has(node.type) ? accepted.graph.state[node.id] : undefined;
   const texture = STATE_TYPES.has(node.type) ? plateTexture(node, entry) : null;
   const classes = ["node", NODE_CLASSES[node.type]];
-  if (selected) classes.push("selected");
   if (node.fields.length === 0) classes.push("field-undefined");
   if (texture) classes.push("tx-" + texture);
   if (entry && entry.freshness) classes.push("fresh-" + entry.freshness);
@@ -1210,7 +1912,7 @@ function makeNode(node, position, selected) {
   // Only the selection joins the tab order — near the 2,400-node ceiling a
   // per-node tab stop buries everything after the graph. The list lens is
   // the dense keyboard path; click-focus still works via tabindex="-1".
-  group.setAttribute("tabindex", selected ? "0" : "-1");
+  group.setAttribute("tabindex", "-1");
   group.dataset.nodeId = node.id;
   const accessible = svgElement("title");
   accessible.textContent = (node.title || node.id) + ", " + node.type.replaceAll("_", " ");
@@ -1220,11 +1922,9 @@ function makeNode(node, position, selected) {
   const focusRing = svgElement("circle", "focus-ring");
   focusRing.setAttribute("r", (19 * u).toFixed(2));
   group.append(focusRing);
-  if (selected) {
-    const ring = svgElement("circle", "selection-ring");
-    ring.setAttribute("r", (15 * u).toFixed(2));
-    group.append(ring);
-  }
+  const ring = svgElement("circle", "selection-ring");
+  ring.setAttribute("r", (15 * u).toFixed(2));
+  group.append(ring);
   appendKindMarks(group, node);
   if (texture === "dot") {
     const dot = svgElement("circle", "plate-dot");
@@ -1248,8 +1948,16 @@ function makeNode(node, position, selected) {
       drawnExtent, Math.max(rightExtent, drawnExtent), halfHeight));
   }
   const label = svgElement("text", "node-label");
-  label.setAttribute("x", (rightExtent + 4).toFixed(2));
-  label.setAttribute("y", "4");
+  const gap = tokenNumber("--label-gap", 4);
+  const slot = placement || {side: "right", offset: 4};
+  if (slot.side === "left") {
+    const leftExtent = Math.max(drawnExtent, bounds ? -bounds.left : 0);
+    label.setAttribute("x", (-(leftExtent + gap)).toFixed(2));
+    label.setAttribute("text-anchor", "end");
+  } else {
+    label.setAttribute("x", (rightExtent + gap).toFixed(2));
+  }
+  label.setAttribute("y", slot.offset.toFixed(2));
   label.textContent = displayTitle(node);
   group.append(label);
   group.addEventListener("click", (event) => {
@@ -1279,8 +1987,11 @@ function makeZoomControls() {
   return controls;
 }
 
-function clampZoom(value) {
-  return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, value));
+// The floor drops to whatever the opening view needed: on a field wider than
+// the frame the fit zoom is already below ZOOM_MIN, and a reader who zooms out
+// must be able to get back to the whole picture.
+function clampZoom(value, floor) {
+  return Math.max(floor ?? ZOOM_MIN, Math.min(ZOOM_MAX, value));
 }
 
 function renderedSvgScale(svg) {
@@ -1291,6 +2002,7 @@ function renderedSvgScale(svg) {
 
 function applyTransform(transform) {
   transform.viewport.setAttribute("transform", "translate(" + transform.x.toFixed(3) + " " + transform.y.toFixed(3) + ") scale(" + transform.zoom.toFixed(5) + ")");
+  applyScreenScale(transform);
   // §16.2 A11: channels drop whole and in the fixed order as density rises.
   // Density is the typical on-screen spacing — layout spacing × zoom × the
   // rendered-to-viewBox scale — so crowding, zoom, a narrow embed, and an open
@@ -1316,6 +2028,43 @@ function applyTransform(transform) {
   renderStatus();
 }
 
+// A3's dash has to survive being drawn: the period is in layout units, so a
+// field held whole at a fiftieth of its size asks for fifty times the dashes
+// it can show, on every edge — a quarter-second a frame. Drawn smaller than
+// itself the dash holds its own size; at or above it the authored period is
+// exact.
+//
+// --screen-scale is the whole trip from a layout unit to a CSS pixel, camera
+// and frame together: the frame's own scale is what a narrow embed shrinks,
+// and every floor measured in screen pixels has to see it — the dash as much
+// as the stroke and the hit band (§16.4). Written only when it changes, so a
+// pan does not restyle every edge.
+function applyScreenScale(transform) {
+  const screen = transform.zoom * renderedSvgScale(transform.svg);
+  if (transform.screenScale === screen) return;
+  const scale = 1 / Math.min(1, screen);
+  transform.dashScale = scale;
+  transform.screenScale = screen;
+  transform.viewport.style.setProperty("--dash-scale", scale.toFixed(4));
+  transform.viewport.style.setProperty("--screen-scale", screen.toFixed(5));
+  // The head is sized in stroke-width units, so the stroke's own floor would
+  // multiply it by the same lift and a direction mark would outgrow the plate
+  // it points at. The head keeps the picture's scale.
+  const hairline = tokenNumber("--edge-hairline", 0.58);
+  const lift = Math.max(1, hairline / screen);
+  // A round cap runs half the stroke past its own endpoint, and the endpoints
+  // were trimmed to clear the plate at the width the field was solved at. Once
+  // the floor lifts the stroke the cap reaches back over the glyph — so where
+  // the floor is doing the work the cap is squared off, at widths where its
+  // shape is well under a pixel anyway.
+  transform.viewport.classList.toggle("floored", lift > 1);
+  const marker = document.getElementById("arrow");
+  if (marker) {
+    marker.setAttribute("markerWidth", (ARROW_UNITS / lift).toFixed(4));
+    marker.setAttribute("markerHeight", (ARROW_UNITS / lift).toFixed(4));
+  }
+}
+
 function installDensityResize(transform) {
   densityResizeObserver = new ResizeObserver(() => {
     if (currentTransform === transform && transform.svg.isConnected) {
@@ -1328,7 +2077,7 @@ function installDensityResize(transform) {
 function zoomAt(factor, x, y) {
   if (!currentTransform) return;
   const oldZoom = currentTransform.zoom;
-  const nextZoom = clampZoom(oldZoom * factor);
+  const nextZoom = clampZoom(oldZoom * factor, currentTransform.minZoom);
   const worldX = (x - currentTransform.x) / oldZoom;
   const worldY = (y - currentTransform.y) / oldZoom;
   currentTransform.x = x - worldX * nextZoom;
@@ -1348,31 +2097,71 @@ function installPanZoom(transform) {
     const y = (event.clientY - bounds.top) * VIEW_HEIGHT / bounds.height;
     zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, x, y);
   }, {passive: false});
+  // The whole picture is the only thing to take hold of, so a press anywhere
+  // takes hold of it: requiring bare background failed wherever an edge's 12px
+  // hit stroke lay, which on a dense field is most of the canvas.
   svg.addEventListener("pointerdown", (event) => {
-    if (event.target !== svg) return;
-    drag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY};
+    if (event.button > 0) return;
+    drag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+            originX: event.clientX, originY: event.clientY};
     moved = false;
-    svg.setPointerCapture(event.pointerId);
-    svg.classList.add("dragging");
   });
   svg.addEventListener("pointermove", (event) => {
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const dx = (event.clientX - drag.x) * VIEW_WIDTH / svg.clientWidth;
-    const dy = (event.clientY - drag.y) * VIEW_HEIGHT / svg.clientHeight;
-    if (Math.abs(dx) + Math.abs(dy) > 0.5) moved = true;
-    transform.x += dx;
-    transform.y += dy;
+    // A press released outside the element never delivers its pointerup here,
+    // so the drag would still be standing when the pointer wanders back and
+    // would pan the field with no button held.
+    if (event.buttons === 0) {
+      drag = null;
+      svg.classList.remove("dragging");
+      return;
+    }
+    const screenDx = event.clientX - drag.x;
+    const screenDy = event.clientY - drag.y;
+    // How far the pointer is from where it landed, not how far it has walked:
+    // a hand shaking inside one pixel covers no distance, and summing every
+    // step would call the sixth shake a pan.
+    const wandered = Math.abs(event.clientX - drag.originX)
+      + Math.abs(event.clientY - drag.originY);
+    // A press that wanders a pixel or two is still a press. Only a real
+    // journey becomes a pan — and then the pointer is captured, so the
+    // gesture survives leaving the node or edge it started on.
+    if (!moved && wandered > DRAG_SLOP) {
+      moved = true;
+      svg.setPointerCapture(event.pointerId);
+      svg.classList.add("dragging");
+    }
     drag.x = event.clientX;
     drag.y = event.clientY;
+    // Below the slop the picture holds still: a hand that shakes a pixel
+    // while clicking must not leave the camera somewhere new.
+    if (!moved) return;
+    transform.x += screenDx * VIEW_WIDTH / svg.clientWidth;
+    transform.y += screenDy * VIEW_HEIGHT / svg.clientHeight;
     applyTransform(transform);
   });
   const stopDrag = (event) => {
     if (!drag || drag.pointerId !== event.pointerId) return;
     drag = null;
     svg.classList.remove("dragging");
+    // A cancelled sequence synthesises no click, so the suppression below
+    // would still be armed and would eat the reader's next one.
+    if (event.type === "pointercancel") moved = false;
   };
   svg.addEventListener("pointerup", stopDrag);
   svg.addEventListener("pointercancel", stopDrag);
+  // A drag that happened to start on a node dragged the picture, not the
+  // node: it must not also open the node. Caught on the way down, before the
+  // node's own handler, so the two gestures never both fire.
+  svg.addEventListener("click", (event) => {
+    if (!moved) return;
+    // Immediate: the background handler below sits on this same element, so
+    // plain propagation still reaches it and a pan over bare ground would
+    // close the reader's selection.
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    moved = false;
+  }, true);
   svg.addEventListener("click", (event) => {
     if (event.target === svg && !moved) updateFocus(null);
     moved = false;
@@ -1744,12 +2533,17 @@ async function loadGraph() {
   } else {
     accepted = result;
     loadState = "ACCEPTED";
+    // A newly accepted graph must never draw on the previous one's
+    // coordinates, and the ordinals the memo keys on are its ordinals.
+    layoutMemo.clear();
+    layoutOrdinals = null;
   }
   await dispatch();
 }
 
 window.addEventListener("hashchange", () => { void dispatch(); });
 routesToggle.addEventListener("change", () => { void dispatch(); });
+horizonSelect.addEventListener("change", () => { void dispatch(); });
 graphView.addEventListener("click", () => {
   viewMode = "graph";
   void dispatch();

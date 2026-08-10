@@ -135,7 +135,10 @@ Viewer: interactive at 1,000 nodes in view (measured: 3.1 ms per
 naive-layout iteration, 0.65 ms per canvas frame); past 2,400
 nodes in view — the measured frame-budget crossing of the naive
 n² layout — the §27.8 list fallback engages; a smarter layout
-raises the ceiling through the Decision Log, never silently.
+raises the ceiling through the Decision Log, never silently. The
+count is what the view draws, so the stubs a focus horizon leaves
+at its rim (§16.3) count with the plates: they are not laid out,
+but each is drawn.
 Viewer acceptance ceilings (#37, §16.5, #44): graph file
 ≤ 67,108,864 bytes, ≤ 131,072 nodes, ≤ 262,144 edges — the
 byte cap before parsing, the counts before any per-item work;

@@ -264,6 +264,1376 @@ class ViewerBrowserTests(unittest.TestCase):
         self.assertEqual(1, self.page.locator(".node.field-undefined.selected").count())
         self.assertIn("field undefined", self.page.locator("#details").inner_text())
 
+    def chain_graph(self):
+        # a — b — c — d, plus one node joined to a by a suggested step alone
+        # and one joined to nothing at all. The route and its plan carry the
+        # step's context and are themselves unjoined.
+        nodes = [
+            {"id": f"concept:{name}", "type": "concept", "title": name.title(),
+             "fields": ["knowledge"], "aliases": []}
+            for name in ("a", "b", "c", "d", "far", "island")
+        ]
+        nodes.append({
+            "id": "suggested-route:chain", "type": "suggested_route",
+            "title": "Chain route", "status": "available",
+            "source_plan": "plan:chain", "fields": ["knowledge"],
+        })
+        nodes.append({
+            "id": "plan:chain", "type": "plan", "title": "Chain plan",
+            "fields": ["knowledge"],
+        })
+        edges = [
+            {"source": f"concept:{left}", "target": f"concept:{right}",
+             "type": "related_to", "provenance": [f"concept:{left}"],
+             "weight": "unassessed"}
+            for left, right in (("a", "b"), ("b", "c"), ("c", "d"))
+        ]
+        edges.append({
+            "source": "concept:a", "target": "concept:far",
+            "type": "suggested_next", "provenance": ["suggested-route:chain"],
+            "context": "suggested-route:chain",
+        })
+        return self.graph_envelope(nodes=nodes, edges=edges)
+
+    def drawn_ids(self):
+        return sorted(self.page.locator("svg .node").evaluate_all(
+            "nodes => nodes.map(node => node.dataset.nodeId)"))
+
+    def test_focus_horizon_draws_the_named_hops_and_says_the_field_goes_on(self):
+        # Fog of war: past the horizon nothing is drawn, and nothing stands in
+        # for it (A5, A11). The status line says the field continues, so the
+        # dark never reads as the edge of the field — and says it without a
+        # number: a running count of what lies ahead is a backlog reading, and
+        # this system refuses those (§3, §4). Where the field continues is the
+        # stubs' job, not the status line's.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        horizon = self.page.locator("#horizon-select")
+        self.assertEqual("all", horizon.input_value())
+        self.assertEqual(8, len(self.drawn_ids()))
+        self.assertNotIn("past the focus horizon",
+                         self.page.locator("#status-bar").inner_text())
+
+        horizon.select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        self.assertEqual(
+            ["concept:a", "concept:b", "concept:far"], self.drawn_ids())
+        status = self.page.locator("#status-bar").inner_text()
+        self.assertIn("the field continues past the focus horizon", status)
+        # No count of what is being kept out, in any wording.
+        self.assertNotRegex(status.split("continues past")[1], r"\d")
+
+        horizon.select_option("2")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 4")
+        self.assertEqual(
+            ["concept:a", "concept:b", "concept:c", "concept:far"],
+            self.drawn_ids())
+
+        # An unjoined node is never inside any horizon, however wide.
+        horizon.select_option("3")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 5")
+        self.assertNotIn("concept:island", self.drawn_ids())
+
+    def test_the_list_carries_the_whole_field_past_a_horizon(self):
+        # §16.3 bounds the node-link view alone. The list is A11's fallback and
+        # carries the field's channels as columns, so a hop radius must not
+        # thin it: a cut relation has a stub in the picture and would have
+        # nothing at all here.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        self.page.locator("#horizon-select").select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector(".node-list-row")
+        self.assertEqual(8, self.page.locator(".node-list-row").count())
+        # A control that cannot act must not read as though it could.
+        self.assertTrue(self.page.locator("#horizon-select").is_disabled())
+        self.assertNotIn("past the focus horizon",
+                         self.page.locator("#status-bar").inner_text())
+
+    def oversized_focused_field(self):
+        nodes = [
+            {"id": f"concept:n-{index}", "type": "concept",
+             "title": f"Node {index}", "fields": ["knowledge"], "aliases": []}
+            for index in range(2401)
+        ]
+        edges = [
+            {"source": "concept:n-0", "target": f"concept:n-{index}",
+             "type": "related_to", "provenance": ["concept:n-0"],
+             "weight": "unassessed"}
+            for index in range(1, 4)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field&focus=concept:n-0", "LIST")
+
+    def test_a_horizon_holding_a_hub_back_still_meets_the_ceiling(self):
+        # A hop radius can leave two plates in view and the whole rest of the
+        # field cut at the rim — and every cut relation is drawn: a group, a
+        # stroke, a hit band and a label apiece. Counting plates alone lets a
+        # hub slip under §25.8's line and hand the frame a hundred thousand
+        # marks it never agreed to.
+        nodes = [
+            {"id": f"concept:h-{index}", "type": "concept",
+             "title": f"Node {index}", "fields": ["knowledge"], "aliases": []}
+            for index in range(3000)
+        ]
+        edges = [{"source": "concept:h-0", "target": "concept:h-1",
+                  "type": "related_to", "provenance": ["concept:h-0"],
+                  "weight": "unassessed"}]
+        edges += [
+            {"source": "concept:h-1", "target": f"concept:h-{index}",
+             "type": "related_to", "provenance": ["concept:h-1"],
+             "weight": "unassessed"}
+            for index in range(2, 3000)
+        ]
+        # §20.3: the builder emits relations in canonical identity order, and
+        # the viewer rejects a shuffle rather than lay one out input-driven.
+        edges.sort(key=lambda edge: (edge["type"], edge["source"], edge["target"]))
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field&focus=concept:h-0", "LIST")
+        self.page.locator("#horizon-select").select_option("1")
+        # Two plates in view, and the fallback still holds: the rim is the
+        # rest of the field.
+        self.page.wait_for_selector('#main[data-state="LIST"]')
+        self.assertTrue(self.page.locator("#graph-view").is_disabled())
+
+    def test_a_horizon_can_bring_an_oversized_field_back_into_the_picture(self):
+        # Past the ceiling the list is forced, and the radius is the one
+        # control that can bring the field back under it. Standing it down
+        # there would shut the reader out of the node-link view for exactly
+        # the fields a bounded one serves best.
+        self.oversized_focused_field()
+        horizon = self.page.locator("#horizon-select")
+        self.assertFalse(horizon.is_disabled())
+        horizon.select_option("1")
+        self.page.wait_for_selector("#main[data-state='FIELD']")
+        self.assertEqual(4, len(self.drawn_ids()))
+        self.assertFalse(self.page.locator("#graph-view").is_disabled())
+
+    def test_asking_for_the_list_the_ceiling_forced_is_not_a_locked_door(self):
+        # The forced fallback already reads as the list, so the reader may well
+        # press the list again — and that press is a lens the reader chose,
+        # which is the state the radius stands down for. With the graph shut by
+        # the ceiling and the radius shut by the press, there would be no way
+        # back to the picture at all.
+        self.oversized_focused_field()
+        self.page.locator("#list-view").click()
+        self.page.wait_for_selector("#main[data-state='LIST']")
+        horizon = self.page.locator("#horizon-select")
+        self.assertFalse(horizon.is_disabled())
+        horizon.select_option("1")
+        # The reader is still in the list they asked for, but the field under
+        # the radius fits the picture again and the way back is open.
+        self.page.wait_for_selector("#graph-view:not([disabled])")
+        self.page.locator("#graph-view").click()
+        self.page.wait_for_selector("#main[data-state='FIELD']")
+        self.assertEqual(4, len(self.drawn_ids()))
+
+    def test_focus_horizon_walks_only_the_edges_in_view(self):
+        # Hops are counted over what the reader can see: with routes hidden a
+        # node joined only by a route step is not one hop away, because the
+        # step that would make it one is not on the screen.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        self.page.locator("#horizon-select").select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        self.assertIn("concept:far", self.drawn_ids())
+
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 2")
+        self.assertEqual(["concept:a", "concept:b"], self.drawn_ids())
+
+    def test_an_edge_leaving_the_horizon_is_drawn_as_far_as_the_view_reaches(self):
+        # #99: a shown boundary is a drawn boundary. The edge b — c leaves the
+        # one-hop view, so b keeps a stub pointing outward instead of looking
+        # like a node with no further relations. The stub carries family and
+        # nothing else — no arrowhead at an absent target, no weight tick at a
+        # midpoint that is off screen (A3, A5).
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        self.assertEqual(0, self.page.locator("svg .edge-stub").count())
+
+        self.page.locator("#horizon-select").select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        stubs = self.page.locator("svg .edge-stub")
+        self.assertEqual(1, stubs.count())
+        self.assertIn("edge-authored", stubs.first.get_attribute("class"))
+        self.assertIsNone(stubs.first.get_attribute("marker-end"))
+        self.assertEqual(
+            0, self.page.locator("svg .edge-stub-group .edge-weight").count())
+
+        # The stub starts outside its own plate and runs away from the focus,
+        # so it never doubles back over the picture it came from.
+        reach = self.page.evaluate(
+            """() => {
+                const focus = document.querySelector(
+                    "svg .node[data-node-id='concept:a']");
+                const at = (el) => el.getAttribute("transform")
+                    .match(/translate\\(([-\\d.]+) ([-\\d.]+)\\)/).slice(1).map(Number);
+                const [fx, fy] = at(focus);
+                const stub = document.querySelector("svg .edge-stub");
+                const x1 = Number(stub.getAttribute("x1"));
+                const y1 = Number(stub.getAttribute("y1"));
+                const x2 = Number(stub.getAttribute("x2"));
+                const y2 = Number(stub.getAttribute("y2"));
+                return {near: Math.hypot(x1 - fx, y1 - fy),
+                        far: Math.hypot(x2 - fx, y2 - fy)};
+            }""")
+        self.assertGreater(reach["far"], reach["near"])
+
+        # A relation the reader cannot see leaves no stub behind: with routes
+        # hidden the step a — far is not cut, it is simply not a relation on
+        # the screen, so only the authored b — c still reaches outward.
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 2")
+        self.assertEqual(1, self.page.locator("svg .edge-stub").count())
+        self.assertEqual(
+            0, self.page.locator("svg .edge-stub.edge-route").count())
+
+    # Colours are authored in oklch and getComputedStyle hands that back
+    # verbatim, so contrast has to be measured through a canvas, which is the
+    # one place the browser will resolve a colour to the bytes it paints.
+    # Each family recedes to the same quiet level, so each is measured with
+    # its own token: colour, its recession, and the floor they all answer to.
+    RECEDING_FAMILIES = [
+        ("--e-authored", "--recede-authored"),
+        ("--e-derived", "--recede-derived"),
+        ("--e-route", "--recede-route"),
+    ]
+
+    CONTRAST_JS = """(names) => {
+      const ctx = document.createElement("canvas")
+        .getContext("2d", {willReadFrequently: true});
+      const rgb = (value) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = "#000";
+        ctx.fillStyle = value;
+        ctx.fillRect(0, 0, 1, 1);
+        const d = ctx.getImageData(0, 0, 1, 1).data;
+        return [d[0], d[1], d[2]];
+      };
+      const lin = (c) => {
+        c /= 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      };
+      const lum = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+      const ratio = (a, b) => {
+        const pair = [lum(a), lum(b)].sort((x, y) => y - x);
+        return (pair[0] + 0.05) / (pair[1] + 0.05);
+      };
+      const root = getComputedStyle(document.documentElement);
+      const token = (name) => rgb(root.getPropertyValue(name).trim());
+      const ground = token("--ground");
+      // The threshold is what a rule carries on the surface a rule is drawn
+      // on; the recession is measured on the surface an edge is drawn on,
+      // read off the graph itself rather than named, so moving the field's
+      // background moves the measurement with it.
+      const surface = rgb(getComputedStyle(
+        document.querySelector("svg.graph-svg")).backgroundColor);
+      const out = {
+        rule: ratio(token("--rule"), ground), receded: {}, alphas: {},
+        surface: surface.join(","), ground: ground.join(","),
+      };
+      for (const pair of names) {
+        const fg = token(pair[0]);
+        const alpha = Number(root.getPropertyValue(pair[1]));
+        out.alphas[pair[0]] = alpha;
+        out.receded[pair[0]] = ratio(
+          fg.map((c, at) => alpha * c + (1 - alpha) * surface[at]), surface);
+      }
+      return out;
+    }"""
+
+    def edge_strokes(self):
+        return self.page.evaluate(
+            """() => [...document.querySelectorAll("svg .edge-line")].map((line) => {
+                const s = getComputedStyle(line);
+                return [s.stroke, s.strokeWidth, s.strokeDasharray,
+                        line.getAttribute("marker-end") || ""].join("|");
+            })""")
+
+    def incident_pairs(self):
+        return sorted(self.page.locator("svg .edge-group.incident").evaluate_all(
+            """groups => groups.map(
+                (g) => g.dataset.source + " " + (g.dataset.target || ""))"""))
+
+    def test_a_selection_answers_with_the_relations_that_touch_it(self):
+        # §16.2 A9's focus feedback: picking a node lights the relations it
+        # stands in by quieting the ones it does not, so the reader sees what
+        # they picked joined to something rather than a ring on one plate.
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual(0, self.page.locator("svg .viewport.has-selection").count())
+        self.assertEqual(0, self.page.locator("svg .edge-group.incident").count())
+
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        self.assertEqual(1, self.page.locator("svg .viewport.has-selection").count())
+        self.assertEqual(
+            ["concept:http-methods concept:rest-api",
+             "concept:http-methods question:demo-when-is-retry-safe",
+             "material:mdn-http-methods concept:http-methods",
+             "part:fastapi-tutorial/path-operations concept:http-methods",
+             "part:mdn-http-methods/idempotency concept:http-methods"],
+            self.incident_pairs())
+
+        # The quiet is a floor, not a disappearance: a receded relation still
+        # answers the hand, and the panel names every one of them in words (A8).
+        # Read once the quiet has settled — A9 gives focus feedback the one
+        # transition there is, so the opacity is on its way for a moment.
+        self.page.wait_for_timeout(300)
+        receded = self.page.evaluate(
+            """() => {
+                const root = getComputedStyle(document.documentElement);
+                const viewport = document.querySelector(".viewport");
+                const screen = Number(getComputedStyle(viewport)
+                    .getPropertyValue("--screen-scale"));
+                const out = {};
+                for (const group of viewport.querySelectorAll(
+                        ".edge-group:not(.incident)")) {
+                    const family = group.dataset.family;
+                    if (family === "trail") continue;
+                    const token = family === "authored" ? "--recede-authored"
+                        : family === "route" ? "--recede-route"
+                        : "--recede-derived";
+                    // The amount as it lands, not as it is written: a stroke
+                    // under a pixel paints its width, and the sheet divides
+                    // the amount by that before spending it.
+                    const style = getComputedStyle(group.querySelector(".edge-line"));
+                    const laid = Math.min(1, Number.parseFloat(style.strokeWidth) * screen)
+                        * Number(style.opacity);
+                    out[family] = [laid, Number(root.getPropertyValue(token))];
+                }
+                return out;
+            }""")
+        self.assertGreater(len(receded), 1)
+        for family, (drawn, authored) in receded.items():
+            self.assertAlmostEqual(
+                authored, drawn, 2,
+                f"{family} does not recede to its own token")
+        panel = self.page.locator("#details").inner_text()
+        for named in ("concept:rest-api", "part:mdn-http-methods/idempotency"):
+            self.assertIn(named, panel)
+
+        # Moving the selection moves the lit set with it, and clearing it
+        # returns the field whole.
+        self.page.locator("#close-details").click()
+        self.page.wait_for_selector("svg .viewport:not(.has-selection)")
+        self.assertEqual(0, self.page.locator("svg .edge-group.incident").count())
+
+    def test_the_emphasis_spends_no_family_channel(self):
+        # A3 tripwire: stroke colour, dash and width carry edge family and
+        # nothing else. Whatever a selection does to the picture, it may not
+        # touch them — element for element. The emphasis is switched on the
+        # standing picture rather than by opening a second address, so the
+        # camera is identical and only the emphasis differs.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        lit = self.edge_strokes()
+        self.page.evaluate(
+            """() => document.querySelector("svg .viewport")
+                .classList.remove("has-selection")""")
+        self.assertEqual(lit, self.edge_strokes())
+
+    def test_the_trail_never_recedes_behind_a_selection(self):
+        # A7: a suggested route never renders brighter than the trail it
+        # parallels. A route touching the selection beside a trail edge that
+        # does not is exactly that inversion, so the trail is exempt — the
+        # reader's real path is the one thing the looking never dims.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        trails = self.page.locator(
+            'svg .edge-group[data-family="trail"]:not(.incident)')
+        self.assertGreater(trails.count(), 0)
+        self.assertEqual(
+            ["1"] * trails.count(),
+            trails.evaluate_all(
+                """groups => groups.map((g) => getComputedStyle(
+                    g.querySelector(".edge-line")).opacity)"""))
+
+    def test_a_receded_relation_is_still_a_drawn_relation(self):
+        # The recession is bounded by the sheet's own hairline: no family may
+        # fall below the presence --rule already carries, that being the
+        # faintest line this design draws on purpose. Below it the channel has
+        # not receded, it has dropped — and dropping belongs to A11's fixed
+        # order and to the focus horizon, never to a selection.
+        # Both palettes: the two surfaces sit on opposite sides of the ground
+        # in light and in dark, so an amount calibrated on one is calibrated on
+        # neither.
+        for scheme in ("light", "dark"):
+            with self.subTest(scheme=scheme):
+                self.context.close()
+                self.context = self.browser.new_context(color_scheme=scheme)
+                self.page = self.context.new_page()
+                self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+                self.assert_recession_clears_the_rule()
+
+    def assert_recession_clears_the_rule(self):
+        measured = self.page.evaluate(self.CONTRAST_JS, self.RECEDING_FAMILIES)
+        # The field is not the panel: an edge paints on --page and the plates
+        # are the --ground above it, so a recession calibrated on --ground is
+        # calibrated on a surface no relation touches.
+        self.assertNotEqual(measured["ground"], measured["surface"])
+        for name, ratio in measured["receded"].items():
+            self.assertGreater(measured["alphas"][name], 0)
+            self.assertGreaterEqual(
+                ratio, measured["rule"],
+                f"{name} recedes below --rule: {ratio:.2f} < {measured['rule']:.2f}")
+        # And they recede TO that level, not merely above it: one shared
+        # amount would leave the darkest family darker than an undimmed faint
+        # one, which is the reading failing to carry.
+        quiet = list(measured["receded"].values())
+        self.assertLess(max(quiet) - min(quiet), 0.25 * measured["rule"])
+
+    LABEL_INK_JS = """() => {
+      const svg = document.querySelector("svg.graph-svg");
+      const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return {left: r.left, right: r.right, top: r.top, bottom: r.bottom};
+      };
+      const hits = (a, b) => a.left < b.right && b.left < a.right
+        && a.top < b.bottom && b.top < a.bottom;
+      const drawn = [...svg.querySelectorAll(".node")].map((group) => ({
+        id: group.dataset.nodeId,
+        plate: rect(group.querySelector(".node-shape")),
+        label: rect(group.querySelector(".node-label")),
+      }));
+      const overlaps = [];
+      for (const label of drawn) {
+        for (const plate of drawn) {
+          if (label.id === plate.id) continue;
+          if (hits(label.label, plate.plate)) overlaps.push(label.id);
+        }
+      }
+      return {count: drawn.length, overlaps};
+    }"""
+
+    def wide_titled_field(self, title, count=11):
+        # A chain of eleven, which the seeded layout spreads far enough that
+        # every one of these labels has a free slot to be put in. So a label
+        # sitting on a plate here is the estimate being wrong and not the
+        # field being full — the sweep never drops a label, it falls back.
+        nodes = [
+            {"id": f"concept:w{index:02d}", "type": "concept",
+             "title": title, "fields": ["knowledge"], "aliases": []}
+            for index in range(count)
+        ]
+        edges = [
+            {"source": f"concept:w{index:02d}",
+             "target": f"concept:w{index + 1:02d}",
+             "type": "related_to", "provenance": [f"concept:w{index:02d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+
+    def test_a_title_of_wide_glyphs_reserves_the_room_it_takes(self):
+        # The label box is estimated, never measured — the picture is seeded
+        # (§27.8) and a measured string would follow whichever font the reader
+        # resolves. But one mean advance per glyph is an estimate that only
+        # holds for mixed-case Latin: a title of full-width script, or of the
+        # widest Latin capitals, takes about twice it, and the sweep then
+        # accepts a slot the text runs straight out of and onto a plate.
+        for title in ("知识图谱与检索增强生成模型学习", "W" * 15):
+            with self.subTest(title=title):
+                self.wide_titled_field(title)
+                drawn = self.page.evaluate(self.LABEL_INK_JS)
+                self.assertEqual(11, drawn["count"])
+                self.assertEqual([], drawn["overlaps"])
+
+    def test_a_title_at_the_boundary_is_inside_the_opening_frame(self):
+        # The opening fit is what the reader is handed before touching
+        # anything. A label is drawn beside its plate and reaches further out
+        # than the plate does, so a fit taken from the radii alone hands a
+        # boundary node's title to the edge of the frame and cuts it there —
+        # with no tier having dropped it and nothing said (A11).
+        self.page.set_viewport_size({"width": 700, "height": 900})
+        self.wide_titled_field("W" * 15, count=40)
+        outside = self.page.evaluate(
+            """() => {
+                const svg = document.querySelector("svg.graph-svg")
+                    .getBoundingClientRect();
+                return [...document.querySelectorAll("svg .node-label")]
+                    // A tier that dropped a label leaves nothing drawn, and an
+                    // undrawn box is not a clipped one (A11).
+                    .map((label) => label.getBoundingClientRect())
+                    .filter((box) => box.width > 0)
+                    .map((box) => Math.max(
+                        svg.left - box.left, box.right - svg.right,
+                        svg.top - box.top, box.bottom - svg.bottom))
+                    .filter((over) => over > 0.5);
+            }""")
+        self.assertEqual([], outside)
+
+    def test_the_emphasis_stands_down_under_forced_colours(self):
+        # The system palette has no rank below its own text, so there is no
+        # quieter level left that still clears the rule. Rather than break the
+        # floor the emphasis stops being drawn; the selection still answers
+        # through the ring and through the panel's words (A8).
+        self.context.close()
+        self.context = self.browser.new_context(forced_colors="active")
+        self.page = self.context.new_page()
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        self.assertEqual(
+            ["1"] * 3,
+            self.page.evaluate(
+                """() => {
+                    const root = getComputedStyle(document.documentElement);
+                    return ["--recede-authored", "--recede-derived",
+                            "--recede-route"].map(
+                        (name) => String(Number(root.getPropertyValue(name))));
+                }"""))
+        opacities = self.page.locator("svg .edge-group .edge-line").evaluate_all(
+            "lines => [...new Set(lines.map("
+            "(l) => getComputedStyle(l).opacity))]")
+        self.assertEqual(["1"], opacities)
+
+    LANE_TRIM_JS = """() => {
+      const centre = (id) => {
+        const [x, y] = document
+          .querySelector(`svg .node[data-node-id="${id}"]`)
+          .getAttribute("transform").match(/-?[\\d.]+/g).map(Number);
+        return {x, y};
+      };
+      const a = centre("concept:alpha"), b = centre("concept:beta");
+      const span = Math.hypot(b.x - a.x, b.y - a.y);
+      const unit = {x: (b.x - a.x) / span, y: (b.y - a.y) / span};
+      const along = (x, y) => (x - a.x) * unit.x + (y - a.y) * unit.y;
+      // How far along the pair's own axis each stroke starts, alpha's side,
+      // whichever way the relation points.
+      return [...document.querySelectorAll(".edge-group")].map((group) => {
+        const hit = group.querySelector(".edge-hit");
+        return Math.min(along(hit.x1.baseVal.value, hit.y1.baseVal.value),
+                        along(hit.x2.baseVal.value, hit.y2.baseVal.value));
+      });
+    }"""
+
+    def test_a_lane_is_trimmed_for_the_ray_it_actually_draws(self):
+        # The trim clears everything the plate draws along the ray. A lane has
+        # moved that ray off the centre, where it leaves the plate sooner and
+        # can meet a mark the centre ray passed by — so the marks move under
+        # the offset ray rather than the centre extent being reused.
+        nodes = [
+            {"id": "concept:alpha", "type": "concept", "title": "Alpha",
+             "fields": ["knowledge"], "aliases": []},
+            {"id": "concept:beta", "type": "concept", "title": "Beta",
+             "fields": ["knowledge"], "aliases": []},
+        ]
+        forward = {"type": "prerequisite_of", "source": "concept:alpha",
+                   "target": "concept:beta", "provenance": ["concept:alpha"],
+                   "weight": "unassessed"}
+        back = {"type": "prerequisite_of", "source": "concept:beta",
+                "target": "concept:alpha", "provenance": ["concept:beta"],
+                "weight": "unassessed"}
+
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=[forward]))
+        self.open_state("#mode=field", "FIELD")
+        centred = self.page.evaluate(self.LANE_TRIM_JS)
+        self.assertEqual(1, len(centred))
+
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=[forward, back]))
+        self.open_state("#mode=field", "FIELD")
+        laned = self.page.evaluate(self.LANE_TRIM_JS)
+        self.assertEqual(2, len(laned))
+        # A parallel offset cuts a chord, so an offset ray leaves the plate
+        # sooner than the centre one — reusing the centre extent would trim
+        # both the same and let the stroke run under whatever it passed.
+        for trim in laned:
+            self.assertGreater(centred[0] - trim, 0.2)
+
+    def test_a_reciprocal_pair_of_relations_takes_two_lanes(self):
+        # a→b and b→a are both allowed, and each says its own thing. Drawn on
+        # the one axis they stack exactly and the field shows one claim where
+        # the graph holds two, so the lane offset is taken along the pair's own
+        # axis rather than along each edge's direction.
+        nodes = [
+            {"id": "concept:alpha", "type": "concept", "title": "Alpha",
+             "fields": ["knowledge"], "aliases": []},
+            {"id": "concept:beta", "type": "concept", "title": "Beta",
+             "fields": ["knowledge"], "aliases": []},
+        ]
+        edges = [
+            {"type": "prerequisite_of", "source": "concept:alpha",
+             "target": "concept:beta", "provenance": ["concept:alpha"],
+             "weight": "unassessed"},
+            {"type": "prerequisite_of", "source": "concept:beta",
+             "target": "concept:alpha", "provenance": ["concept:beta"],
+             "weight": "unassessed"},
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+        # Measured across the axis, not along it: differing end trims already
+        # move the two strokes lengthwise, and that is not a lane.
+        apart = self.page.evaluate(
+            """() => {
+                const centre = (id) => {
+                    const node = document.querySelector(
+                        `svg .node[data-node-id="${id}"]`);
+                    const [x, y] = node.getAttribute("transform")
+                        .match(/-?[\\d.]+/g).map(Number);
+                    return {x, y};
+                };
+                const a = centre("concept:alpha"), b = centre("concept:beta");
+                const span = Math.hypot(b.x - a.x, b.y - a.y);
+                const unit = {x: (b.x - a.x) / span, y: (b.y - a.y) / span};
+                const mids = [...document.querySelectorAll("svg .edge-group")]
+                    .map((group) => group.querySelector(".edge-line"))
+                    .map((line) => ({
+                        x: (line.x1.baseVal.value + line.x2.baseVal.value) / 2,
+                        y: (line.y1.baseVal.value + line.y2.baseVal.value) / 2
+                    }));
+                if (mids.length !== 2) return null;
+                const gap = {x: mids[1].x - mids[0].x, y: mids[1].y - mids[0].y};
+                const along = gap.x * unit.x + gap.y * unit.y;
+                return Math.hypot(gap.x - along * unit.x, gap.y - along * unit.y);
+            }""")
+        self.assertIsNotNone(apart, "expected exactly two drawn relations")
+        self.assertGreater(apart, 5)
+
+    def test_a_pan_over_bare_ground_keeps_the_selection(self):
+        # Taking hold of the picture is not letting go of the node: dragging
+        # the ground moves the camera and nothing else.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        moved = self.drag_ground(120, 60)
+        self.assertGreater(moved, 50)
+        self.page.wait_for_timeout(250)
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        self.assertEqual(1, self.page.locator("svg .viewport.has-selection").count())
+        self.assertFalse(self.page.locator("#details").is_hidden())
+
+    def test_a_press_that_shakes_leaves_the_camera_where_it_was(self):
+        # A hand wobbles a pixel or two on the way to a click. That is a press,
+        # so the picture holds still; otherwise every click nudges the field
+        # and the nudges accumulate.
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual(0.0, self.drag_ground(1, 1))
+        self.assertEqual(0.0, self.drag_ground(-2, 1))
+
+    def test_a_press_that_shakes_in_place_still_opens_the_node(self):
+        # A shake is not a journey. Six wobbles inside one pixel add up past
+        # the slop only if the path is summed, and then the press becomes a
+        # pan: the plate under the hand never opens and the camera drifts.
+        # The real mouse, because the point is the click the browser would
+        # have synthesised.
+        self.open_state("#mode=field", "FIELD")
+        spot = self.hit_point(".node-shape")
+        self.assertIsNotNone(spot, "no reachable plate")
+        before = self.viewport_transform()
+        x, y = spot
+        self.page.mouse.move(x, y)
+        self.page.mouse.down()
+        for dx, dy in ((1, 0), (0, 0), (1, 1), (0, 1), (1, 0), (0, 0)):
+            self.page.mouse.move(x + dx, y + dy)
+        self.page.mouse.up()
+        self.page.wait_for_timeout(250)
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        self.assertIn("focus=", urlsplit(self.page.url).fragment)
+        self.assertEqual(before, self.viewport_transform())
+
+    DRAG_JS = """([dx, dy]) => {
+      const svg = document.querySelector("svg.graph-svg");
+      const before = document.querySelector(".viewport").getAttribute("transform");
+      const box = svg.getBoundingClientRect();
+      const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+      const send = (kind, x, y) => svg.dispatchEvent(new PointerEvent(kind, {
+        pointerId: 1, clientX: x, clientY: y, bubbles: true, buttons: 1}));
+      send("pointerdown", cx, cy);
+      for (let step = 1; step <= 4; step += 1) {
+        send("pointermove", cx + dx * step / 4, cy + dy * step / 4);
+      }
+      send("pointerup", cx + dx, cy + dy);
+      svg.dispatchEvent(new MouseEvent("click", {
+        clientX: cx + dx, clientY: cy + dy, bubbles: true}));
+      const after = document.querySelector(".viewport").getAttribute("transform");
+      const read = (value) => value.match(/-?[\\d.]+/g).map(Number);
+      const [ax, ay] = read(after), [bx, by] = read(before);
+      return Math.abs(ax - bx) + Math.abs(ay - by);
+    }"""
+
+    def drag_ground(self, dx, dy):
+        """Drag from the middle of the canvas; answer how far the camera went."""
+        return self.page.evaluate(self.DRAG_JS, [dx, dy])
+
+    def test_a_relation_recedes_arrowhead_and_all(self):
+        # An arrowhead is a marker filled with context-stroke, which copies the
+        # stroke's paint but not its opacity, so a recession spent on
+        # stroke-opacity leaves bright heads scattered through the quiet.
+        self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+        # Read once A9's transition has settled.
+        self.page.wait_for_timeout(300)
+        marked = self.page.evaluate(
+            """() => {
+                const group = [...document.querySelectorAll(
+                    "svg .edge-group:not(.incident)")].find(
+                    (g) => g.dataset.family !== "trail"
+                        && g.querySelector(".edge-line").getAttribute("marker-end"));
+                if (!group) return null;
+                const style = getComputedStyle(group.querySelector(".edge-line"));
+                return {opacity: Number(style.opacity),
+                        strokeOpacity: Number(style.strokeOpacity)};
+            }""")
+        self.assertIsNotNone(marked, "no receding directed relation to measure")
+        self.assertLess(marked["opacity"], 1)
+        self.assertEqual(1, marked["strokeOpacity"])
+
+    def test_a_field_fitted_by_zoom_keeps_a_reachable_hit_band(self):
+        # Opening a field larger than the frame drops the zoom floor to the fit
+        # (#99/§16.3), and a hit band that scaled with it would be a fraction of
+        # a pixel wide — a drawn relation that no hand can reach.
+        nodes = [
+            {"id": f"concept:n{index:03d}", "type": "concept",
+             "title": f"N{index:03d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(140)
+        ]
+        edges = [
+            {"source": f"concept:n{index:03d}",
+             "target": f"concept:n{index + 1:03d}",
+             "type": "related_to", "provenance": [f"concept:n{index:03d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+        reach = self.page.evaluate(
+            """() => {
+                const viewport = document.querySelector(".viewport");
+                const zoom = Number(viewport.getAttribute("transform")
+                    .match(/scale\\(([-\\d.]+)\\)/)[1]);
+                const hit = document.querySelector("svg .edge-hit");
+                const group = hit.closest(".edge-group");
+                const ctm = hit.getScreenCTM();
+                const at = (ux, uy) => new DOMPoint(ux, uy).matrixTransform(ctm);
+                const a = at(hit.x1.baseVal.value, hit.y1.baseVal.value);
+                const b = at(hit.x2.baseVal.value, hit.y2.baseVal.value);
+                const mid = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2};
+                const span = Math.hypot(b.x - a.x, b.y - a.y);
+                const normal = {x: -(b.y - a.y) / span, y: (b.x - a.x) / span};
+                // Walk out along the normal: the last offset that still answers
+                // for this relation is the half-band the hand actually has.
+                const lands = (offset) => document
+                    .elementsFromPoint(mid.x + normal.x * offset,
+                                       mid.y + normal.y * offset)
+                    .some((el) => el.closest && el.closest(".edge-group") === group);
+                const half = () => {
+                    let out = 0;
+                    while (out < 40 && lands(out + 1)) out += 1;
+                    return out;
+                };
+                const withFloor = half();
+                // Neutralise the compensation and measure the same relation
+                // again: what a stroke that scaled with the picture would leave.
+                const written = viewport.style.getPropertyValue("--screen-scale");
+                viewport.style.setProperty("--screen-scale", "1");
+                const scaled = half();
+                viewport.style.setProperty("--screen-scale", written);
+                return {zoom, withFloor, scaled, onEdge: lands(0)};
+            }""")
+        self.assertLess(reach["zoom"], 1, "expected a field fitted by zoom")
+        self.assertTrue(reach["onEdge"], "the middle of a drawn relation is not on it")
+        self.assertGreaterEqual(reach["withFloor"], 4)
+        self.assertGreater(reach["withFloor"], reach["scaled"])
+
+    # On-screen size of a stroke authored in viewBox units, and the family
+    # widths beside it: the picture's own scale times the camera's.
+    DRAWN_JS = """() => {
+      const svg = document.querySelector("svg.graph-svg");
+      const box = svg.getBoundingClientRect();
+      const rendered = Math.min(box.width / svg.viewBox.baseVal.width,
+                                box.height / svg.viewBox.baseVal.height);
+      const zoom = Number(document.querySelector(".viewport")
+          .getAttribute("transform").match(/scale\\(([-\\d.]+)\\)/)[1]);
+      const probe = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      const widths = {};
+      for (const family of ["edge-route", "edge-structural", "edge-journal",
+                            "edge-authored", "edge-trail"]) {
+        probe.setAttribute("class", "edge-line " + family);
+        document.querySelector(".viewport").append(probe);
+        widths[family] = Number.parseFloat(getComputedStyle(probe).strokeWidth);
+      }
+      probe.remove();
+      const marker = document.getElementById("arrow");
+      const head = Number(marker.getAttribute("markerWidth"));
+      return {zoom, rendered, widths,
+              plate: 2 * Number.parseFloat(getComputedStyle(document.documentElement)
+                  .getPropertyValue("--plate-r")),
+              head};
+    }"""
+
+    def big_field(self, count):
+        nodes = [
+            {"id": f"concept:n{index:04d}", "type": "concept",
+             "title": f"N{index:04d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(count)
+        ]
+        edges = [
+            {"source": f"concept:n{index:04d}",
+             "target": f"concept:n{index + 1:04d}",
+             "type": "related_to", "provenance": [f"concept:n{index:04d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+
+    def test_a_field_fitted_by_zoom_still_draws_its_relations(self):
+        # A stroke that scales all the way down does not thin, it goes: at the
+        # opening fit of a field this size it paints a fortieth of a pixel and
+        # no family reaches the contrast a rule carries against the ground.
+        # That is omission, and omission belongs to A11's order (§16.3).
+        self.big_field(700)
+        drawn = self.page.evaluate(self.DRAWN_JS)
+        self.assertLess(drawn["zoom"], 0.1, "expected a field far past the fit")
+        thinnest = min(drawn["widths"].values())
+        # The coverage --e-route needs to carry --rule's contrast on --ground,
+        # measured; without the lift this family paints about 0.05.
+        self.assertGreaterEqual(thinnest * drawn["zoom"] * drawn["rendered"], 0.5)
+        # The lift multiplies each family's own width, so width still carries
+        # family alone (A3) — a shared floor would merge these.
+        base = drawn["widths"]["edge-route"]
+        self.assertAlmostEqual(1.0, drawn["widths"]["edge-structural"] / base, 3)
+        self.assertAlmostEqual(1.25, drawn["widths"]["edge-journal"] / base, 3)
+        self.assertAlmostEqual(1.5, drawn["widths"]["edge-authored"] / base, 3)
+        self.assertAlmostEqual(2.5, drawn["widths"]["edge-trail"] / base, 3)
+
+    def test_a_narrow_embed_keeps_the_floor_and_the_hit_band(self):
+        # The frame scales the picture as surely as the camera does (§16.4), so
+        # a floor measured in screen pixels has to see both: at half the frame
+        # a floor blind to it lands at half the presence it promised.
+        self.page.set_viewport_size({"width": 450, "height": 325})
+        self.open_state("#mode=field", "FIELD")
+        embed = self.page.evaluate(self.DRAWN_JS)
+        self.assertLess(embed["rendered"], 0.6, "expected a narrow frame")
+        thinnest = min(embed["widths"].values())
+        self.assertGreaterEqual(
+            thinnest * embed["zoom"] * embed["rendered"], 0.5)
+        band = self.page.evaluate(
+            """() => {
+                const hit = document.querySelector("svg .edge-hit");
+                const svg = document.querySelector("svg.graph-svg");
+                const rendered = Math.min(
+                    svg.getBoundingClientRect().width / svg.viewBox.baseVal.width,
+                    svg.getBoundingClientRect().height / svg.viewBox.baseVal.height);
+                const zoom = Number(document.querySelector(".viewport")
+                    .getAttribute("transform").match(/scale\\(([-\\d.]+)\\)/)[1]);
+                return Number.parseFloat(getComputedStyle(hit).strokeWidth)
+                    * zoom * rendered;
+            }""")
+        self.assertGreaterEqual(band, 11.5)
+
+    # What a quieted relation actually lays down: the painted width capped at a
+    # pixel is the coverage, and the opacity is spent on top of it.
+    QUIET_COVERAGE_JS = """() => {
+      const viewport = document.querySelector(".viewport");
+      const screen = Number(
+        getComputedStyle(viewport).getPropertyValue("--screen-scale"));
+      const root = getComputedStyle(document.documentElement);
+      // structural and journal are the two derived families; the sheet quiets
+      // them by the one derived amount.
+      const wanted = {
+        authored: Number(root.getPropertyValue("--recede-authored")),
+        structural: Number(root.getPropertyValue("--recede-derived")),
+        journal: Number(root.getPropertyValue("--recede-derived")),
+        route: Number(root.getPropertyValue("--recede-route")),
+        trail: 1,
+      };
+      const out = {screen, families: {}, floored: viewport.classList.contains("floored")};
+      for (const group of viewport.querySelectorAll(".edge-group:not(.incident)")) {
+        const line = group.querySelector(".edge-line");
+        const style = getComputedStyle(line);
+        const drawn = Number.parseFloat(style.strokeWidth) * screen;
+        const laid = Math.min(1, drawn) * Number(style.opacity);
+        const family = group.dataset.family;
+        out.families[family] = Math.min(
+          out.families[family] === undefined ? Infinity : out.families[family], laid);
+      }
+      return {...out, wanted};
+    }"""
+
+    def test_the_quiet_is_spent_out_of_what_the_stroke_actually_lays_down(self):
+        # A stroke narrower than a pixel does not paint a thin line, it paints
+        # a pale one — the width is the coverage. So a family already spending
+        # part of its presence on being drawn has that much less to spend on
+        # being quiet, and the amount measured at full width would take it
+        # under §16.3's floor. Three frames: the lift working, the stretch
+        # above the hairline where it has not started but the one-unit families
+        # are already under a pixel, and the field at its own size.
+        for width, height in ((450, 325), (1000, 720), (1280, 900)):
+            with self.subTest(frame=f"{width}x{height}"):
+                self.page.set_viewport_size({"width": width, "height": height})
+                self.open_state("#mode=field&focus=concept:http-methods", "FIELD")
+                # Read once A9's transition has settled.
+                self.page.wait_for_timeout(300)
+                measured = self.page.evaluate(self.QUIET_COVERAGE_JS)
+                self.assertGreater(len(measured["families"]), 0)
+                for family, laid in measured["families"].items():
+                    self.assertGreaterEqual(
+                        laid, measured["wanted"][family] - 0.005,
+                        f"{family} lays down {laid:.3f} of the "
+                        f"{measured['wanted'][family]} the floor asks, "
+                        f"at screen scale {measured['screen']}")
+        # And the quiet is still a quiet: at its own size the field recedes by
+        # exactly the sheet's amounts, the division being the identity there.
+        self.assertGreaterEqual(measured["screen"], 1)
+        self.assertFalse(measured["floored"])
+        for family, laid in measured["families"].items():
+            self.assertAlmostEqual(measured["wanted"][family], laid, 2)
+
+    def test_a_lifted_stroke_does_not_cap_back_over_the_plate(self):
+        # The endpoints were trimmed to clear the glyph at the width the field
+        # was solved at. A round cap runs half the stroke past its endpoint, so
+        # once the floor lifts the stroke the cap reaches back over the plate.
+        self.big_field(1400)
+        capped = self.page.evaluate(self.DRAWN_JS)
+        self.assertEqual(
+            "butt",
+            self.page.evaluate(
+                """() => getComputedStyle(
+                    document.querySelector("svg .edge-line")).strokeLinecap"""))
+        # And the reach a round cap would have had is real, not hypothetical:
+        # half the widest lifted stroke against the trim that cleared the plate.
+        self.assertGreater(max(capped["widths"].values()) / 2,
+                           capped["plate"] / 2 + 2)
+
+    def test_a_field_at_its_own_scale_keeps_its_round_caps(self):
+        # The squaring off belongs to the floor alone: a field that opens whole
+        # is drawn exactly as authored.
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual(
+            "round",
+            self.page.evaluate(
+                """() => getComputedStyle(
+                    document.querySelector("svg .edge-line")).strokeLinecap"""))
+
+    def test_a_direction_mark_never_outgrows_the_plate_it_points_at(self):
+        # The head is sized in stroke-width units, so the stroke's own lift
+        # would multiply it too and the arrow would swallow its target.
+        self.big_field(700)
+        drawn = self.page.evaluate(self.DRAWN_JS)
+        widest = max(drawn["widths"].values())
+        self.assertLess(drawn["head"] * widest, drawn["plate"])
+
+    def test_the_family_widths_survive_a_palette_that_drops_the_hairline(self):
+        # A variant is a token swap, and one that redeclares the root without
+        # this token must not collapse every family onto one width (A3).
+        self.open_state("#mode=field", "FIELD")
+        self.page.evaluate(
+            """() => document.documentElement.style
+                .setProperty("--edge-hairline", "initial")""")
+        drawn = self.page.evaluate(self.DRAWN_JS)
+        base = drawn["widths"]["edge-route"]
+        self.assertAlmostEqual(1.25, drawn["widths"]["edge-journal"] / base, 3)
+        self.assertAlmostEqual(2.5, drawn["widths"]["edge-trail"] / base, 3)
+
+    def test_a_cancelled_drag_does_not_eat_the_next_click(self):
+        # A cancelled pointer sequence synthesises no click, so the suppression
+        # a completed pan arms has nothing to clear it — and the reader's next
+        # ordinary click is swallowed instead.
+        self.open_state("#mode=field", "FIELD")
+        self.page.evaluate(
+            """() => {
+                const svg = document.querySelector("svg.graph-svg");
+                const box = svg.getBoundingClientRect();
+                const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+                const send = (kind, x, y, extra) => svg.dispatchEvent(
+                    new PointerEvent(kind, Object.assign({
+                        pointerId: 1, clientX: x, clientY: y,
+                        bubbles: true, buttons: 1}, extra || {})));
+                send("pointerdown", cx, cy);
+                for (let step = 1; step <= 4; step += 1) {
+                    send("pointermove", cx + step * 20, cy + step * 10);
+                }
+                send("pointercancel", cx + 80, cy + 40, {buttons: 0});
+            }""")
+        self.page.locator(
+            'svg .node[data-node-id="concept:idempotency"]').click()
+        self.page.wait_for_selector("svg .node.selected")
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+
+    def test_a_press_released_off_the_canvas_does_not_follow_the_hand_back(self):
+        # Below the slop the gesture is not yet captured, so a press that
+        # leaves the element never gets its pointerup — and the drag would
+        # still be standing when the pointer wanders back with no button held.
+        self.open_state("#mode=field", "FIELD")
+        box = self.page.locator("svg.graph-svg").bounding_box()
+        middle = box["y"] + box["height"] / 2
+        before = self.viewport_transform()
+        self.page.mouse.move(box["x"] + 6, middle)
+        self.page.mouse.down()
+        self.page.mouse.move(box["x"] - 40, middle)
+        self.page.mouse.up()
+        self.page.mouse.move(box["x"] + 200, middle)
+        self.page.mouse.move(box["x"] + 400, middle)
+        self.page.wait_for_timeout(150)
+        self.assertEqual(before, self.viewport_transform())
+
+    def viewport_transform(self):
+        return self.page.evaluate(
+            """() => document.querySelector(".viewport").getAttribute("transform")""")
+
+    # A layout is the one thing on this screen that costs real time, so the
+    # tests below watch for it directly: every LAYOUT the viewer enters is
+    # recorded, and the picture is compared plate by plate.
+    WATCH_JS = """() => {
+      window.__states = [];
+      window.__svg = document.querySelector("svg.graph-svg");
+      new MutationObserver((records) => {
+        for (const record of records) {
+          window.__states.push(document.querySelector("#main").dataset.state);
+        }
+      }).observe(document.querySelector("#main"),
+                 {attributes: true, attributeFilter: ["data-state"]});
+    }"""
+    PLATES_JS = """() => [...document.querySelectorAll("svg .node")].map(
+      (g) => g.dataset.nodeId + "@" + g.getAttribute("transform"))"""
+
+    def test_changing_focus_repaints_the_field_instead_of_solving_it_again(self):
+        # The same drawn set settles into the same picture every time (§27.8),
+        # so solving it again on a click is a reader waiting to be shown what
+        # they were already looking at. The picture is repainted: same tree,
+        # same coordinates, no LAYOUT, no blank stage.
+        self.open_state("#mode=field", "FIELD")
+        before = self.page.evaluate(self.PLATES_JS)
+        self.page.evaluate(self.WATCH_JS)
+        self.page.locator('svg .node[data-node-id="concept:idempotency"]').click()
+        self.page.wait_for_selector(
+            'svg .node.selected[data-node-id="concept:idempotency"]')
+        self.assertNotIn("LAYOUT", self.page.evaluate("() => window.__states"))
+        self.assertTrue(self.page.evaluate(
+            "() => window.__svg === document.querySelector('svg.graph-svg')"))
+        self.assertEqual(before, self.page.evaluate(self.PLATES_JS))
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+        self.assertEqual(
+            "0",
+            self.page.locator("svg .node.selected").get_attribute("tabindex"))
+
+        # And again, onto a second node, from the panel's own relation list.
+        self.page.evaluate("() => { window.__states.length = 0; }")
+        self.page.locator("#details button", has_text="concept:redis").first.click()
+        self.page.wait_for_selector(
+            'svg .node.selected[data-node-id="concept:redis"]')
+        self.assertNotIn("LAYOUT", self.page.evaluate("() => window.__states"))
+        self.assertEqual(before, self.page.evaluate(self.PLATES_JS))
+        self.assertEqual(1, self.page.locator("svg .node.selected").count())
+
+    def test_each_drawn_set_is_solved_once_and_then_remembered(self):
+        # The memo is keyed on what is drawn: a new drawn set is an honest
+        # miss and is solved, and every return to one already solved gives
+        # back the identical picture without solving it again — which is only
+        # ever the picture §27.8 would have produced anyway.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        horizon = self.page.locator("#horizon-select")
+        whole = self.page.evaluate(self.PLATES_JS)
+        self.page.evaluate(self.WATCH_JS)
+
+        # A narrower horizon is a drawn set nothing has solved yet.
+        horizon.select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        narrow = self.page.evaluate(self.PLATES_JS)
+        self.assertIn("LAYOUT", self.page.evaluate("() => window.__states"))
+
+        # Both directions now come back from the memo, unchanged.
+        for option, count, expected in (("all", 8, whole), ("1", 3, narrow)):
+            self.page.evaluate("() => { window.__states.length = 0; }")
+            horizon.select_option(option)
+            self.page.wait_for_function(
+                "() => document.querySelectorAll('svg .node').length === "
+                + str(count))
+            self.assertNotIn("LAYOUT", self.page.evaluate("() => window.__states"))
+            self.assertEqual(expected, self.page.evaluate(self.PLATES_JS))
+
+    def test_the_routes_lens_redraws_from_the_remembered_layout(self):
+        # The Routes lens keeps the layout and changes the drawn edges, so an
+        # equal memo key is not an equal picture across it. Without that guard
+        # a hidden route would stay on the screen.
+        self.open_state("#mode=field&focus=concept:idempotency", "FIELD")
+        before = self.page.evaluate(self.PLATES_JS)
+        drawn = self.page.locator("svg .edge-group").count()
+        self.page.evaluate(self.WATCH_JS)
+
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_selector("#main[data-state='FIELD']")
+        self.assertLess(self.page.locator("svg .edge-group").count(), drawn)
+        self.assertEqual(0, self.page.locator("svg .edge-line.edge-route").count())
+        self.assertNotIn("LAYOUT", self.page.evaluate("() => window.__states"))
+        self.assertEqual(before, self.page.evaluate(self.PLATES_JS))
+
+        self.page.locator("#routes-toggle").click()
+        self.page.wait_for_selector("#main[data-state='FIELD']")
+        self.assertEqual(drawn, self.page.locator("svg .edge-group").count())
+        self.assertEqual(before, self.page.evaluate(self.PLATES_JS))
+
+    def test_the_emphasis_is_reachable_without_a_pointer(self):
+        # §27.8: every interaction is keyboard-reachable. The selection is the
+        # field's one tab stop, and stepping it from the panel moves the lit
+        # set with it — the same picture the mouse draws.
+        self.open_state("#mode=field&focus=concept:idempotency", "FIELD")
+        first = self.incident_pairs()
+        self.assertGreater(len(first), 0)
+        button = self.page.locator("#details button", has_text="concept:redis").first
+        button.focus()
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_selector('svg .node.selected[data-node-id="concept:redis"]')
+        second = self.incident_pairs()
+        self.assertNotEqual(first, second)
+        self.assertTrue(any("concept:redis" in pair for pair in second))
+        self.assertEqual(
+            "0", self.page.locator("svg .node.selected").get_attribute("tabindex"))
+        self.assertEqual(
+            1, self.page.locator('svg .node[tabindex="0"]').count())
+
+    def hit_point(self, selector):
+        # The centre of an element is only a usable press target if it is what
+        # the pointer would actually land on — edges carry a wide invisible
+        # hit stroke that sits over its neighbours.
+        return self.page.evaluate(
+            """(want) => {
+                for (const el of document.querySelectorAll("svg " + want)) {
+                    const box = el.getBoundingClientRect();
+                    const x = Math.round(box.left + box.width / 2);
+                    const y = Math.round(box.top + box.height / 2);
+                    const hit = document.elementFromPoint(x, y);
+                    if (hit && hit.matches(want)) return [x, y];
+                }
+                return null;
+            }""",
+            selector,
+        )
+
+    def drag_from(self, x, y):
+        transform = "() => document.querySelector('svg .viewport')" \
+                    ".getAttribute('transform')"
+        before = self.page.evaluate(transform)
+        self.page.mouse.move(x, y)
+        self.page.mouse.down()
+        for step in range(1, 13):
+            self.page.mouse.move(x + step * 18, y + step * 5)
+        self.page.mouse.up()
+        return self.page.evaluate(transform) != before
+
+    def test_the_picture_is_grabbable_anywhere_and_a_drag_is_not_a_click(self):
+        # Nothing in the field moves relative to anything else, so the whole
+        # picture is the only thing to take hold of — and every press takes
+        # hold of it. Requiring bare background made the gesture fail wherever
+        # an edge's invisible 12px hit stroke lay, which on a dense field is
+        # most of the canvas.
+        nodes = [
+            {"id": f"concept:n{index:02d}", "type": "concept",
+             "title": f"N{index:02d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(24)
+        ]
+        edges = [
+            {"source": f"concept:n{index:02d}",
+             "target": f"concept:n{index + 1:02d}",
+             "type": "related_to", "provenance": [f"concept:n{index:02d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        graph = self.graph_envelope(nodes=nodes, edges=edges)
+        for target in ("svg-background", ".edge-hit", ".node-shape"):
+            with self.subTest(grabbed=target):
+                self.write_graph(graph)
+                self.open_state("#mode=field", "FIELD")
+                spot = ((8, 8) if target == "svg-background"
+                        else self.hit_point(target))
+                self.assertIsNotNone(spot, f"no reachable {target}")
+                if target == "svg-background":
+                    box = self.page.locator("svg").bounding_box()
+                    spot = (int(box["x"] + 12), int(box["y"] + 12))
+                self.assertTrue(self.drag_from(*spot))
+                # The drag moved the picture, so it did not also open a node.
+                self.assertTrue(self.page.locator("#details").is_hidden())
+                self.assertEqual("mode=field", urlsplit(self.page.url).fragment)
+
+        # A press that does not travel is still a press: it selects.
+        self.write_graph(graph)
+        self.open_state("#mode=field", "FIELD")
+        spot = self.hit_point(".node-shape")
+        self.page.mouse.click(*spot)
+        self.page.wait_for_selector("#details:not([hidden])")
+        self.assertIn("focus=", urlsplit(self.page.url).fragment)
+
+    def test_a_field_wider_than_the_frame_opens_whole_and_unsqueezed(self):
+        # A field too big for the frame is fitted by zooming the view out, not
+        # by pulling the positions together: the plate keeps its fixed size
+        # per kind class (A10), so shrinking the gaps under it was the one way
+        # to make plates overlap that no A11 tier could undo. Everything is on
+        # screen, and nothing is on top of anything.
+        nodes = [
+            {"id": f"concept:n{index:03d}", "type": "concept",
+             "title": f"N{index:03d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(140)
+        ]
+        edges = [
+            {"source": f"concept:n{index:03d}",
+             "target": f"concept:n{index + 1:03d}",
+             "type": "related_to", "provenance": [f"concept:n{index:03d}"],
+             "weight": "unassessed"}
+            for index in range(len(nodes) - 1)
+        ]
+        self.write_graph(self.graph_envelope(nodes=nodes, edges=edges))
+        self.open_state("#mode=field", "FIELD")
+        geometry = self.page.evaluate(
+            """() => {
+                const viewport = document.querySelector("svg .viewport");
+                const frame = document.querySelector("svg").getBoundingClientRect();
+                const plates = [...document.querySelectorAll("svg .node-shape")]
+                    .map((shape) => shape.getBoundingClientRect());
+                const outside = plates.filter((box) =>
+                    box.left < frame.left - 0.5 || box.right > frame.right + 0.5
+                    || box.top < frame.top - 0.5 || box.bottom > frame.bottom + 0.5);
+                const overlaps = [];
+                for (let i = 0; i < plates.length; i += 1) {
+                    for (let j = i + 1; j < plates.length; j += 1) {
+                        const a = plates[i], b = plates[j];
+                        if (a.left < b.right && b.left < a.right
+                            && a.top < b.bottom && b.top < a.bottom) overlaps.push([i, j]);
+                    }
+                }
+                return {
+                    scale: Number(viewport.getAttribute("transform")
+                        .match(/scale\\(([\\d.]+)\\)/)[1]),
+                    plates: plates.length,
+                    outside: outside.length,
+                    overlaps: overlaps.length,
+                };
+            }"""
+        )
+        self.assertEqual(140, geometry["plates"])
+        self.assertLess(geometry["scale"], 1)
+        self.assertEqual(0, geometry["outside"])
+        self.assertEqual(0, geometry["overlaps"])
+
+    def wide_route_field(self):
+        # A path long enough to open wider than the frame, carrying one route
+        # edge so a dashed family is on screen. §20.3 canonical order sorts by
+        # type first, so every related_to precedes the suggested_next.
+        nodes = [
+            {"id": f"concept:n{index:03d}", "type": "concept",
+             "title": f"N{index:03d}", "fields": ["knowledge"], "aliases": []}
+            for index in range(140)
+        ]
+        nodes.append({
+            "id": "suggested-route:wide", "type": "suggested_route",
+            "title": "Wide route", "status": "available",
+            "source_plan": "plan:wide", "fields": ["knowledge"],
+        })
+        nodes.append({
+            "id": "plan:wide", "type": "plan", "title": "Wide plan",
+            "fields": ["knowledge"],
+        })
+        edges = [
+            {"source": f"concept:n{index:03d}",
+             "target": f"concept:n{index + 1:03d}",
+             "type": "related_to", "provenance": [f"concept:n{index:03d}"],
+             "weight": "unassessed"}
+            for index in range(140 - 1)
+        ]
+        edges.append({
+            "source": "concept:n000", "target": "concept:n139",
+            "type": "suggested_next", "provenance": ["suggested-route:wide"],
+            "context": "suggested-route:wide",
+        })
+        return self.graph_envelope(nodes=nodes, edges=edges)
+
+    def measured_dash(self):
+        return self.page.evaluate(
+            """() => {
+                const viewport = document.querySelector("svg .viewport");
+                const route = document.querySelector("svg .edge-route");
+                return {
+                    zoom: Number(viewport.getAttribute("transform")
+                        .match(/scale\\(([\\d.]+)\\)/)[1]),
+                    scale: Number(getComputedStyle(viewport)
+                        .getPropertyValue("--dash-scale")),
+                    screen: Number(getComputedStyle(viewport)
+                        .getPropertyValue("--screen-scale")),
+                    dash: getComputedStyle(route).strokeDasharray
+                        .match(/[\\d.]+/g).map(Number),
+                };
+            }"""
+        )
+
+    def test_a_field_at_its_own_scale_draws_the_authored_dash(self):
+        # §16.2 A3 sets the route period at 4 on, 3 off. A field drawn at least
+        # at its own size draws exactly that — the screen floor only ever grows
+        # a dash, so nothing the frame shows whole is touched by it. Its own
+        # size is the whole trip, camera and frame: a frame shorter than the
+        # field was authored for is already drawing it smaller.
+        self.page.set_viewport_size({"width": 1280, "height": 900})
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field", "FIELD")
+        measured = self.measured_dash()
+        self.assertEqual(1, measured["zoom"])
+        self.assertGreaterEqual(measured["screen"], 1)
+        self.assertEqual(1, measured["scale"])
+        self.assertEqual([4, 3], measured["dash"])
+
+    def test_a_narrow_frame_holds_the_dash_up_on_its_own(self):
+        # The camera is not the only thing that draws the field smaller than
+        # itself: an embed narrower than the field was authored for shrinks the
+        # period with everything else, and a route dash blurred into a
+        # continuous stroke has stopped carrying family (A3, §16.4).
+        self.page.set_viewport_size({"width": 420, "height": 300})
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field", "FIELD")
+        measured = self.measured_dash()
+        self.assertLess(measured["screen"], 0.6, "expected a narrow frame")
+        self.assertAlmostEqual(
+            1 / measured["screen"], measured["scale"], places=3)
+        # On screen the period is the authored one, whatever the frame does.
+        self.assertGreater(measured["dash"][0] * measured["screen"], 3.5)
+
+    def test_a_dash_stops_shrinking_once_the_picture_is_drawn_smaller(self):
+        # A dash carries edge family, and its period is in layout units: a
+        # field held whole at a fiftieth of its own size asks for fifty times
+        # the dashes it can show, on every edge at once. The family mark
+        # dissolves into a hairline, and the browser spends a quarter-second a
+        # frame drawing what cannot be seen — the picture stops answering the
+        # hand dragging it. Drawn smaller than itself the dash holds its own
+        # size instead, the same floor of screen presence the plate outline
+        # keeps.
+        self.write_graph(self.wide_route_field())
+        self.open_state("#mode=field", "FIELD")
+        measured = self.measured_dash()
+        self.assertLess(measured["zoom"], 1)
+        self.assertAlmostEqual(
+            1 / measured["screen"], measured["scale"], places=3)
+        # The authored period, grown by that scale and nothing else.
+        self.assertAlmostEqual(
+            4 * measured["scale"], measured["dash"][0], places=2)
+        self.assertAlmostEqual(
+            3 * measured["scale"], measured["dash"][1], places=2)
+
+    def test_focus_horizon_control_needs_a_focus(self):
+        # The horizon is a reader control over a focused node, so it stays
+        # inert — and says why — until there is one. It is not an address key:
+        # §16.4's fragment is unchanged by moving it.
+        self.write_graph(self.chain_graph())
+        self.open_state("#mode=field", "FIELD")
+        horizon = self.page.locator("#horizon-select")
+        self.assertTrue(horizon.is_disabled())
+        self.assertEqual(
+            "Open a node to look around it", horizon.get_attribute("title"))
+
+        self.open_state("#mode=field&focus=concept:a", "FIELD")
+        horizon = self.page.locator("#horizon-select")
+        self.assertFalse(horizon.is_disabled())
+        self.assertIsNone(horizon.get_attribute("title"))
+        horizon.select_option("1")
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('svg .node').length === 3")
+        self.assertEqual("mode=field&focus=concept:a",
+                         urlsplit(self.page.url).fragment)
+
     def test_unknown_fragment_params_of_any_shape_are_ignored(self):
         # §16.4 forward compatibility: unknown keys — underscores, digits,
         # future names — never invalidate the address.
@@ -1003,6 +2373,21 @@ class ViewerBrowserTests(unittest.TestCase):
         self.page.keyboard.press("Escape")
         self.assertEqual("false", button.get_attribute("aria-expanded"))
         self.assertTrue(self.page.locator("#legend").is_hidden())
+
+    def test_the_quiet_settles_in_and_stands_still_under_reduced_motion(self):
+        # A9 gives focus feedback the one transition there is, so the relations
+        # that do not touch a selection settle rather than snap — and reduced
+        # motion collapses it to zero, where they are simply already quiet.
+        settle = """() => getComputedStyle(
+            document.querySelector("svg .edge-line")).transitionDuration"""
+        self.open_state("#mode=field", "FIELD")
+        self.assertNotEqual("0s", self.page.evaluate(settle))
+
+        self.context.close()
+        self.context = self.browser.new_context(reduced_motion="reduce")
+        self.page = self.context.new_page()
+        self.open_state("#mode=field", "FIELD")
+        self.assertEqual("0s", self.page.evaluate(settle))
 
     def test_reduced_motion_disables_question_animation(self):
         self.context.close()
@@ -2189,6 +3574,94 @@ class ViewerBrowserTests(unittest.TestCase):
             viewport_before,
             self.page.locator("svg .viewport").get_attribute("transform"),
         )
+
+    def test_plates_never_settle_on_top_of_one_another(self):
+        # Two plates in one place hide each other's state: the reader cannot
+        # tell one texture, boundary, or rail from the other, and A11's drop
+        # order has no tier that would rescue it. The separation pass runs in
+        # frame units after the fit, so the guarantee is what is drawn.
+        self.open_state("#mode=field", "FIELD")
+        overlaps = self.page.evaluate(
+            """() => {
+                const boxes = [...document.querySelectorAll("svg .node")]
+                    .map((node) => ({
+                        id: node.dataset.nodeId,
+                        box: node.querySelector(".node-shape").getBoundingClientRect(),
+                    }));
+                const hits = [];
+                for (let i = 0; i < boxes.length; i += 1) {
+                    for (let j = i + 1; j < boxes.length; j += 1) {
+                        const a = boxes[i].box, b = boxes[j].box;
+                        if (a.left < b.right && b.left < a.right
+                            && a.top < b.bottom && b.top < a.bottom) {
+                            hits.push(boxes[i].id + " / " + boxes[j].id);
+                        }
+                    }
+                }
+                return hits;
+            }"""
+        )
+        self.assertEqual([], overlaps)
+
+    def test_labels_clear_each_other_and_stay_seeded(self):
+        # A label that lands on its neighbour's label is the label channel
+        # drawn and unreadable at once. Each takes the first free slot around
+        # its node; the slot order is fixed, so the same graph keeps the same
+        # sides and the picture stays seeded (§27.8).
+        self.open_state("#mode=field", "FIELD")
+        read_labels = """() => [...document.querySelectorAll("svg .node")]
+            .map((node) => {
+                const label = node.querySelector(".node-label");
+                const box = label.getBoundingClientRect();
+                return {
+                    id: node.dataset.nodeId,
+                    anchor: label.getAttribute("text-anchor") || "start",
+                    x: label.getAttribute("x"),
+                    y: label.getAttribute("y"),
+                    box: {left: box.left, right: box.right,
+                          top: box.top, bottom: box.bottom},
+                };
+            })"""
+        labels = self.page.evaluate(read_labels)
+        overlaps = []
+        for index, left in enumerate(labels):
+            for right in labels[index + 1:]:
+                a, b = left["box"], right["box"]
+                if (a["left"] < b["right"] and b["left"] < a["right"]
+                        and a["top"] < b["bottom"] and b["top"] < a["bottom"]):
+                    overlaps.append(f"{left['id']} / {right['id']}")
+        self.assertEqual([], overlaps)
+        # The demo field is crowded enough that clearing the collisions needs
+        # the left side, so the sweep is proved to do something here.
+        self.assertIn("end", {label["anchor"] for label in labels})
+
+        self.page.reload(wait_until="domcontentloaded")
+        self.page.wait_for_selector('#main[data-state="FIELD"]')
+        repeated = self.page.evaluate(read_labels)
+        self.assertEqual(
+            [(label["id"], label["anchor"], label["x"], label["y"])
+             for label in labels],
+            [(label["id"], label["anchor"], label["x"], label["y"])
+             for label in repeated],
+        )
+
+    def test_edges_of_one_pair_are_drawn_apart(self):
+        # The demo graph joins some pairs by more than one edge — related_to
+        # and alternative_to say different things about the same two nodes.
+        # Stacked on one axis the field would show one stroke where the graph
+        # holds several, so each takes its own lane.
+        self.open_state("#mode=field", "FIELD")
+        spans = self.page.evaluate(
+            """() => [...document.querySelectorAll("svg .edge-group")]
+                .map((group) => {
+                    const line = group.querySelector(
+                        ".weight-dropped") || group.querySelector(".edge-line");
+                    return ["x1", "y1", "x2", "y2"]
+                        .map((name) => Number(line.getAttribute(name)).toFixed(1))
+                        .join(",");
+                })"""
+        )
+        self.assertEqual(len(spans), len(set(spans)))
 
 
 if __name__ == "__main__":
