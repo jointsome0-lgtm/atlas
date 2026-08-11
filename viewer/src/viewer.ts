@@ -24,10 +24,12 @@ import type {
   EncounterContext,
   EncounterDepth,
   Field,
+  FreshnessValue,
   GraphAcceptance,
   NodeId,
   NodeIndex,
   NodePayloadProperty,
+  NodePayloadTable,
   NodeType,
   QuestionDecisionDimension,
   QuestionSource,
@@ -51,6 +53,8 @@ type BannerKind = Banner["kind"];
 
 type GlyphNode = {type: NodeType; sensitivity?: SensitivityClass};
 type NodePayload = Partial<Record<NodePayloadProperty, unknown>>;
+type KnownObject = QuestionSource | EncounterContext;
+type KnownObjectKey = keyof QuestionSource | keyof EncounterContext;
 type Texture = "plain" | "dot" | "hatch" | "cross" | "solid" | "keyline";
 type EdgeFamilyKey =
   "route" | "trail" | "authored" | "structural" | "journal";
@@ -73,10 +77,8 @@ type QuestionRailSlot = {
 };
 type RailSlot = ConceptRailSlot | QuestionRailSlot;
 type RailGeometry = {gap: number; width: number; slotH: number; pitch: number};
-type RailBounds = {
-  left: number; right: number; top: number; bottom: number;
-  width: number; slotH: number; pitch: number;
-};
+type Rect = {left: number; right: number; top: number; bottom: number};
+type RailBounds = Rect & {width: number; slotH: number; pitch: number};
 
 type Point = {x: number; y: number};
 type PositionIndex = Map<NodeId, Point>;
@@ -86,11 +88,10 @@ type StubCut = {edge: AtlasEdge; outsideId: NodeId};
 
 type LabelSide = "left" | "right";
 type LabelSlot = {side: LabelSide; row: number};
-type LabelBox = {left: number; right: number; top: number; bottom: number};
 type LabelAnchors = {right: number; left: number};
 type LabelOffset = {gap: number; offset: number};
-type PlacedLabel = {side: LabelSide; offset: number; box: LabelBox};
-type Placement = {side: LabelSide; offset: number; box?: LabelBox};
+type Placement = {side: LabelSide; offset: number; box?: Rect};
+type PlacedLabel = Required<Placement>;
 type PlacementIndex = Map<NodeId, Placement>;
 type StateWordRow = readonly [label: string, words: string | undefined];
 
@@ -225,7 +226,7 @@ const KIND_RADIAL_EXTENT: Partial<Record<NodeType, number>> = {
   "artifact": Math.hypot(6.7, 2.2)
 };
 const LONG_FIELDS = new Set<NodePayloadProperty>(["notes", "body", "summary", "reason", "text"]);
-const DETAIL_FIELDS: Record<NodeType, readonly NodePayloadProperty[]> = {
+const DETAIL_FIELDS: NodePayloadTable = {
   "concept": ["aliases"],
   "pattern": ["aliases"],
   "zone": ["notes"],
@@ -1199,12 +1200,12 @@ function labelWidth(title: string, em: number, size: number): number {
   return width;
 }
 
-function boxesIntersect(left: LabelBox, right: LabelBox): boolean {
+function boxesIntersect(left: Rect, right: Rect): boolean {
   return left.left < right.right && right.left < left.right
     && left.top < right.bottom && right.top < left.bottom;
 }
 
-function labelBox(position: Point, anchors: LabelAnchors, width: number, side: LabelSide, dy: LabelOffset, line: number): LabelBox {
+function labelBox(position: Point, anchors: LabelAnchors, width: number, side: LabelSide, dy: LabelOffset, line: number): Rect {
   const x = side === "right"
     ? position.x + anchors.right + dy.gap
     : position.x - anchors.left - dy.gap - width;
@@ -1226,7 +1227,7 @@ function placeLabels(nodes: readonly AtlasNode[], positions: PositionIndex, radi
     for (const node of sorted) placements.set(node.id, fallback);
     return placements;
   }
-  const obstacles: LabelBox[] = sorted.map((node) => {
+  const obstacles: Rect[] = sorted.map((node) => {
     const position = positions.get(node.id)!;
     const radius = radii.get(node.id)!;
     return {
@@ -1724,8 +1725,8 @@ function makeEdge(edge: AtlasEdge, positions: PositionIndex, nodeById: NodeIndex
     setEnds(line, source, target);
     if (directed) line.setAttribute("marker-end", "url(#arrow)");
     strokes.push(line);
-    if (axis && WEIGHT_TICK_TOKENS[edge.weight!]) {
-      const extent = tokenNumber(WEIGHT_TICK_TOKENS[edge.weight!]!, 8);
+    if (axis && WEIGHT_TICK_TOKENS[edge.weight as EdgeWeight]) {
+      const extent = tokenNumber(WEIGHT_TICK_TOKENS[edge.weight as EdgeWeight]!, 8);
       const normal = {x: -axis.unit.y, y: axis.unit.x};
       const tick = svgElement("line", "edge-weight");
       setEnds(tick, offsetFrom(axis.mid, normal, -extent / 2), offsetFrom(axis.mid, normal, extent / 2));
@@ -2413,7 +2414,7 @@ function renderLegend(): void {
 
   const boundarySection = htmlElement("section", "legend-state");
   boundarySection.append(htmlElement("h2", "", "Boundary"));
-  for (const [freshness, label] of [["fresh", "fresh"], ["aging", "aging"], ["stale", "stale (label recedes)"]]) {
+  for (const [freshness, label] of [["fresh", "fresh"], ["aging", "aging"], ["stale", "stale (label recedes)"]] satisfies readonly (readonly [FreshnessValue, string])[]) {
     const row = htmlElement("div", "legend-row");
     row.append(makeStateSample("node-concept tx-plain fresh-" + freshness, (contents) => {
       const shape = svgElement("circle", "node-shape");
@@ -2427,7 +2428,7 @@ function renderLegend(): void {
 
   const railSection = htmlElement("section", "legend-state");
   railSection.append(htmlElement("h2", "", "Decision rail"));
-  const railRows = [
+  const railRows: readonly (readonly ["slot" | "mark" | "fork", string])[] = [
     ["slot", "open slot = no decision recorded"],
     ["mark", "struck mark = confirmed; height = decided level where ordinal"],
     ["fork", "split mark = disputed"]
@@ -2485,11 +2486,11 @@ function updateFocus(nodeId: NodeId | null): void {
   location.hash = next;
 }
 
-function appendKnownObject(parent: Element, key: NodePayloadProperty, value: QuestionSource & EncounterContext): void {
-  const names: readonly (keyof QuestionSource | keyof EncounterContext)[] = key === "source" ? ["artifact", "encounter"] : ["question", "artifact"];
+function appendKnownObject(parent: Element, key: NodePayloadProperty, value: KnownObject): void {
+  const names: readonly KnownObjectKey[] = key === "source" ? ["artifact", "encounter"] : ["question", "artifact"];
   const parts: string[] = [];
   for (const name of names) {
-    if (Object.prototype.hasOwnProperty.call(value, name)) parts.push(name + ": " + value[name]);
+    if (Object.prototype.hasOwnProperty.call(value, name)) parts.push(name + ": " + (value as Partial<Record<KnownObjectKey, NodeId>>)[name]);
   }
   parent.textContent = parts.join(" · ");
 }
@@ -2512,7 +2513,7 @@ function appendDetailValue(parent: Element, key: NodePayloadProperty, value: unk
   } else if (Array.isArray(value)) {
     parent.textContent = value.length ? value.join(", ") : "—";
   } else if (value && typeof value === "object") {
-    appendKnownObject(parent, key, value as QuestionSource & EncounterContext);
+    appendKnownObject(parent, key, value as KnownObject);
   } else {
     parent.textContent = String(value);
   }

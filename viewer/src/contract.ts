@@ -79,8 +79,12 @@ export type NodeCommon = {
   formerly?: readonly NodeId[];
   sensitivity?: SensitivityClass;
 };
-export type QuestionSource = {artifact?: NodeId; encounter?: NodeId};
-export type EncounterContext = {question?: NodeId; artifact?: NodeId};
+export type QuestionSource =
+  | {artifact: NodeId; encounter?: NodeId}
+  | {artifact?: NodeId; encounter: NodeId};
+export type EncounterContext =
+  | {question: NodeId; artifact?: NodeId}
+  | {question?: NodeId; artifact: NodeId};
 export type PlanNode = NodeCommon & {type: "plan"};
 export type ConceptNode = NodeCommon & {
   type: "concept";
@@ -114,6 +118,7 @@ export type SuggestedRouteNode = NodeCommon & {
 };
 export type QuestionNode = NodeCommon & {
   type: "question";
+  formerly?: undefined;
   text: string;
   created_at: CalendarDate;
   source: QuestionSource;
@@ -126,6 +131,7 @@ export type ProbeNode = NodeCommon & {
 };
 export type ArtifactNode = NodeCommon & {
   type: "artifact";
+  formerly?: undefined;
   kind: string;
   path: string;
   observed_at: CalendarDate;
@@ -135,6 +141,7 @@ export type ArtifactNode = NodeCommon & {
 };
 export type EncounterNode = NodeCommon & {
   type: "encounter";
+  formerly?: undefined;
   date: CalendarDate;
   target: NodeId;
   depth: EncounterDepth;
@@ -143,6 +150,7 @@ export type EncounterNode = NodeCommon & {
 };
 export type TrailSegmentNode = NodeCommon & {
   type: "trail_segment";
+  formerly?: undefined;
   date: CalendarDate;
   direction: NodeId;
   from?: NodeId | readonly NodeId[];
@@ -162,6 +170,7 @@ export type AtlasNode =
   | PersonalTrailNode;
 export type NodeProperty = KeysOfUnion<AtlasNode>;
 export type NodePayloadProperty = Exclude<NodeProperty, keyof NodeCommon>;
+export type NodePayloadTable = Record<NodeType, readonly NodePayloadProperty[]>;
 export type DatedNodeProperty =
   Extract<NodePayloadProperty, "created_at" | "observed_at" | "date">;
 export type NodeIndex = ReadonlyMap<NodeId, AtlasNode>;
@@ -170,7 +179,7 @@ export type AtlasEdge = {
   source: NodeId;
   target: NodeId;
   type: EdgeType;
-  provenance: readonly NodeId[];
+  provenance: readonly [NodeId, ...NodeId[]];
   sensitivity?: SensitivityClass;
   weight?: EdgeWeight;
   order?: number;
@@ -193,7 +202,7 @@ export type DecisionDimension =
 export type DecisionReference<Dimension extends DecisionDimension> = {
   dimension: Dimension;
   date: CalendarDate;
-  evidence: readonly NodeId[];
+  evidence: readonly [NodeId, ...NodeId[]];
 };
 export type ConceptStateEntry = {
   exposure: ConceptExposure;
@@ -210,7 +219,7 @@ export type MaterialStateEntry = {
   depth_reached: EncounterDepth;
   last_seen: CalendarDate;
   freshness: FreshnessValue;
-  evidence: readonly NodeId[];
+  evidence: readonly [NodeId, ...NodeId[]];
   sensitivity?: SensitivityClass;
 };
 export type QuestionStateEntry = {
@@ -235,17 +244,17 @@ export type ConceptStateProjection = {
   coverage: CoverageValue;
   last_seen?: CalendarDate;
   freshness?: FreshnessValue;
-  decided: readonly DecisionDimension[];
+  decided: readonly ConceptDecisionDimension[];
 };
 export type MaterialStateProjection = {
   depth_reached: EncounterDepth;
   last_seen: CalendarDate;
   freshness: FreshnessValue;
-  decided: readonly DecisionDimension[];
+  decided: readonly [];
 };
 export type QuestionStateProjection = {
   status: QuestionStatus;
-  decided: readonly DecisionDimension[];
+  decided: readonly QuestionDecisionDimension[];
 };
 export type StateProjectionProperty =
   | keyof ConceptStateProjection
@@ -272,10 +281,10 @@ export type AtlasGraph = {
   nodes: readonly AtlasNode[];
   edges: readonly AtlasEdge[];
   trails: readonly [];
-  state: Record<NodeId, StateEntry>;
+  state: Record<NodeId, StateEntry | undefined>;
   influence: Record<string, never>;
   frontier: readonly [];
-  projections: Record<NodeId, Slug>;
+  projections: Record<NodeId, Slug | undefined>;
   withheld?: WithheldCounts;
 };
 export type EnvelopeProperty = keyof AtlasGraph;
@@ -286,10 +295,10 @@ export type ProjectedGraph = {
   nodes: readonly AtlasNode[];
   edges: readonly AtlasEdge[];
   trails: readonly [];
-  state: Record<NodeId, StateProjection>;
+  state: Record<NodeId, StateProjection | undefined>;
   influence: Record<string, never>;
   frontier: readonly [];
-  projections: Record<NodeId, Slug>;
+  projections: Record<NodeId, Slug | undefined>;
 };
 
 export type AcceptedGraph = {
@@ -335,22 +344,17 @@ type EdgeProjectionDraft = {
   source: NodeId;
   target: NodeId;
   type: EdgeType;
-  provenance: readonly NodeId[];
+  provenance: readonly [NodeId, ...NodeId[]];
 } & Partial<
   Record<Exclude<EdgeProperty, "source" | "target" | "type" | "provenance">,
   unknown>
 >;
-type StateProjectionDraft = {
-  exposure?: ConceptExposure;
-  confidence?: ConfidenceValue;
-  clarity?: ClarityValue;
-  coverage?: CoverageValue;
-  depth_reached?: EncounterDepth;
-  status?: QuestionStatus;
-  last_seen?: CalendarDate;
-  freshness?: FreshnessValue;
-  decided?: readonly DecisionDimension[];
-};
+type StateProjectionDraft = Partial<
+  Omit<
+    ConceptStateProjection & MaterialStateProjection & QuestionStateProjection,
+    "decided"
+  > & {decided: readonly DecisionDimension[]}
+>;
 
 // §25.8 viewer acceptance ceilings (Decision Log 2026-07-21): measured-floor
 // values — 10k corpus measured 7,294,150 B / 10,000 nodes / 19,479 edges;
@@ -422,7 +426,7 @@ const EDGE_DISCRIMINANTS: Partial<Record<EdgeType, readonly EdgeProperty[]>> = {
 const NO_REDIRECT_KINDS: ReadonlySet<NodeType> = new Set(["trail_segment", "artifact", "encounter", "question"]);
 const NODE_COMMON_KEYS: ReadonlySet<NodeProperty> = new Set(["id", "type", "title", "fields", "formerly", "sensitivity"]);
 
-const NODE_PAYLOAD_FIELDS: Record<NodeType, readonly NodePayloadProperty[]> = {
+const NODE_PAYLOAD_FIELDS: NodePayloadTable = {
   "concept": ["aliases"],
   "pattern": ["aliases"],
   "zone": ["notes"],
@@ -462,7 +466,7 @@ function hasKeys(value: object, required: readonly string[]): boolean {
 }
 
 function isStringArray(value: unknown, itemCheck: (item: string) => boolean = () => true): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string" && itemCheck(item));
+  return Array.isArray(value) && value.every((item: unknown) => typeof item === "string" && itemCheck(item));
 }
 
 function isUnique(value: readonly unknown[]): boolean {
@@ -559,7 +563,7 @@ function validateNode(node: unknown, index: number): Diagnostic | null {
     if (!validateOptionalNodeProperty(node, key, path + "/" + key)) return diagnostic(path + "/" + key, "shape");
   }
 
-  const requiredByType: Record<NodeType, readonly NodePayloadProperty[]> = {
+  const requiredByType: NodePayloadTable = {
     "concept": ["aliases"], "pattern": ["aliases"], "zone": ["notes"],
     "material_part": ["material"], "material": ["kind", "url", "status"],
     "suggested_route": ["status"], "direction": ["status", "attractor"],
@@ -688,7 +692,7 @@ function validateDecisionReferences(value: unknown, dimensions: readonly Decisio
   if (!Array.isArray(value)) return diagnostic(path, "type");
   const identities: string[] = [];
   const seenDimensions: Set<DecisionDimension> = new Set();
-  for (const reference of value) {
+  for (const reference of value as readonly unknown[]) {
     if (!isPlainObject(reference)) return diagnostic(path, "itemType");
     if (!hasOnlyKeys(reference, DECISION_REFERENCE_KEYS)) return diagnostic(path, "additionalProperties");
     if (!hasKeys(reference, DECISION_REFERENCE_KEYS)) return diagnostic(path, "required");
@@ -872,7 +876,7 @@ function validateStateProvenance(entry: StateEntry, node: AtlasNode, nodesById: 
     }),
   ];
   const requiredSensitivity = sources.find(
-    (source) => SENSITIVITY_CLASSES.includes(source.sensitivity!),
+    (source) => SENSITIVITY_CLASSES.includes(source.sensitivity as SensitivityClass),
   )?.sensitivity;
   if (requiredSensitivity !== undefined
       && entry.sensitivity !== requiredSensitivity) {
@@ -1065,21 +1069,21 @@ export function validateGraph(value: unknown): Diagnostic | null {
   const nodeIds: Set<NodeId> = new Set();
   const nodesById: Map<NodeId, AtlasNode> = new Map();
   for (let index = 0; index < value.nodes.length; index += 1) {
-    const failure = validateNode(value.nodes[index], index);
+    const failure = validateNode((value.nodes as readonly unknown[])[index], index);
     if (failure) return failure;
-    const datedField = DATED_NODE_FIELDS[(value.nodes[index] as AtlasNode).type];
+    const datedField = DATED_NODE_FIELDS[((value.nodes as readonly unknown[])[index] as AtlasNode).type];
     if (datedField !== undefined) {
       if (graphAsOf === null) return diagnostic("/generated_at", "nodeAsOfRequired");
-      if ((value.nodes[index] as Record<DatedNodeProperty, CalendarDate>)[datedField] > graphAsOf) {
+      if (((value.nodes as readonly unknown[])[index] as Record<DatedNodeProperty, CalendarDate>)[datedField] > graphAsOf) {
         return diagnostic("/nodes/" + index + "/" + datedField, "nodeAfterAsOf");
       }
     }
     // One id, one node (§10.1): the builder errors on duplicates, so a
     // repeated id is a malformed file — focus and details must never
     // resolve ambiguously (§16.5).
-    if (nodeIds.has((value.nodes[index] as AtlasNode).id)) return diagnostic("/nodes/" + index + "/id", "duplicateId");
-    nodeIds.add((value.nodes[index] as AtlasNode).id);
-    nodesById.set((value.nodes[index] as AtlasNode).id, value.nodes[index]);
+    if (nodeIds.has(((value.nodes as readonly unknown[])[index] as AtlasNode).id)) return diagnostic("/nodes/" + index + "/id", "duplicateId");
+    nodeIds.add(((value.nodes as readonly unknown[])[index] as AtlasNode).id);
+    nodesById.set(((value.nodes as readonly unknown[])[index] as AtlasNode).id, (value.nodes as readonly unknown[])[index] as AtlasNode);
   }
   // §20 step 9: state is keyed by the living node whose derived value it
   // carries. Validate the closed value shape against that node kind: this is
@@ -1093,7 +1097,7 @@ export function validateGraph(value: unknown): Diagnostic | null {
   // §14.6/§9.8/§20 step 9: the full fold is total over the two kinds with
   // no-knowledge defaults. This viewer path rejects withheld-bearing files,
   // so every concept/question node must carry its default-or-moved entry.
-  for (const node of value.nodes as AtlasNode[]) {
+  for (const node of value.nodes as readonly unknown[] as readonly AtlasNode[]) {
     if ((node.type === "concept" || node.type === "question")
         && !Object.prototype.hasOwnProperty.call(value.state, node.id)) {
       return diagnostic("/state", "missingDefault");
@@ -1103,7 +1107,7 @@ export function validateGraph(value: unknown): Diagnostic | null {
   // a zone the silhouette cannot place never leaves the build, so a missing
   // entry is a malformed file, rejected whole (§16.5).
   for (let index = 0; index < value.nodes.length; index += 1) {
-    if ((value.nodes[index] as AtlasNode).type === "zone" && !Object.prototype.hasOwnProperty.call(value.projections, (value.nodes[index] as AtlasNode).id)) {
+    if (((value.nodes as readonly unknown[])[index] as AtlasNode).type === "zone" && !Object.prototype.hasOwnProperty.call(value.projections, ((value.nodes as readonly unknown[])[index] as AtlasNode).id)) {
       return diagnostic("/projections", "zoneWithoutProjection");
     }
   }
@@ -1112,7 +1116,7 @@ export function validateGraph(value: unknown): Diagnostic | null {
   // builder emission — reject rather than resolve focus= wrong.
   const retiredSeen: Set<NodeId> = new Set();
   for (let index = 0; index < value.nodes.length; index += 1) {
-    const node: AtlasNode = value.nodes[index];
+    const node: AtlasNode = (value.nodes as readonly unknown[])[index] as AtlasNode;
     if (!Object.prototype.hasOwnProperty.call(node, "formerly")) continue;
     if (NO_REDIRECT_KINDS.has(node.type)) return diagnostic("/nodes/" + index + "/formerly", "noRedirectMachinery");
     for (const oldId of node.formerly!) {
@@ -1128,9 +1132,9 @@ export function validateGraph(value: unknown): Diagnostic | null {
   const roleConflicts: Map<string, EdgeType> = new Map();
   let previousEdgeKey: EdgeIdentity | null = null;
   for (let index = 0; index < value.edges.length; index += 1) {
-    const failure = validateEdge(value.edges[index], index);
+    const failure = validateEdge((value.edges as readonly unknown[])[index], index);
     if (failure) return failure;
-    const edge: AtlasEdge = value.edges[index];
+    const edge: AtlasEdge = (value.edges as readonly unknown[])[index] as AtlasEdge;
     // §20.3: the builder emits the edge array in canonical identity order;
     // accepting a shuffle would make layout and detail ordering input-driven.
     const currentEdgeKey = edgeKey(edge);
@@ -1278,17 +1282,17 @@ export function acceptGraphBuffer(buffer: unknown): GraphAcceptance {
   }
   const failure = validateGraph(value);
   if (failure) return {kind: "REJECTED", diagnostic: failure};
-  const nodes = (value.nodes as AtlasNode[]).map(projectNode);
+  const nodes = (value.nodes as readonly unknown[] as readonly AtlasNode[]).map(projectNode);
   const retired: Map<NodeId, NodeId> = new Map();
   for (const node of nodes) {
     for (const oldId of node.formerly || []) {
       if (!retired.has(oldId)) retired.set(oldId, node.id);
     }
   }
-  const sourceById: Map<NodeId, AtlasNode> = new Map((value.nodes as AtlasNode[]).map((node) => [node.id, node]));
-  const state: Record<NodeId, StateProjection> = {};
-  for (const [key, entry] of Object.entries(value.state as Record<NodeId, StateEntry>)) {
-    state[key] = projectStateEntry(entry, sourceById.get(key)!);
+  const sourceById: Map<NodeId, AtlasNode> = new Map((value.nodes as readonly unknown[] as readonly AtlasNode[]).map((node) => [node.id, node]));
+  const state: Record<NodeId, StateProjection | undefined> = {};
+  for (const [key, entry] of Object.entries(value.state as Record<NodeId, StateEntry | undefined>)) {
+    state[key] = projectStateEntry(entry!, sourceById.get(key)!);
   }
   return {
     kind: "ACCEPTED",
@@ -1296,9 +1300,9 @@ export function acceptGraphBuffer(buffer: unknown): GraphAcceptance {
       format: "atlas-graph", version: 1,
       generated_at: value.generated_at as GeneratedAt | undefined,
       nodes,
-      edges: (value.edges as AtlasEdge[]).map(projectEdge),
+      edges: (value.edges as readonly unknown[] as readonly AtlasEdge[]).map(projectEdge),
       trails: [], state, influence: {}, frontier: [],
-      projections: {...value.projections as Record<NodeId, Slug>}
+      projections: {...value.projections as Record<NodeId, Slug | undefined>}
     },
     retired
   };
