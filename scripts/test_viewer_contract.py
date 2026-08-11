@@ -9,7 +9,10 @@ import build_atlas_graph
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
-CONTRACT = VIEWER / "contract.js"
+# The canon transcriptions live in the TypeScript source, not the generated
+# viewer/contract.js: the transpiler reprints object literals with unquoted
+# keys, and scripts/build_viewer.ts --check is what binds output to source.
+CONTRACT = VIEWER / "src" / "contract.ts"
 SCHEMA = ROOT / "spec" / "schemas" / "atlas-graph.schema.json"
 NFR = ROOT / "spec" / "25-non-functional-requirements.md"
 STATE_RULES = ROOT / "spec" / "14-state-update-rules.md"
@@ -17,7 +20,7 @@ STATE_RULES = ROOT / "spec" / "14-state-update-rules.md"
 
 def json_constant(source: str, name: str):
     match = re.search(
-        rf"export const {re.escape(name)} = (\{{.*?\}}|\[.*?\]);",
+        rf"export const {re.escape(name)}(?:\s*:[^=]+)? = (\{{.*?\}}|\[.*?\]);",
         source,
         re.DOTALL,
     )
@@ -206,9 +209,9 @@ class ViewerContractTests(unittest.TestCase):
 
     def test_viewer_sources_keep_the_render_and_network_floor(self):
         external_literal = re.compile(r"https?://[^\s\"']+")
-        for path in sorted(VIEWER.iterdir()):
-            if not path.is_file():
-                continue
+        # Recursive: the floor binds the TypeScript sources under viewer/src/
+        # as well as the generated files served to the browser.
+        for path in sorted(path for path in VIEWER.rglob("*") if path.is_file()):
             source = path.read_text(encoding="utf-8")
             network_source = source.replace(
                 'xmlns="http://www.w3.org/2000/svg"', "")
