@@ -15,6 +15,18 @@ function fail(code: number, lines: readonly string[]): never {
   process.exit(code);
 }
 
+// Everything the build can throw — a source that will not parse, a missing
+// file, a failed write — leaves as prefixed lines rather than as Bun's own
+// multi-line dump. Covering the class beats naming the throw sites: the next
+// failure mode nobody anticipated still reaches the caller in contract.
+function diagnose(error: unknown): string[] {
+  const text = error instanceof Error ? error.message : String(error);
+  return text
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+}
+
 function banner(name: string): string {
   return `// Generated from viewer/src/${name}.ts by scripts/build_viewer.ts — do not edit.\n`;
 }
@@ -71,18 +83,28 @@ if (unknown.length > 0 || args.length > 1) {
 const check = args.includes("--check");
 const stale: string[] = [];
 
-for (const name of MODULES) {
-  const source = await Bun.file(new URL(`${name}.ts`, SRC)).text();
-  const built = emit(name, source);
-  const target = new URL(`${name}.js`, OUT);
-  if (check) {
-    const current = await Bun.file(target)
-      .text()
-      .catch(() => "");
-    if (current !== built) stale.push(`viewer/${name}.js`);
-  } else {
-    await Bun.write(target, built);
+let building = MODULES[0];
+
+try {
+  for (const name of MODULES) {
+    building = name;
+    const source = await Bun.file(new URL(`${name}.ts`, SRC)).text();
+    const built = emit(name, source);
+    const target = new URL(`${name}.js`, OUT);
+    if (check) {
+      const committed = await Bun.file(target)
+        .text()
+        .catch(() => "");
+      if (committed !== built) stale.push(`viewer/${name}.js`);
+    } else {
+      await Bun.write(target, built);
+    }
   }
+} catch (error) {
+  fail(1, [
+    `viewer/src/${building}.ts: could not build`,
+    ...diagnose(error),
+  ]);
 }
 
 if (check && stale.length > 0) {
