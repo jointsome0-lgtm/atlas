@@ -75,8 +75,12 @@ atlas/
 
   viewer/
     index.html
-    app.js
-    styles.css
+    viewer.css
+    contract.js   # generated from src/, committed (§25.8)
+    viewer.js     # generated from src/, committed (§25.8)
+    src/
+      contract.ts # the viewer's source of truth
+      viewer.ts
 
   scripts/
     import_plan.py
