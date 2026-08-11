@@ -9,6 +9,146 @@ import {
   acceptGraphBuffer,
   parseFragment
 } from "./contract.js";
+import type {
+  AcceptedGraph,
+  AtlasEdge,
+  AtlasNode,
+  ClarityValue,
+  ConceptDecisionDimension,
+  ConceptExposure,
+  ConfidenceValue,
+  CoverageValue,
+  DecisionDimension,
+  EdgeType,
+  EdgeWeight,
+  EncounterContext,
+  EncounterDepth,
+  Field,
+  GraphAcceptance,
+  NodeId,
+  NodeIndex,
+  NodePayloadProperty,
+  NodeType,
+  QuestionDecisionDimension,
+  QuestionSource,
+  SensitivityClass,
+  StateProjection,
+  ViewerMode
+} from "./contract.js";
+
+type LoadState =
+  | "LOADING" | "MISSING" | "REJECTED" | "UNSUPPORTED_VERSION" | "ACCEPTED";
+type ViewLens = "graph" | "list";
+type AddressState = "BAD_ADDRESS" | "UNKNOWN_MODE" | "NOT_IN_SLICE";
+type ScreenState =
+  | Exclude<LoadState, "ACCEPTED"> | AddressState
+  | "UNSUPPORTED_GEOMETRY" | "EMPTY" | "LAYOUT" | "FIELD" | "LIST";
+type Banner =
+  | {kind: "UNKNOWN_FOCUS"; value: string}
+  | {kind: "UNKNOWN_FIELD"; value: string}
+  | {kind: "FIELD_UNDEFINED"; value?: undefined};
+type BannerKind = Banner["kind"];
+
+type GlyphNode = {type: NodeType; sensitivity?: SensitivityClass};
+type NodePayload = Partial<Record<NodePayloadProperty, unknown>>;
+type Texture = "plain" | "dot" | "hatch" | "cross" | "solid" | "keyline";
+type EdgeFamilyKey =
+  "route" | "trail" | "authored" | "structural" | "journal";
+type EdgeFamily = {key: EdgeFamilyKey; className: string; label: string};
+type DensityTier =
+  {className: string; token: string; fallbackX: number; copy: string};
+
+type ConceptRailLevel = ConfidenceValue | ClarityValue | CoverageValue;
+type ConceptRailSlot = {
+  dimension: ConceptDecisionDimension;
+  marks: Partial<Record<ConceptRailLevel, number>>;
+  fork?: ClarityValue;
+  uniformMark?: undefined;
+};
+type QuestionRailSlot = {
+  dimension: QuestionDecisionDimension;
+  uniformMark: number;
+  marks?: undefined;
+  fork?: undefined;
+};
+type RailSlot = ConceptRailSlot | QuestionRailSlot;
+type RailGeometry = {gap: number; width: number; slotH: number; pitch: number};
+type RailBounds = {
+  left: number; right: number; top: number; bottom: number;
+  width: number; slotH: number; pitch: number;
+};
+
+type Point = {x: number; y: number};
+type PositionIndex = Map<NodeId, Point>;
+type RadiusIndex = Map<NodeId, number>;
+type EdgeAxis = {length: number; mid: Point; unit: Point};
+type StubCut = {edge: AtlasEdge; outsideId: NodeId};
+
+type LabelSide = "left" | "right";
+type LabelSlot = {side: LabelSide; row: number};
+type LabelBox = {left: number; right: number; top: number; bottom: number};
+type LabelAnchors = {right: number; left: number};
+type LabelOffset = {gap: number; offset: number};
+type PlacedLabel = {side: LabelSide; offset: number; box: LabelBox};
+type Placement = {side: LabelSide; offset: number; box?: LabelBox};
+type PlacementIndex = Map<NodeId, Placement>;
+type StateWordRow = readonly [label: string, words: string | undefined];
+
+type FieldView = {
+  nodes: readonly AtlasNode[];
+  edges: readonly AtlasEdge[];
+  cut: readonly AtlasEdge[];
+  continues: boolean;
+};
+type LayoutBuffer = {
+  count: number;
+  x: Float64Array;
+  y: Float64Array;
+  radius: Float64Array;
+  springs: Int32Array;
+  forceX: Float64Array;
+  forceY: Float64Array;
+  writeBack: () => void;
+};
+type LayoutEntry = {
+  positions: PositionIndex;
+  radii: RadiusIndex;
+  spacing: number;
+};
+type LayoutOrdinals = {
+  node: Map<NodeId, number>;
+  edge: Map<AtlasEdge, number>;
+};
+type FrameFit = {zoom: number; x: number; y: number};
+type CameraDraft = {
+  x: number;
+  y: number;
+  zoom: number;
+  minZoom?: number;
+  spacing?: number;
+};
+type FieldTransform = CameraDraft & {
+  svg: SVGSVGElement;
+  viewport: SVGGElement;
+  key: string;
+  positions: PositionIndex;
+  nodeGroups: Map<NodeId, SVGGElement>;
+  incidence: Map<NodeId, SVGGElement[]>;
+  selectedId: NodeId | null;
+  routes: boolean;
+  stubs: boolean;
+  dropped?: string[];
+  screenScale?: number;
+  dashScale?: number;
+};
+type StatusCounts = {nodes: number; edges: number};
+type DragState = {
+  pointerId: number;
+  x: number;
+  y: number;
+  originX: number;
+  originY: number;
+};
 
 const SVG_NS = "http:" + "//www.w3.org/2000/svg";
 const VIEW_WIDTH = 900;
@@ -20,54 +160,54 @@ const DRAG_SLOP = 4;
 // The arrowhead's side in stroke-width units, before applyScreenScale divides
 // the stroke's low-zoom lift back out of it.
 const ARROW_UNITS = 6;
-const ROUTE_TYPES = new Set(["step_of_route", "suggested_next"]);
-const TRAIL_TYPES = new Set(["moved_to", "via", "produced_artifact"]);
-const AUTHORED_TYPES = new Set(["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"]);
+const ROUTE_TYPES = new Set<EdgeType>(["step_of_route", "suggested_next"]);
+const TRAIL_TYPES = new Set<EdgeType>(["moved_to", "via", "produced_artifact"]);
+const AUTHORED_TYPES = new Set<EdgeType>(["related_to", "prerequisite_of", "extends", "implements", "contradicts", "alternative_to", "explains", "demonstrates", "critiques", "mentions", "loads", "supports"]);
 // §10.2/§20.3: the two symmetric types render without an arrowhead.
-const SYMMETRIC_TYPES = new Set(["related_to", "alternative_to"]);
-const STRUCTURAL_TYPES = new Set(["has_part", "overall_concept", "part_of_direction"]);
-const EDGE_FAMILIES = [
+const SYMMETRIC_TYPES = new Set<EdgeType>(["related_to", "alternative_to"]);
+const STRUCTURAL_TYPES = new Set<EdgeType>(["has_part", "overall_concept", "part_of_direction"]);
+const EDGE_FAMILIES: readonly EdgeFamily[] = [
   {key: "route", className: "edge-route", label: "routes (hideable)"},
   {key: "trail", className: "edge-trail", label: "trail"},
   {key: "authored", className: "edge-authored", label: "authored (tick length = weight)"},
   {key: "structural", className: "edge-structural", label: "structure"},
   {key: "journal", className: "edge-journal", label: "journal-derived"}
 ];
-const EDGE_FAMILY_CLASSES = Object.fromEntries(EDGE_FAMILIES.map((family) => [family.key, family.className]));
+const EDGE_FAMILY_CLASSES = Object.fromEntries(EDGE_FAMILIES.map((family) => [family.key, family.className])) as Record<EdgeFamilyKey, string>;
 // §16.2 A3: the asserted weights differ by mark extent, never by stroke.
-const WEIGHT_TICK_TOKENS = {"low": "--w-tick-low", "medium": "--w-tick-medium", "high": "--w-tick-high"};
+const WEIGHT_TICK_TOKENS: Partial<Record<EdgeWeight, string>> = {"low": "--w-tick-low", "medium": "--w-tick-medium", "high": "--w-tick-high"};
 // §16.2 A1: interior texture is the monotone contact ladder. Each §14 ladder
 // keeps its own words (§14.5) while sharing the texture ranks; the plate
 // kinds are the ones whose state the fold emits (§14.1, §14.8).
-const STATE_TYPES = new Set(["concept", "material", "material_part", "question"]);
-const TEXTURE_KINDS = ["concept", "material", "material_part"];
-const EXPOSURE_TEXTURES = {"unseen": "plain", "touched": "dot", "read": "hatch", "summarized": "cross", "applied": "solid", "taught": "keyline"};
-const DEPTH_TEXTURES = {"skim": "dot", "read": "hatch", "summarized": "cross", "applied": "solid", "taught": "keyline"};
+const STATE_TYPES = new Set<NodeType>(["concept", "material", "material_part", "question"]);
+const TEXTURE_KINDS: readonly NodeType[] = ["concept", "material", "material_part"];
+const EXPOSURE_TEXTURES: Record<ConceptExposure, Texture> = {"unseen": "plain", "touched": "dot", "read": "hatch", "summarized": "cross", "applied": "solid", "taught": "keyline"};
+const DEPTH_TEXTURES: Record<EncounterDepth, Texture> = {"skim": "dot", "read": "hatch", "summarized": "cross", "applied": "solid", "taught": "keyline"};
 // §16.2 A2: fixed slot order top to bottom; a struck mark's extent carries
 // the decided level, a decided floor is the baseline strike (mark 0), and
 // disputed is the fork, never a rung.
-const RAIL_MARK_TOKENS = ["--rail-mark-0", "--rail-mark-1", "--rail-mark-2", "--rail-mark-3"];
-const CONCEPT_RAIL_DIMENSIONS = [
+const RAIL_MARK_TOKENS: readonly string[] = ["--rail-mark-0", "--rail-mark-1", "--rail-mark-2", "--rail-mark-3"];
+const CONCEPT_RAIL_DIMENSIONS: readonly ConceptRailSlot[] = [
   {dimension: "confidence", marks: {"unknown": 0, "low": 1, "medium": 2, "high": 3}},
   {dimension: "clarity", marks: {"vague": 0, "rough": 1, "stable": 3}, fork: "disputed"},
   {dimension: "coverage", marks: {"none": 0, "partial": 2, "broad": 3}}
 ];
 // Status is gated but not ordinal: every confirmed value uses the same
 // baseline strike, while the panel/list words carry which status was decided.
-const QUESTION_RAIL_DIMENSIONS = [
+const QUESTION_RAIL_DIMENSIONS: readonly QuestionRailSlot[] = [
   {dimension: "status", uniformMark: 0}
 ];
 // §16.2 A11: the fixed drop order. A tier engages when the typical on-screen
 // node spacing falls under tier × plate radius, so crowding and zooming out
 // degrade the same way; the status line names every channel not drawn.
-const DENSITY_TIERS = [
+const DENSITY_TIERS: readonly DensityTier[] = [
   {className: "drop-decision", token: "--tier-decision-x", fallbackX: 4, copy: "decision rails, edge weight"},
   {className: "drop-labels", token: "--tier-label-x", fallbackX: 3, copy: "labels"},
   {className: "drop-state", token: "--tier-state-x", fallbackX: 2, copy: "state texture, freshness boundary"}
 ];
 // Half extents on the 7-unit shape grid (×plate unit at draw time): label
 // anchoring and edge trimming, never state (A10).
-const KIND_HALF_EXTENT = {
+const KIND_HALF_EXTENT: Record<NodeType, number> = {
   "plan": 8, "concept": 7, "material": 6.5, "material_part": 4.5,
   "direction": 8, "suggested_route": 7, "personal_trail": 7,
   "trail_segment": 7, "artifact": 6.7, "encounter": 4.5,
@@ -77,15 +217,15 @@ const KIND_HALF_EXTENT = {
 // farthest point already lies on one axis fall back to KIND_HALF_EXTENT; the
 // noncircular kinds below need their circumradius so a diagonal edge cannot
 // finish inside the plate.
-const KIND_RADIAL_EXTENT = {
+const KIND_RADIAL_EXTENT: Partial<Record<NodeType, number>> = {
   "plan": Math.hypot(8, 5.5),
   "material": Math.SQRT2 * 6.5,
   "material_part": Math.SQRT2 * 4.5,
   "direction": 10,
   "artifact": Math.hypot(6.7, 2.2)
 };
-const LONG_FIELDS = new Set(["notes", "body", "summary", "reason", "text"]);
-const DETAIL_FIELDS = {
+const LONG_FIELDS = new Set<NodePayloadProperty>(["notes", "body", "summary", "reason", "text"]);
+const DETAIL_FIELDS: Record<NodeType, readonly NodePayloadProperty[]> = {
   "concept": ["aliases"],
   "pattern": ["aliases"],
   "zone": ["notes"],
@@ -101,7 +241,7 @@ const DETAIL_FIELDS = {
   "personal_trail": ["direction"],
   "plan": []
 };
-const NODE_CLASSES = {
+const NODE_CLASSES: Record<NodeType, string> = {
   "plan": "node-plan", "concept": "node-concept",
   "material": "node-material", "material_part": "node-material_part",
   "direction": "node-direction", "suggested_route": "node-suggested_route",
@@ -111,47 +251,47 @@ const NODE_CLASSES = {
   "zone": "node-zone", "pattern": "node-pattern"
 };
 
-const main = document.querySelector("#main");
-const shell = document.querySelector("#app-shell");
-const details = document.querySelector("#details");
-const detailContent = document.querySelector("#detail-content");
-const closeDetails = document.querySelector("#close-details");
-const fieldChip = document.querySelector("#field-chip");
-const statusBar = document.querySelector("#status-bar");
-const routesToggle = document.querySelector("#routes-toggle");
-const horizonSelect = document.querySelector("#horizon-select");
-const graphView = document.querySelector("#graph-view");
-const listView = document.querySelector("#list-view");
-const legendToggle = document.querySelector("#legend-toggle");
-const legend = document.querySelector("#legend");
+const main = document.querySelector("#main") as HTMLElement;
+const shell = document.querySelector("#app-shell") as HTMLElement;
+const details = document.querySelector("#details") as HTMLElement;
+const detailContent = document.querySelector("#detail-content") as HTMLElement;
+const closeDetails = document.querySelector("#close-details") as HTMLButtonElement;
+const fieldChip = document.querySelector("#field-chip") as HTMLElement;
+const statusBar = document.querySelector("#status-bar") as HTMLElement;
+const routesToggle = document.querySelector("#routes-toggle") as HTMLInputElement;
+const horizonSelect = document.querySelector("#horizon-select") as HTMLSelectElement;
+const graphView = document.querySelector("#graph-view") as HTMLButtonElement;
+const listView = document.querySelector("#list-view") as HTMLButtonElement;
+const legendToggle = document.querySelector("#legend-toggle") as HTMLButtonElement;
+const legend = document.querySelector("#legend") as HTMLElement;
 
-let accepted = null;
-let loadState = "LOADING";
-let unsupportedVersion = null;
+let accepted: AcceptedGraph | null = null;
+let loadState: LoadState = "LOADING";
+let unsupportedVersion: number | null = null;
 let renderGeneration = 0;
-let currentTransform = null;
-let densityResizeObserver = null;
-let viewMode = "graph";
+let currentTransform: FieldTransform | null = null;
+let densityResizeObserver: ResizeObserver | null = null;
+let viewMode: ViewLens = "graph";
 let fieldContinuesPastHorizon = false;
 
-function htmlElement(tag, className, text) {
+function htmlElement<Tag extends keyof HTMLElementTagNameMap>(tag: Tag, className?: string, text?: string): HTMLElementTagNameMap[Tag] {
   const element = document.createElement(tag);
   if (className) element.className = className;
   if (text !== undefined) element.textContent = text;
   return element;
 }
 
-function svgElement(tag, className) {
+function svgElement<Tag extends keyof SVGElementTagNameMap>(tag: Tag, className?: string): SVGElementTagNameMap[Tag] {
   const element = document.createElementNS(SVG_NS, tag);
   if (className) element.setAttribute("class", className);
-  return element;
+  return element as SVGElementTagNameMap[Tag];
 }
 
 // Geometry the renderer computes in script still comes from the token sheet:
 // §16.2's aesthetics name channels and tokens, never numbers, so a value moves
 // in viewer.css alone.
-let rootStyle = null;
-function tokenNumber(name, fallback) {
+let rootStyle: CSSStyleDeclaration | null = null;
+function tokenNumber(name: string, fallback: number): number {
   if (!rootStyle) rootStyle = getComputedStyle(document.documentElement);
   const value = Number.parseFloat(rootStyle.getPropertyValue(name));
   return Number.isFinite(value) ? value : fallback;
@@ -159,25 +299,25 @@ function tokenNumber(name, fallback) {
 
 // Every shape is authored on a 7-unit grid; --plate-r sets the drawn scale,
 // so the plate size moves in the token sheet alone (#98).
-function plateRadius() {
+function plateRadius(): number {
   return tokenNumber("--plate-r", 18);
 }
 
-function plateUnit() {
+function plateUnit(): number {
   return plateRadius() / 7;
 }
 
-function halfExtent(type) {
+function halfExtent(type: NodeType): number {
   return (KIND_HALF_EXTENT[type] || 7) * plateUnit();
 }
 
-function radialExtent(type) {
+function radialExtent(type: NodeType): number {
   return (KIND_RADIAL_EXTENT[type] || KIND_HALF_EXTENT[type] || 7) * plateUnit();
 }
 
 // The full drawn footprint of a node's kind marks — pull ring and sensitivity
 // dot included — for rail placement, the cartouche frame, and label anchoring.
-function glyphExtent(node) {
+function glyphExtent(node: AtlasNode): number {
   const u = plateUnit();
   let extent = halfExtent(node.type);
   if (node.type === "question") extent = Math.max(extent, 12 * u);
@@ -188,25 +328,25 @@ function glyphExtent(node) {
 // The texture rung for a node's own state key, or null where the ladder does
 // not apply: no entry on a material key means no recorded contact (§14.8),
 // and a parent never borrows a child's rung (A12).
-function plateTexture(node, entry) {
-  if (node.type === "concept") return EXPOSURE_TEXTURES[entry.exposure];
+function plateTexture(node: AtlasNode, entry: StateProjection | undefined): Texture | null {
+  if (node.type === "concept") return EXPOSURE_TEXTURES[entry!.exposure!];
   if (node.type === "material" || node.type === "material_part") {
-    return entry ? DEPTH_TEXTURES[entry.depth_reached] : "plain";
+    return entry ? DEPTH_TEXTURES[entry.depth_reached!] : "plain";
   }
   return null;
 }
 
-function setMainState(name) {
+function setMainState(name: ScreenState): void {
   main.dataset.state = name;
 }
 
-function closePanel() {
+function closePanel(): void {
   details.hidden = true;
   shell.classList.remove("details-open");
   detailContent.replaceChildren();
 }
 
-function resetScreen(field = DEFAULT_FIELD) {
+function resetScreen(field: Field = DEFAULT_FIELD): void {
   renderGeneration += 1;
   if (densityResizeObserver) {
     densityResizeObserver.disconnect();
@@ -220,7 +360,7 @@ function resetScreen(field = DEFAULT_FIELD) {
   closePanel();
 }
 
-function stateBlock(name, copy, role) {
+function stateBlock(name: ScreenState, copy: string, role?: string): HTMLDivElement {
   resetScreen();
   setMainState(name);
   const block = htmlElement("div", "state-block");
@@ -230,7 +370,7 @@ function stateBlock(name, copy, role) {
   return block;
 }
 
-function renderLoadState() {
+function renderLoadState(): void {
   if (loadState === "LOADING") {
     stateBlock("LOADING", "Loading the graph…");
   } else if (loadState === "MISSING") {
@@ -242,14 +382,14 @@ function renderLoadState() {
   }
 }
 
-function addSamePageLink(parent, prefix, label, hash) {
+function addSamePageLink(parent: Element, prefix: string, label: string, hash: string): void {
   parent.append(document.createTextNode(prefix));
   const link = htmlElement("a", "", label);
   link.setAttribute("href", hash);
   parent.append(link);
 }
 
-function renderAddressState(name, value) {
+function renderAddressState(name: AddressState, value?: string): void {
   if (name === "BAD_ADDRESS") {
     stateBlock(name, "This view address isn't valid. Try #mode=field.", "alert");
     return;
@@ -266,7 +406,7 @@ function renderAddressState(name, value) {
   }
 }
 
-function renderUnsupportedGeometry() {
+function renderUnsupportedGeometry(): void {
   const block = stateBlock("UNSUPPORTED_GEOMETRY", "");
   fieldChip.textContent = "Field: body";
   block.append(htmlElement("div", "", "The body field renders in silhouette geometry, which this viewer slice doesn't include."));
@@ -275,30 +415,30 @@ function renderUnsupportedGeometry() {
   block.append(line);
 }
 
-function renderEmpty() {
+function renderEmpty(): void {
   stateBlock("EMPTY", "This graph has no nodes yet. Import a plan or record an encounter, then rebuild.");
 }
 
-function bannerFor(kind, value) {
+function bannerFor(kind: BannerKind, value?: string): string {
   if (kind === "UNKNOWN_FOCUS") return "No node \"" + value + "\" in this graph. Showing the knowledge field.";
   if (kind === "UNKNOWN_FIELD") return "Unknown field \"" + value + "\". Showing the knowledge field.";
   return "This node doesn't derive a field yet — showing it in the knowledge field.";
 }
 
-function appendBanner(kind, value) {
+function appendBanner(kind: BannerKind, value?: string): void {
   const banner = htmlElement("div", "banner", bannerFor(kind, value));
   banner.setAttribute("role", "status");
   banner.dataset.banner = kind;
   main.append(banner);
 }
 
-function fieldForNode(node) {
+function fieldForNode(node: AtlasNode): Field {
   if (node.type === "concept") return "knowledge";
   if (node.type === "zone" || node.type === "pattern") return "body";
   return FIELDS.find((field) => node.fields.includes(field)) || DEFAULT_FIELD;
 }
 
-async function dispatch() {
+async function dispatch(): Promise<void> {
   if (loadState !== "ACCEPTED") {
     renderLoadState();
     return;
@@ -316,7 +456,7 @@ async function dispatch() {
     renderAddressState("BAD_ADDRESS");
     return;
   }
-  if (!MODES.includes(address.mode)) {
+  if (!MODES.includes(address.mode as ViewerMode)) {
     renderAddressState("UNKNOWN_MODE", address.mode);
     return;
   }
@@ -324,12 +464,12 @@ async function dispatch() {
     renderAddressState("NOT_IN_SLICE", address.mode);
     return;
   }
-  const nodeById = new Map(accepted.graph.nodes.map((node) => [node.id, node]));
-  let selected = null;
-  let field = DEFAULT_FIELD;
-  let banner = null;
+  const nodeById: NodeIndex = new Map(accepted!.graph.nodes.map((node) => [node.id, node]));
+  let selected: AtlasNode | null = null;
+  let field: Field = DEFAULT_FIELD;
+  let banner: Banner | null = null;
   if (address.focus !== undefined) {
-    const resolved = accepted.retired.get(address.focus) || address.focus;
+    const resolved = accepted!.retired.get(address.focus) || address.focus;
     selected = nodeById.get(resolved) || null;
     if (!selected) {
       banner = {kind: "UNKNOWN_FOCUS", value: address.focus};
@@ -338,14 +478,14 @@ async function dispatch() {
       if (selected.fields.length === 0) banner = {kind: "FIELD_UNDEFINED"};
     }
   } else if (address.field !== undefined) {
-    if (FIELDS.includes(address.field)) {
-      field = address.field;
+    if (FIELDS.includes(address.field as Field)) {
+      field = address.field as Field;
     } else {
       banner = {kind: "UNKNOWN_FIELD", value: address.field};
     }
   }
 
-  if (accepted.graph.nodes.length === 0) {
+  if (accepted!.graph.nodes.length === 0) {
     // §16.4: an unknown focus/field is still visibly flagged on a fresh
     // empty instance — EMPTY never swallows a bad embed link.
     renderEmpty();
@@ -358,13 +498,13 @@ async function dispatch() {
     return;
   }
 
-  const nodes = accepted.graph.nodes.filter((node) => node.fields.includes(field) || (field === DEFAULT_FIELD && node.fields.length === 0));
+  const nodes = accepted!.graph.nodes.filter((node) => node.fields.includes(field) || (field === DEFAULT_FIELD && node.fields.length === 0));
   const ids = new Set(nodes.map((node) => node.id));
-  const edges = accepted.graph.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
+  const edges = accepted!.graph.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
   const horizon = selected === null ? null : horizonHops();
-  const view = horizon === null
+  const view: FieldView = horizon === null
     ? {nodes, edges, cut: [], continues: false}
-    : neighbourhood(nodes, edges, selected, horizon);
+    : neighbourhood(nodes, edges, selected!, horizon);
   // §25.8's fallback line counts what the node-link view has to put on the
   // screen, and a horizon is what is in view. A cut relation counts with the
   // plates: it is not laid out, but it is drawn — group, stroke, hit band and
@@ -394,7 +534,7 @@ async function dispatch() {
   await renderField(field, view.nodes, view.edges, selected, banner, view.cut);
 }
 
-function setLensControls(pastCeiling) {
+function setLensControls(pastCeiling: boolean): void {
   const effectiveMode = pastCeiling ? "list" : viewMode;
   graphView.disabled = pastCeiling;
   if (pastCeiling) {
@@ -408,15 +548,15 @@ function setLensControls(pastCeiling) {
 
 // A reader control, not an address: §16.4's fragment carries mode, focus and
 // field, and an extra key there would be a contract edit.
-function setHorizonControl(focused, listing, pastCeiling) {
-  horizonSelect.disabled = !focused || listing;
+function setHorizonControl(focused: boolean, listing?: boolean, pastCeiling?: boolean): void {
+  horizonSelect.disabled = (!focused || listing)!;
   if (listing) horizonSelect.title = "The list carries the whole field";
   else if (!focused) horizonSelect.title = "Open a node to look around it";
   else if (pastCeiling) horizonSelect.title = "Narrow the field to draw it";
   else horizonSelect.removeAttribute("title");
 }
 
-function horizonHops() {
+function horizonHops(): number | null {
   const value = Number.parseInt(horizonSelect.value, 10);
   return Number.isNaN(value) ? null : value;
 }
@@ -425,19 +565,19 @@ function horizonHops() {
 // nothing — no cluster, count, or heat — drawn in its place (A5, A11). Hops
 // run over the edges the reader can see, so hiding a family narrows the
 // horizon with it.
-function neighbourhood(nodes, edges, selected, horizon) {
-  const neighbours = new Map(nodes.map((node) => [node.id, []]));
+function neighbourhood(nodes: readonly AtlasNode[], edges: readonly AtlasEdge[], selected: AtlasNode, horizon: number): FieldView {
+  const neighbours = new Map<NodeId, NodeId[]>(nodes.map((node) => [node.id, []]));
   if (!neighbours.has(selected.id)) return {nodes, edges, cut: [], continues: false};
   for (const edge of visibleEdges(edges)) {
-    neighbours.get(edge.source).push(edge.target);
-    neighbours.get(edge.target).push(edge.source);
+    neighbours.get(edge.source)!.push(edge.target);
+    neighbours.get(edge.target)!.push(edge.source);
   }
   const reached = new Set([selected.id]);
   let frontier = [selected.id];
   for (let hop = 0; hop < horizon; hop += 1) {
-    const next = [];
+    const next: NodeId[] = [];
     for (const id of frontier) {
-      for (const other of neighbours.get(id)) {
+      for (const other of neighbours.get(id)!) {
         if (reached.has(other)) continue;
         reached.add(other);
         next.push(other);
@@ -463,11 +603,11 @@ function neighbourhood(nodes, edges, selected, horizon) {
 const LIST_SECTION_PREVIEW = 500;
 const LIST_EXPAND_CHUNK = 1000;
 
-function makeListRow(node, selected) {
+function makeListRow(node: AtlasNode, selected: AtlasNode | null): HTMLButtonElement {
   const row = htmlElement("button", "node-list-row");
   row.type = "button";
   row.dataset.nodeId = node.id;
-  const entry = STATE_TYPES.has(node.type) ? accepted.graph.state[node.id] : undefined;
+  const entry = STATE_TYPES.has(node.type) ? accepted!.graph.state[node.id] : undefined;
   appendNodeGlyph(row, node);
   row.append(htmlElement("span", "node-list-title", displayTitle(node)));
   // §16.2 A8/A11: the list carries the field's state channels as columns.
@@ -484,7 +624,7 @@ function makeListRow(node, selected) {
   return row;
 }
 
-function makeEdgeListRow(edge) {
+function makeEdgeListRow(edge: AtlasEdge): HTMLDivElement {
   const row = htmlElement("div", "edge-list-row");
   row.dataset.source = edge.source;
   row.dataset.target = edge.target;
@@ -502,7 +642,7 @@ function makeEdgeListRow(edge) {
   return row;
 }
 
-async function expandSection(rows, typeNodes, selected, showAll) {
+async function expandSection(rows: HTMLElement, typeNodes: readonly AtlasNode[], selected: AtlasNode | null, showAll: HTMLElement): Promise<void> {
   const generation = renderGeneration;
   let hadFocus = document.activeElement === showAll;
   showAll.remove();
@@ -510,7 +650,7 @@ async function expandSection(rows, typeNodes, selected, showAll) {
   // at its sorted position by the tail.
   const misplaced = rows.querySelector(".node-list-row.out-of-order");
   if (misplaced) misplaced.remove();
-  let firstAppended = null;
+  let firstAppended: HTMLButtonElement | null = null;
   for (let start = LIST_SECTION_PREVIEW; start < typeNodes.length; start += LIST_EXPAND_CHUNK) {
     for (const node of typeNodes.slice(start, start + LIST_EXPAND_CHUNK)) {
       const row = makeListRow(node, selected);
@@ -527,11 +667,11 @@ async function expandSection(rows, typeNodes, selected, showAll) {
   }
 }
 
-async function expandEdgeSection(rows, edges, showAll) {
+async function expandEdgeSection(rows: HTMLElement, edges: readonly AtlasEdge[], showAll: HTMLElement): Promise<void> {
   const generation = renderGeneration;
   let hadFocus = document.activeElement === showAll;
   showAll.remove();
-  let firstAppended = null;
+  let firstAppended: HTMLDivElement | null = null;
   for (let start = LIST_SECTION_PREVIEW; start < edges.length; start += LIST_EXPAND_CHUNK) {
     for (const edge of edges.slice(start, start + LIST_EXPAND_CHUNK)) {
       const row = makeEdgeListRow(edge);
@@ -548,7 +688,7 @@ async function expandEdgeSection(rows, edges, showAll) {
   }
 }
 
-function renderList(field, nodes, edges, selected, banner, pastCeiling) {
+function renderList(field: Field, nodes: readonly AtlasNode[], edges: readonly AtlasEdge[], selected: AtlasNode | null, banner: Banner | null, pastCeiling: boolean): void {
   resetScreen(field);
   setMainState("LIST");
   const listEdges = visibleEdges(edges);
@@ -560,7 +700,7 @@ function renderList(field, nodes, edges, selected, banner, pastCeiling) {
     note.setAttribute("role", "status");
     list.append(note);
   }
-  let selectedRow = null;
+  let selectedRow: HTMLElement | null = null;
   for (const type of NODE_TYPES) {
     const typeNodes = nodes
       .filter((node) => node.type === type)
@@ -588,7 +728,7 @@ function renderList(field, nodes, edges, selected, banner, pastCeiling) {
       section.append(showAll);
     }
     list.append(section);
-    const marked = rows.querySelector(".node-list-row.selected");
+    const marked = rows.querySelector<HTMLElement>(".node-list-row.selected");
     if (marked) selectedRow = marked;
   }
   if (listEdges.length) {
@@ -612,7 +752,7 @@ function renderList(field, nodes, edges, selected, banner, pastCeiling) {
     list.append(section);
   }
   main.append(list);
-  if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
+  if (selected) openPanel(selected, visibleEdges(accepted!.graph.edges));
   if (banner) appendBanner(banner.kind, banner.value);
   if (selectedRow) {
     selectedRow.scrollIntoView({block: "nearest"});
@@ -624,11 +764,11 @@ function renderList(field, nodes, edges, selected, banner, pastCeiling) {
 // node or list row lives inside the rebuilt tree). Restore focus to the
 // selection only in that case — never steal it from a live control such as
 // the Routes toggle.
-function focusOrphaned() {
+function focusOrphaned(): boolean {
   return document.activeElement === null || document.activeElement === document.body;
 }
 
-function fnv1a32(text) {
+function fnv1a32(text: string): number {
   let hash = 0x811c9dc5;
   for (const byte of new TextEncoder().encode(text)) {
     hash ^= byte;
@@ -637,9 +777,9 @@ function fnv1a32(text) {
   return hash >>> 0;
 }
 
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   let state = seed >>> 0;
-  return function next() {
+  return function next(): number {
     state = (state + 0x6d2b79f5) >>> 0;
     let value = state;
     value = Math.imul(value ^ (value >>> 15), value | 1);
@@ -648,11 +788,11 @@ function mulberry32(seed) {
   };
 }
 
-function initialPositions(nodes) {
+function initialPositions(nodes: readonly AtlasNode[]): {sorted: AtlasNode[]; positions: PositionIndex} {
   const sorted = [...nodes].sort((left, right) => left.id < right.id ? -1 : (left.id > right.id ? 1 : 0));
   const random = mulberry32(fnv1a32(sorted.map((node) => node.id).join("")));
   const radius = Math.max(100, sorted.length * 7);
-  const positions = new Map();
+  const positions: PositionIndex = new Map();
   sorted.forEach((node, index) => {
     const angle = (Math.PI * 2 * index / Math.max(sorted.length, 1)) + (random() - 0.5) * 0.22;
     const jitter = radius * (0.82 + random() * 0.36);
@@ -663,10 +803,10 @@ function initialPositions(nodes) {
 
 // The room a node's own marks occupy, as a radius. Clearance only — position
 // and size stay geometry, never state (A10).
-function layoutRadius(node) {
+function layoutRadius(node: AtlasNode): number {
   let radius = glyphExtent(node);
   const entry = STATE_TYPES.has(node.type)
-    ? accepted.graph.state[node.id] : undefined;
+    ? accepted!.graph.state[node.id] : undefined;
   if (entry !== undefined) {
     const dimensions = railDimensions(node);
     if (dimensions.length) {
@@ -678,26 +818,26 @@ function layoutRadius(node) {
   return radius;
 }
 
-function layoutRadii(sorted) {
+function layoutRadii(sorted: readonly AtlasNode[]): RadiusIndex {
   return new Map(sorted.map((node) => [node.id, layoutRadius(node)]));
 }
 
 // Typed arrays for the O(n²) pair loop: same arithmetic in the same order, so
 // the same graph still settles into the same picture (§27.8).
-function layoutBuffer(sorted, positions, radii, edges) {
+function layoutBuffer(sorted: readonly AtlasNode[], positions: PositionIndex, radii: RadiusIndex, edges: readonly AtlasEdge[]): LayoutBuffer {
   const count = sorted.length;
-  const index = new Map();
+  const index = new Map<NodeId, number>();
   const x = new Float64Array(count);
   const y = new Float64Array(count);
   const radius = new Float64Array(count);
   sorted.forEach((node, at) => {
-    const position = positions.get(node.id);
+    const position = positions.get(node.id)!;
     index.set(node.id, at);
     x[at] = position.x;
     y[at] = position.y;
-    radius[at] = radii.get(node.id);
+    radius[at] = radii.get(node.id)!;
   });
-  const springs = [];
+  const springs: number[] = [];
   for (const edge of edges) {
     const source = index.get(edge.source);
     const target = index.get(edge.target);
@@ -714,7 +854,7 @@ function layoutBuffer(sorted, positions, radii, edges) {
     forceY: new Float64Array(count),
     writeBack() {
       sorted.forEach((node, at) => {
-        const position = positions.get(node.id);
+        const position = positions.get(node.id)!;
         position.x = x[at];
         position.y = y[at];
       });
@@ -724,7 +864,7 @@ function layoutBuffer(sorted, positions, radii, edges) {
 
 // Cooling: the step ceiling falls with the temperature, so late iterations
 // settle instead of wandering. Seeded and clamped (§27.8).
-function layoutIteration(buffer, restGap, temperature) {
+function layoutIteration(buffer: LayoutBuffer, restGap: number, temperature: number): void {
   const {count, x, y, radius, springs, forceX, forceY} = buffer;
   forceX.fill(0);
   forceY.fill(0);
@@ -781,7 +921,7 @@ function layoutIteration(buffer, restGap, temperature) {
 
 // Pushes footprints the force loop left overlapping apart along their own
 // axis. Visited in id order, so the correction is seeded like the layout.
-function separationPass(buffer, gap) {
+function separationPass(buffer: LayoutBuffer, gap: number): boolean {
   const {count, x, y, radius} = buffer;
   let moved = false;
   for (let left = 0; left < count; left += 1) {
@@ -811,11 +951,11 @@ function separationPass(buffer, gap) {
   return moved;
 }
 
-function nextFrame() {
+function nextFrame(): Promise<number> {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
-function median(values) {
+function median(values: readonly number[]): number {
   const ordered = [...values].sort((left, right) => left - right);
   const middle = Math.floor(ordered.length / 2);
   return ordered.length % 2
@@ -827,15 +967,15 @@ function median(values) {
 // It measures crowding even when long spokes join a dense ring of leaves. The
 // O(n²) pass is bounded by §25.8's 2,400-node field ceiling, runs once per
 // completed layout, and its result is cached on currentTransform.
-function typicalSpacing(nodes, positions) {
+function typicalSpacing(nodes: readonly AtlasNode[], positions: PositionIndex): number {
   if (nodes.length < 2) {
     return Math.sqrt(VIEW_WIDTH * VIEW_HEIGHT / Math.max(nodes.length, 1));
   }
-  const nearest = new Array(nodes.length).fill(Number.POSITIVE_INFINITY);
+  const nearest: number[] = new Array(nodes.length).fill(Number.POSITIVE_INFINITY);
   for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
-    const left = positions.get(nodes[leftIndex].id);
+    const left = positions.get(nodes[leftIndex].id)!;
     for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
-      const right = positions.get(nodes[rightIndex].id);
+      const right = positions.get(nodes[rightIndex].id)!;
       const distance = Math.hypot(right.x - left.x, right.y - left.y);
       nearest[leftIndex] = Math.min(nearest[leftIndex], distance);
       nearest[rightIndex] = Math.min(nearest[rightIndex], distance);
@@ -847,7 +987,7 @@ function typicalSpacing(nodes, positions) {
 }
 
 // Node count is the only input, so the budget is as seeded as the layout.
-function iterationBudget(count) {
+function iterationBudget(count: number): number {
   if (count < 2) return 1;
   return Math.min(420, Math.max(120, Math.round(3600 / Math.sqrt(count))));
 }
@@ -860,23 +1000,23 @@ function iterationBudget(count) {
 // drawn edge set in order, and the tokens layoutRadius reads through
 // plateRadius and railGeometry.
 const LAYOUT_MEMO_LIMIT = 4;
-const layoutMemo = new Map();
-let layoutOrdinals = null;
+const layoutMemo = new Map<string, LayoutEntry>();
+let layoutOrdinals: LayoutOrdinals | null = null;
 
 // Ordinals into the accepted graph, not ids: both drawn arrays are
 // order-preserving filters of it, so equal ordinals means equal input. Never a
 // hash — a collision would draw the wrong picture with no symptom.
-function graphOrdinals() {
+function graphOrdinals(): LayoutOrdinals {
   if (!layoutOrdinals) {
     layoutOrdinals = {
-      node: new Map(accepted.graph.nodes.map((node, at) => [node.id, at])),
-      edge: new Map(accepted.graph.edges.map((edge, at) => [edge, at]))
+      node: new Map(accepted!.graph.nodes.map((node, at) => [node.id, at])),
+      edge: new Map(accepted!.graph.edges.map((edge, at) => [edge, at]))
     };
   }
   return layoutOrdinals;
 }
 
-function layoutKey(field, nodes, edges) {
+function layoutKey(field: Field, nodes: readonly AtlasNode[], edges: readonly AtlasEdge[]): string {
   const ordinals = graphOrdinals();
   const rails = railGeometry();
   return [
@@ -886,8 +1026,8 @@ function layoutKey(field, nodes, edges) {
   ].join("|");
 }
 
-function rememberLayout(key, nodes, positions) {
-  const entry = {
+function rememberLayout(key: string, nodes: readonly AtlasNode[], positions: PositionIndex): LayoutEntry {
+  const entry: LayoutEntry = {
     // By reference, never mutated by the renderer: dragging a plate (#116)
     // must write through this entry or evict it.
     positions,
@@ -897,12 +1037,12 @@ function rememberLayout(key, nodes, positions) {
   layoutMemo.delete(key);
   layoutMemo.set(key, entry);
   while (layoutMemo.size > LAYOUT_MEMO_LIMIT) {
-    layoutMemo.delete(layoutMemo.keys().next().value);
+    layoutMemo.delete(layoutMemo.keys().next().value!);
   }
   return entry;
 }
 
-function recallLayout(key) {
+function recallLayout(key: string): LayoutEntry | null {
   const entry = layoutMemo.get(key);
   if (!entry) return null;
   layoutMemo.delete(key);
@@ -910,7 +1050,7 @@ function recallLayout(key) {
   return entry;
 }
 
-async function calculateLayout(nodes, edges, generation) {
+async function calculateLayout(nodes: readonly AtlasNode[], edges: readonly AtlasEdge[], generation: number): Promise<PositionIndex | null> {
   const {sorted, positions} = initialPositions(nodes);
   const radii = layoutRadii(sorted);
   const buffer = layoutBuffer(sorted, positions, radii, edges);
@@ -948,7 +1088,7 @@ async function calculateLayout(nodes, edges, generation) {
 
 // Centre the settled layout in the viewBox, growth only: shrinking squeezed
 // positions while glyphs kept their size. A larger field is fitted by zoom.
-function fitToFrame(buffer) {
+function fitToFrame(buffer: LayoutBuffer): void {
   const {count, x, y} = buffer;
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
@@ -978,15 +1118,15 @@ function fitToFrame(buffer) {
 // tier having dropped it and nothing said (A11). The picture is centred on
 // those bounds even when it already fits, since a label reaching past the
 // frame on one side is clipped whether or not the whole of it would fit.
-function frameFit(sorted, positions, radii, placements) {
+function frameFit(sorted: readonly AtlasNode[], positions: PositionIndex, radii: RadiusIndex, placements?: PlacementIndex): FrameFit {
   if (sorted.length === 0) return {zoom: 1, x: 0, y: 0};
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
   for (const node of sorted) {
-    const position = positions.get(node.id);
-    const margin = radii.get(node.id) + 2;
+    const position = positions.get(node.id)!;
+    const margin = radii.get(node.id)! + 2;
     minX = Math.min(minX, position.x - margin);
     maxX = Math.max(maxX, position.x + margin);
     minY = Math.min(minY, position.y - margin);
@@ -1008,10 +1148,10 @@ function frameFit(sorted, positions, radii, placements) {
 
 // Where a label may start on each side of a node: past the plate, and past
 // the decision rail on the side that carries it.
-function labelAnchors(node) {
+function labelAnchors(node: AtlasNode): LabelAnchors {
   const drawn = glyphExtent(node);
   const entry = STATE_TYPES.has(node.type)
-    ? accepted.graph.state[node.id] : undefined;
+    ? accepted!.graph.state[node.id] : undefined;
   const dimensions = entry === undefined ? [] : railDimensions(node);
   const bounds = dimensions.length ? railBounds(node, dimensions) : null;
   return {
@@ -1022,7 +1162,7 @@ function labelAnchors(node) {
 
 // Fixed order, so a placement is a property of the graph and not of the
 // visiting order.
-const LABEL_SLOTS = [
+const LABEL_SLOTS: readonly LabelSlot[] = [
   {side: "right", row: 0}, {side: "left", row: 0},
   {side: "right", row: -1}, {side: "left", row: -1},
   {side: "right", row: 1}, {side: "left", row: 1},
@@ -1041,7 +1181,7 @@ const LABEL_SWEEP_CEILING = 400;
 // accepts and the text then runs out of. Over-charging costs a slot further
 // down the list, never the label: the sweep falls back rather than drops.
 // First class that matches wins.
-const LABEL_ADVANCE = [
+const LABEL_ADVANCE: readonly (readonly [RegExp, number])[] = [
   // full-width scripts and pictographs — an em box each, never averaged down
   [/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}！-｠￠-￦]|\p{Extended_Pictographic}/u, 1.05],
   // the widest Latin glyphs and the wide punctuation
@@ -1049,7 +1189,7 @@ const LABEL_ADVANCE = [
   [/\p{Lu}/u, 0.70],
 ];
 
-function labelWidth(title, em, size) {
+function labelWidth(title: string, em: number, size: number): number {
   let width = 0;
   // By code point, so a pictograph outside the basic plane is charged once.
   for (const glyph of title) {
@@ -1059,12 +1199,12 @@ function labelWidth(title, em, size) {
   return width;
 }
 
-function boxesIntersect(left, right) {
+function boxesIntersect(left: LabelBox, right: LabelBox): boolean {
   return left.left < right.right && right.left < left.right
     && left.top < right.bottom && right.top < left.bottom;
 }
 
-function labelBox(position, anchors, width, side, dy, line) {
+function labelBox(position: Point, anchors: LabelAnchors, width: number, side: LabelSide, dy: LabelOffset, line: number): LabelBox {
   const x = side === "right"
     ? position.x + anchors.right + dy.gap
     : position.x - anchors.left - dy.gap - width;
@@ -1074,31 +1214,31 @@ function labelBox(position, anchors, width, side, dy, line) {
 
 // First slot that clears every plate and every label already placed. Moves no
 // node and encodes nothing — a label's side is legibility, never state (A10).
-function placeLabels(nodes, positions, radii) {
+function placeLabels(nodes: readonly AtlasNode[], positions: PositionIndex, radii: RadiusIndex): PlacementIndex {
   const sorted = [...nodes].sort((left, right) => left.id < right.id ? -1 : (left.id > right.id ? 1 : 0));
   const gap = tokenNumber("--label-gap", 4);
   const em = tokenNumber("--label-em", 5.8);
   const size = tokenNumber("--t-02", 11);
   const line = tokenNumber("--label-line", 13);
-  const placements = new Map();
-  const fallback = {side: "right", offset: 4};
+  const placements: PlacementIndex = new Map();
+  const fallback: Placement = {side: "right", offset: 4};
   if (sorted.length > LABEL_SWEEP_CEILING) {
     for (const node of sorted) placements.set(node.id, fallback);
     return placements;
   }
-  const obstacles = sorted.map((node) => {
-    const position = positions.get(node.id);
-    const radius = radii.get(node.id);
+  const obstacles: LabelBox[] = sorted.map((node) => {
+    const position = positions.get(node.id)!;
+    const radius = radii.get(node.id)!;
     return {
       left: position.x - radius, right: position.x + radius,
       top: position.y - radius, bottom: position.y + radius,
     };
   });
   for (const node of sorted) {
-    const position = positions.get(node.id);
+    const position = positions.get(node.id)!;
     const anchors = labelAnchors(node);
     const width = labelWidth(displayTitle(node), em, size);
-    let chosen = null;
+    let chosen: PlacedLabel | null = null;
     for (const slot of LABEL_SLOTS) {
       const offset = 4 + slot.row * line;
       const box = labelBox(
@@ -1122,7 +1262,7 @@ function placeLabels(nodes, positions, radii) {
   return placements;
 }
 
-async function renderField(field, nodes, edges, selected, banner, cutEdges = []) {
+async function renderField(field: Field, nodes: readonly AtlasNode[], edges: readonly AtlasEdge[], selected: AtlasNode | null, banner: Banner | null, cutEdges: readonly AtlasEdge[] = []): Promise<void> {
   const key = layoutKey(field, nodes, edges);
   if (repaintSelection(key, selected, banner, cutEdges)) return;
   resetScreen(field);
@@ -1151,14 +1291,14 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
   stage.append(svg, makeZoomControls());
   main.append(stage);
 
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const nodeById: NodeIndex = new Map(nodes.map((node) => [node.id, node]));
   const lanes = edgeLanes(renderedEdges);
   // Which relations touch which plate, kept as the drawn groups themselves:
   // answering a selection is then a class on what is already on screen.
-  const incidence = new Map();
-  const touches = (id, group) => {
+  const incidence = new Map<NodeId, SVGGElement[]>();
+  const touches = (id: NodeId, group: SVGGElement): void => {
     if (!incidence.has(id)) incidence.set(id, []);
-    incidence.get(id).push(group);
+    incidence.get(id)!.push(group);
   };
   for (const edge of renderedEdges) {
     const group = makeEdge(edge, positions, nodeById, lanes.get(edge));
@@ -1169,16 +1309,16 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
   if (selected && positions.has(selected.id)) {
     // The whole graph, not the drawn set: a stub's family can turn on the
     // node the horizon is holding back (§16.3).
-    const everyNode = new Map(accepted.graph.nodes.map((node) => [node.id, node]));
-    for (const stub of makeStubs(cutEdges, positions, everyNode, positions.get(selected.id))) {
+    const everyNode: NodeIndex = new Map(accepted!.graph.nodes.map((node) => [node.id, node]));
+    for (const stub of makeStubs(cutEdges, positions, everyNode, positions.get(selected.id)!)) {
       viewport.append(stub);
-      touches(stub.dataset.source, stub);
+      touches(stub.dataset.source!, stub);
     }
   }
   const placements = placeLabels(nodes, positions, radii);
-  const nodeGroups = new Map();
+  const nodeGroups = new Map<NodeId, SVGGElement>();
   for (const node of nodes) {
-    const group = makeNode(node, positions.get(node.id), placements.get(node.id));
+    const group = makeNode(node, positions.get(node.id)!, placements.get(node.id));
     viewport.append(group);
     nodeGroups.set(node.id, group);
   }
@@ -1187,7 +1327,7 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
   const fit = frameFit(nodes, positions, radii, placements);
   // A focused node is read at its own scale; unfocused, the view opens on
   // the whole field.
-  const transform = focusedPosition
+  const transform: CameraDraft = focusedPosition
     ? {x: VIEW_WIDTH / 2 - focusedPosition.x, y: VIEW_HEIGHT / 2 - focusedPosition.y, zoom: 1}
     : {x: fit.x, y: fit.y, zoom: fit.zoom};
   transform.minZoom = Math.min(ZOOM_MIN, fit.zoom);
@@ -1205,7 +1345,7 @@ async function renderField(field, nodes, edges, selected, banner, cutEdges = [])
 
 // §16.2 A9's focus feedback, and the only place it is expressed: a rebuilt
 // field and a repainted one cannot disagree about what is selected.
-function paintSelection(selected, banner) {
+function paintSelection(selected: AtlasNode | null, banner: Banner | null): void {
   const transform = currentTransform;
   if (!transform) return;
   const previous = transform.selectedId;
@@ -1220,18 +1360,18 @@ function paintSelection(selected, banner) {
     }
   }
   const group = selected ? transform.nodeGroups.get(selected.id) || null : null;
-  transform.selectedId = group ? selected.id : null;
+  transform.selectedId = group ? selected!.id : null;
   if (group) {
     group.classList.add("selected");
     group.setAttribute("tabindex", "0");
-    for (const edgeGroup of transform.incidence.get(selected.id) || []) {
+    for (const edgeGroup of transform.incidence.get(selected!.id) || []) {
       edgeGroup.classList.add("incident");
     }
   }
   // A focus the field could not draw leaves the picture whole.
   transform.viewport.classList.toggle("has-selection", group !== null);
   for (const stale of main.querySelectorAll(".banner")) stale.remove();
-  if (selected) openPanel(selected, visibleEdges(accepted.graph.edges));
+  if (selected) openPanel(selected, visibleEdges(accepted!.graph.edges));
   else closePanel();
   if (banner) appendBanner(banner.kind, banner.value);
   renderStatus();
@@ -1241,7 +1381,7 @@ function paintSelection(selected, banner) {
 // Same drawn set, same lens, same token sheet: repaint rather than rebuild.
 // currentTransform is non-null only after a completed render and while none
 // is in flight (resetScreen is its sole writer of null), so it guards itself.
-function repaintSelection(key, selected, banner, cutEdges) {
+function repaintSelection(key: string, selected: AtlasNode | null, banner: Banner | null, cutEdges: readonly AtlasEdge[]): boolean {
   const transform = currentTransform;
   if (!transform) return false;
   if (main.dataset.state !== "FIELD") return false;
@@ -1261,7 +1401,7 @@ function repaintSelection(key, selected, banner, cutEdges) {
 // The camera is the reader's, up to the point where it stops being readable:
 // a selection inside an engaged density tier (A11) returns to the node's own
 // scale, and otherwise the picture only moves if the selection is off frame.
-function bringSelectionIntoFrame(transform, selected) {
+function bringSelectionIntoFrame(transform: FieldTransform, selected: AtlasNode | null): void {
   if (!selected) return;
   const position = transform.positions.get(selected.id);
   if (!position) return;
@@ -1280,18 +1420,18 @@ function bringSelectionIntoFrame(transform, selected) {
 
 // §16.2: the Routes lens is coherent across surfaces — hidden routes leave
 // the detail panel too, not only the SVG overlay.
-function visibleEdges(edges) {
+function visibleEdges(edges: readonly AtlasEdge[]): readonly AtlasEdge[] {
   if (routesToggle.checked) return edges;
-  const nodeById = new Map(accepted.graph.nodes.map((node) => [node.id, node]));
+  const nodeById: NodeIndex = new Map(accepted!.graph.nodes.map((node) => [node.id, node]));
   return edges.filter((edge) => !isRouteEdge(edge, nodeById));
 }
 
-let statusCounts = null;
+let statusCounts: StatusCounts | null = null;
 
-function renderStatus() {
+function renderStatus(): void {
   if (!statusCounts) return;
   let copy = statusCounts.nodes + " nodes · " + statusCounts.edges + " edges in view";
-  if (accepted.graph.generated_at) copy += " · as of " + accepted.graph.generated_at.slice(0, 10);
+  if (accepted!.graph.generated_at) copy += " · as of " + accepted!.graph.generated_at!.slice(0, 10);
   // #99: words, never a count — a running total of what lies ahead is a
   // progress reading (§3, §4).
   if (fieldContinuesPastHorizon) copy += " · the field continues past the focus horizon — widen it to see further";
@@ -1300,12 +1440,12 @@ function renderStatus() {
   statusBar.textContent = copy;
 }
 
-function setStatus(nodeCount, edgeCount) {
+function setStatus(nodeCount: number, edgeCount: number): void {
   statusCounts = {nodes: nodeCount, edges: edgeCount};
   renderStatus();
 }
 
-function makeDefinitions() {
+function makeDefinitions(): SVGDefsElement {
   const defs = svgElement("defs");
   const marker = svgElement("marker");
   marker.setAttribute("id", "arrow");
@@ -1333,22 +1473,22 @@ function makeDefinitions() {
       const pattern = svgElement("pattern");
       pattern.setAttribute("id", "tx-" + texture + "-" + kind);
       pattern.setAttribute("patternUnits", "userSpaceOnUse");
-      pattern.setAttribute("width", pitch);
-      pattern.setAttribute("height", pitch);
+      pattern.setAttribute("width", pitch as unknown as string);
+      pattern.setAttribute("height", pitch as unknown as string);
       pattern.setAttribute("patternTransform", "rotate(45)");
       const ground = svgElement("rect", "tx-ground");
-      ground.setAttribute("width", pitch);
-      ground.setAttribute("height", pitch);
+      ground.setAttribute("width", pitch as unknown as string);
+      ground.setAttribute("height", pitch as unknown as string);
       pattern.append(ground);
       const stroke = svgElement("line", "tx-ink-" + kind);
       stroke.setAttribute("x1", "0"); stroke.setAttribute("y1", "0");
-      stroke.setAttribute("x2", "0"); stroke.setAttribute("y2", pitch);
+      stroke.setAttribute("x2", "0"); stroke.setAttribute("y2", pitch as unknown as string);
       stroke.setAttribute("stroke-width", strokeWidth.toFixed(2));
       pattern.append(stroke);
       if (texture === "cross") {
         const across = svgElement("line", "tx-ink-" + kind);
         across.setAttribute("x1", "0"); across.setAttribute("y1", "0");
-        across.setAttribute("x2", pitch); across.setAttribute("y2", "0");
+        across.setAttribute("x2", pitch as unknown as string); across.setAttribute("y2", "0");
         across.setAttribute("stroke-width", strokeWidth.toFixed(2));
         pattern.append(across);
       }
@@ -1358,14 +1498,14 @@ function makeDefinitions() {
   return defs;
 }
 
-function isRouteEdge(edge, nodeById) {
+function isRouteEdge(edge: AtlasEdge, nodeById: NodeIndex): boolean | undefined {
   if (ROUTE_TYPES.has(edge.type)) return true;
   if (edge.type !== "primary_for" && edge.type !== "supporting_for") return false;
   const target = nodeById.get(edge.target);
   return target && target.type === "suggested_route";
 }
 
-function edgeFamily(edge, nodeById) {
+function edgeFamily(edge: AtlasEdge, nodeById: NodeIndex): EdgeFamilyKey {
   if (isRouteEdge(edge, nodeById)) return "route";
   if (TRAIL_TYPES.has(edge.type)) return "trail";
   if (AUTHORED_TYPES.has(edge.type)) return "authored";
@@ -1373,11 +1513,11 @@ function edgeFamily(edge, nodeById) {
   return "journal";
 }
 
-function edgeClass(edge, nodeById) {
+function edgeClass(edge: AtlasEdge, nodeById: NodeIndex): string {
   return EDGE_FAMILY_CLASSES[edgeFamily(edge, nodeById)];
 }
 
-function setEnds(item, from, to) {
+function setEnds(item: SVGLineElement, from: Point, to: Point): void {
   item.setAttribute("x1", from.x.toFixed(3));
   item.setAttribute("y1", from.y.toFixed(3));
   item.setAttribute("x2", to.x.toFixed(3));
@@ -1385,7 +1525,7 @@ function setEnds(item, from, to) {
 }
 
 // §16.2 A3: an edge's own geometry, so the stroke stays free to carry family.
-function edgeAxis(source, target) {
+function edgeAxis(source: Point, target: Point): EdgeAxis | null {
   const dx = target.x - source.x;
   const dy = target.y - source.y;
   const length = Math.hypot(dx, dy);
@@ -1397,11 +1537,11 @@ function edgeAxis(source, target) {
   };
 }
 
-function offsetFrom(point, vector, distance) {
+function offsetFrom(point: Point, vector: Point, distance: number): Point {
   return {x: point.x + vector.x * distance, y: point.y + vector.y * distance};
 }
 
-function rayCircleExit(direction, centerX, centerY, radius) {
+function rayCircleExit(direction: Point, centerX: number, centerY: number, radius: number): number | null {
   const projection = centerX * direction.x + centerY * direction.y;
   if (projection < 0) return null;
   const perpendicularSquared = centerX * centerX + centerY * centerY
@@ -1410,7 +1550,7 @@ function rayCircleExit(direction, centerX, centerY, radius) {
   return projection + Math.sqrt(Math.max(radius * radius - perpendicularSquared, 0));
 }
 
-function rayRectExit(direction, left, top, right, bottom) {
+function rayRectExit(direction: Point, left: number, top: number, right: number, bottom: number): number | null {
   let entry = Number.NEGATIVE_INFINITY;
   let exit = Number.POSITIVE_INFINITY;
   for (const [component, minimum, maximum] of [
@@ -1438,9 +1578,9 @@ function rayRectExit(direction, left, top, right, bottom) {
 // at the node's centre unless a lane has moved it: an offset ray meets marks
 // the centre one misses, so the marks are shifted under it rather than the
 // centre extent reused (#117).
-function completeGlyphExtent(node, direction, offset = {x: 0, y: 0}) {
+function completeGlyphExtent(node: AtlasNode, direction: Point, offset: Point = {x: 0, y: 0}): number {
   const u = plateUnit();
-  const shifted = (x, y) => [x - offset.x, y - offset.y];
+  const shifted = (x: number, y: number): [number, number] => [x - offset.x, y - offset.y];
   let extent = rayCircleExit(
     direction, ...shifted(0, 0), radialExtent(node.type),
   ) ?? 0;
@@ -1457,7 +1597,7 @@ function completeGlyphExtent(node, direction, offset = {x: 0, y: 0}) {
     if (dotExit !== null) extent = Math.max(extent, dotExit);
   }
   const entry = STATE_TYPES.has(node.type)
-    ? accepted.graph.state[node.id] : undefined;
+    ? accepted!.graph.state[node.id] : undefined;
   const dimensions = entry === undefined ? [] : railDimensions(node);
   if (dimensions.length) {
     const bounds = railBounds(node, dimensions);
@@ -1474,16 +1614,16 @@ function completeGlyphExtent(node, direction, offset = {x: 0, y: 0}) {
 // Several edges between one pair stack exactly on the shared axis. Each takes
 // its own lane — a slot for telling strokes apart, never a weight or a rank
 // (A3) — ordered by (type, source, target), so the picture is seeded (§27.8).
-function edgeLanes(edges) {
-  const groups = new Map();
+function edgeLanes(edges: readonly AtlasEdge[]): Map<AtlasEdge, number> {
+  const groups = new Map<string, AtlasEdge[]>();
   for (const edge of edges) {
     const key = edge.source < edge.target
       ? edge.source + "\0" + edge.target
       : edge.target + "\0" + edge.source;
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(edge);
+    groups.get(key)!.push(edge);
   }
-  const lanes = new Map();
+  const lanes = new Map<AtlasEdge, number>();
   for (const group of groups.values()) {
     if (group.length < 2) {
       lanes.set(group[0], 0);
@@ -1501,14 +1641,14 @@ function edgeLanes(edges) {
   return lanes;
 }
 
-function makeEdge(edge, positions, nodeById, lane) {
-  let source = positions.get(edge.source);
-  let target = positions.get(edge.target);
+function makeEdge(edge: AtlasEdge, positions: PositionIndex, nodeById: NodeIndex, lane: number | undefined): SVGGElement {
+  let source = positions.get(edge.source)!;
+  let target = positions.get(edge.target)!;
   // At plate scale an untrimmed stroke buries its arrowhead under the target
   // glyph; ends stop at every mark on their approach ray so direction stays
   // readable without leaving rail-sized gaps on the opposite side.
   const rawAxis = edgeAxis(source, target);
-  let laneOffset = {x: 0, y: 0};
+  let laneOffset: Point = {x: 0, y: 0};
   if (rawAxis && lane) {
     // A parallel translation. The normal is taken along the pair's own axis,
     // low id to high: derived from the edge's direction, a reciprocal a→b /
@@ -1534,10 +1674,10 @@ function makeEdge(edge, positions, nodeById, lane) {
   }
   if (rawAxis) {
     const sourceTrim = completeGlyphExtent(
-      nodeById.get(edge.source), rawAxis.unit, laneOffset,
+      nodeById.get(edge.source)!, rawAxis.unit, laneOffset,
     ) + 2;
     const targetTrim = completeGlyphExtent(
-      nodeById.get(edge.target),
+      nodeById.get(edge.target)!,
       {x: -rawAxis.unit.x, y: -rawAxis.unit.y}, laneOffset,
     ) + 2;
     if (rawAxis.length > sourceTrim + targetTrim + 8) {
@@ -1563,7 +1703,7 @@ function makeEdge(edge, positions, nodeById, lane) {
   // stroke where the claim would have been — silence reads as a hole, never
   // as a middling line — and a type that admits no weight keeps an unbroken
   // stroke, so "no claim to make" stays distinct from "none recorded".
-  const strokes = [];
+  const strokes: SVGLineElement[] = [];
   if (edge.weight === "unassessed" && axis) {
     const gap = Math.min(tokenNumber("--w-gap", 8), axis.length * 0.4);
     const before = svgElement("line", lineClass + " weight-detail");
@@ -1584,8 +1724,8 @@ function makeEdge(edge, positions, nodeById, lane) {
     setEnds(line, source, target);
     if (directed) line.setAttribute("marker-end", "url(#arrow)");
     strokes.push(line);
-    if (axis && WEIGHT_TICK_TOKENS[edge.weight]) {
-      const extent = tokenNumber(WEIGHT_TICK_TOKENS[edge.weight], 8);
+    if (axis && WEIGHT_TICK_TOKENS[edge.weight!]) {
+      const extent = tokenNumber(WEIGHT_TICK_TOKENS[edge.weight!]!, 8);
       const normal = {x: -axis.unit.y, y: axis.unit.x};
       const tick = svgElement("line", "edge-weight");
       setEnds(tick, offsetFrom(axis.mid, normal, -extent / 2), offsetFrom(axis.mid, normal, extent / 2));
@@ -1607,27 +1747,27 @@ function makeEdge(edge, positions, nodeById, lane) {
 // nothing about the far node — family and nothing else, no arrowhead and no
 // weight tick, with the relation still named in the panel (A3, A5, A8). Order
 // is fixed by id, so the fan is the same picture on every render (§27.8).
-function makeStubs(cutEdges, positions, nodeById, focusPosition) {
-  const byInside = new Map();
+function makeStubs(cutEdges: readonly AtlasEdge[], positions: PositionIndex, nodeById: NodeIndex, focusPosition: Point): SVGGElement[] {
+  const byInside = new Map<NodeId, StubCut[]>();
   for (const edge of cutEdges) {
     const insideId = positions.has(edge.source) ? edge.source : edge.target;
     const outsideId = insideId === edge.source ? edge.target : edge.source;
     if (!positions.has(insideId)) continue;
     if (!byInside.has(insideId)) byInside.set(insideId, []);
-    byInside.get(insideId).push({edge, outsideId});
+    byInside.get(insideId)!.push({edge, outsideId});
   }
   const length = tokenNumber("--edge-stub", 14);
   const fan = tokenNumber("--edge-stub-fan", 1);
-  const groups = [];
+  const groups: SVGGElement[] = [];
   for (const insideId of [...byInside.keys()].sort()) {
-    const cuts = byInside.get(insideId).sort((left, right) => {
+    const cuts = byInside.get(insideId)!.sort((left, right) => {
       if (left.edge.type !== right.edge.type) return left.edge.type < right.edge.type ? -1 : 1;
       return left.outsideId < right.outsideId ? -1 : (left.outsideId > right.outsideId ? 1 : 0);
     });
-    const position = positions.get(insideId);
+    const position = positions.get(insideId)!;
     // Outward is away from where the reader is standing: the horizon is a
     // disc around the focus, so its rim is the direction the field continues.
-    let outward = {x: position.x - focusPosition.x, y: position.y - focusPosition.y};
+    let outward: Point = {x: position.x - focusPosition.x, y: position.y - focusPosition.y};
     const reach = Math.hypot(outward.x, outward.y);
     outward = reach < 0.01 ? {x: 0, y: -1} : {x: outward.x / reach, y: outward.y / reach};
     cuts.forEach(({edge}, at) => {
@@ -1649,7 +1789,7 @@ function makeStubs(cutEdges, positions, nodeById, focusPosition) {
         x: outward.x * Math.cos(turn) - outward.y * Math.sin(turn),
         y: outward.x * Math.sin(turn) + outward.y * Math.cos(turn)
       };
-      const trim = completeGlyphExtent(nodeById.get(insideId), unit) + 2;
+      const trim = completeGlyphExtent(nodeById.get(insideId)!, unit) + 2;
       const group = svgElement("g", "edge-group edge-stub-group");
       // Only the on-screen end is named: the far id is what the horizon is
       // holding back (§16.3).
@@ -1674,14 +1814,14 @@ function makeStubs(cutEdges, positions, nodeById, focusPosition) {
   return groups;
 }
 
-function polygon(points, u) {
+function polygon(points: readonly (readonly [number, number])[], u: number): SVGPolygonElement {
   const shape = svgElement("polygon", "node-shape");
   shape.setAttribute("points", points
     .map(([x, y]) => (x * u).toFixed(2) + "," + (y * u).toFixed(2)).join(" "));
   return shape;
 }
 
-function scaledRect(className, x, y, width, height, radius, u) {
+function scaledRect(className: string, x: number, y: number, width: number, height: number, radius: number, u: number): SVGRectElement {
   const shape = svgElement("rect", className);
   shape.setAttribute("x", (x * u).toFixed(2));
   shape.setAttribute("y", (y * u).toFixed(2));
@@ -1691,7 +1831,7 @@ function scaledRect(className, x, y, width, height, radius, u) {
   return shape;
 }
 
-function primaryShape(node) {
+function primaryShape(node: GlyphNode): SVGElement {
   const u = plateUnit();
   if (["concept", "pattern", "question", "personal_trail"].includes(node.type)) {
     const shape = svgElement("circle", "node-shape");
@@ -1712,7 +1852,7 @@ function primaryShape(node) {
 }
 
 // The taught rung's inner keyline, per plate shape (§16.2 A1).
-function keylineShape(node) {
+function keylineShape(node: AtlasNode): SVGElement {
   const u = plateUnit();
   const inset = tokenNumber("--tx-keyline-inset", 1.5556) * u;
   if (node.type === "concept") {
@@ -1733,7 +1873,7 @@ function keylineShape(node) {
 // The kind-distinguishing marks beyond the base shape — question ring,
 // personal-trail inner circle, sensitivity dot — shared by field nodes, list
 // glyphs, and the legend so no kind collapses to color alone.
-function appendKindMarks(target, node) {
+function appendKindMarks(target: Element, node: GlyphNode): void {
   const u = plateUnit();
   if (node.type === "question") {
     const pull = svgElement("circle", "question-ring");
@@ -1755,7 +1895,7 @@ function appendKindMarks(target, node) {
   }
 }
 
-function appendNodeGlyph(parent, node) {
+function appendNodeGlyph(parent: Element, node: GlyphNode): void {
   const glyph = svgElement("svg", "node-glyph " + NODE_CLASSES[node.type]);
   glyph.setAttribute("viewBox", "0 0 16 16");
   glyph.setAttribute("aria-hidden", "true");
@@ -1769,7 +1909,7 @@ function appendNodeGlyph(parent, node) {
   parent.append(glyph);
 }
 
-function displayTitle(node) {
+function displayTitle(node: AtlasNode): string {
   return node.title || node.id.slice(node.id.indexOf(":") + 1);
 }
 
@@ -1778,16 +1918,16 @@ function displayTitle(node) {
 const NO_DECISION = "no decision";
 const NO_CONTACT = "no contact";
 
-function stateWords(node, entry) {
+function stateWords(node: AtlasNode, entry: StateProjection | undefined): StateWordRow[] {
   const decided = new Set(entry ? entry.decided : []);
-  const gated = (dimension) => decided.has(dimension) ? entry[dimension] : NO_DECISION;
-  const contact = () => entry && entry.freshness
+  const gated = (dimension: DecisionDimension): string | undefined => decided.has(dimension) ? entry![dimension] : NO_DECISION;
+  const contact = (): string => entry && entry.freshness
     ? entry.freshness + " — last seen " + entry.last_seen
     : NO_CONTACT;
-  let words = [];
+  let words: StateWordRow[] = [];
   if (node.type === "concept") {
     words = [
-      ["exposure", entry.exposure],
+      ["exposure", entry!.exposure],
       ["confidence", gated("confidence")],
       ["clarity", gated("clarity")],
       ["coverage", gated("coverage")],
@@ -1806,7 +1946,7 @@ function stateWords(node, entry) {
   return words;
 }
 
-function plainRect(className, x, y, width, height, radius) {
+function plainRect(className: string, x: number, y: number, width: number, height: number, radius?: number): SVGRectElement {
   const shape = svgElement("rect", className);
   shape.setAttribute("x", x.toFixed(2));
   shape.setAttribute("y", y.toFixed(2));
@@ -1816,7 +1956,7 @@ function plainRect(className, x, y, width, height, radius) {
   return shape;
 }
 
-function railGeometry() {
+function railGeometry(): RailGeometry {
   const u = plateUnit();
   return {
     gap: tokenNumber("--rail-gap", 1.9444) * u,
@@ -1826,13 +1966,13 @@ function railGeometry() {
   };
 }
 
-function railDimensions(node) {
+function railDimensions(node: AtlasNode): readonly RailSlot[] {
   if (node.type === "concept") return CONCEPT_RAIL_DIMENSIONS;
   if (node.type === "question") return QUESTION_RAIL_DIMENSIONS;
   return [];
 }
 
-function railBounds(node, dimensions) {
+function railBounds(node: AtlasNode, dimensions: readonly RailSlot[]): RailBounds {
   const {gap, width, slotH, pitch} = railGeometry();
   const left = glyphExtent(node) + gap;
   const top = -(slotH + pitch * (dimensions.length - 1)) / 2;
@@ -1853,7 +1993,7 @@ function railBounds(node, dimensions) {
 // fork. A non-ordinal question status uses one uniform baseline strike. Shared
 // bounds anchor it beyond the complete kind-mark footprint and also drive edge
 // trimming. Only kinds that admit gated dimensions call this at all.
-function makeRail(entry, dimensions, bounds) {
+function makeRail(entry: StateProjection, dimensions: readonly RailSlot[], bounds: RailBounds): SVGGElement {
   const {left: x, top, width, slotH, pitch} = bounds;
   const u = plateUnit();
   const radius = tokenNumber("--rail-radius", 0.4667) * u;
@@ -1878,7 +2018,7 @@ function makeRail(entry, dimensions, bounds) {
       );
     } else {
       const markIndex = Number.isInteger(slot.uniformMark)
-        ? slot.uniformMark : slot.marks[value];
+        ? slot.uniformMark! : slot.marks![value as ConceptRailLevel]!;
       const markH = tokenNumber(RAIL_MARK_TOKENS[markIndex], 0.5833) * u;
       rail.append(plainRect("rail-mark", x, bottom - markH, width, markH, radius));
     }
@@ -1887,7 +2027,7 @@ function makeRail(entry, dimensions, bounds) {
 }
 
 // The field-undefined hairline frame (A4 owns boundary dashes now).
-function makeCartouche(leftExtent, rightExtent, halfHeight) {
+function makeCartouche(leftExtent: number, rightExtent: number, halfHeight: number): SVGRectElement {
   const pad = tokenNumber("--cartouche-pad", 4);
   return plainRect("cartouche",
     -(leftExtent + pad), -(halfHeight + pad),
@@ -1898,9 +2038,9 @@ function makeCartouche(leftExtent, rightExtent, halfHeight) {
 // the one that is selected is marked afterwards by paintSelection, so both
 // render paths build the identical tree and a change of focus never has to
 // rebuild one.
-function makeNode(node, position, placement) {
+function makeNode(node: AtlasNode, position: Point, placement: Placement | undefined): SVGGElement {
   const u = plateUnit();
-  const entry = STATE_TYPES.has(node.type) ? accepted.graph.state[node.id] : undefined;
+  const entry = STATE_TYPES.has(node.type) ? accepted!.graph.state[node.id] : undefined;
   const texture = STATE_TYPES.has(node.type) ? plateTexture(node, entry) : null;
   const classes = ["node", NODE_CLASSES[node.type]];
   if (node.fields.length === 0) classes.push("field-undefined");
@@ -1936,7 +2076,7 @@ function makeNode(node, position, placement) {
   const hasRail = dimensions.length > 0;
   const drawnExtent = glyphExtent(node);
   const bounds = hasRail ? railBounds(node, dimensions) : null;
-  if (bounds) group.append(makeRail(entry, dimensions, bounds));
+  if (bounds) group.append(makeRail(entry!, dimensions, bounds));
   const rightExtent = Math.max(
     drawnExtent,
     bounds ? bounds.right : 0);
@@ -1949,7 +2089,7 @@ function makeNode(node, position, placement) {
   }
   const label = svgElement("text", "node-label");
   const gap = tokenNumber("--label-gap", 4);
-  const slot = placement || {side: "right", offset: 4};
+  const slot: Placement = placement || {side: "right", offset: 4};
   if (slot.side === "left") {
     const leftExtent = Math.max(drawnExtent, bounds ? -bounds.left : 0);
     label.setAttribute("x", (-(leftExtent + gap)).toFixed(2));
@@ -1973,7 +2113,7 @@ function makeNode(node, position, placement) {
   return group;
 }
 
-function makeZoomControls() {
+function makeZoomControls(): HTMLDivElement {
   const controls = htmlElement("div", "zoom-controls");
   const plus = htmlElement("button", "", "+");
   plus.type = "button";
@@ -1990,17 +2130,17 @@ function makeZoomControls() {
 // The floor drops to whatever the opening view needed: on a field wider than
 // the frame the fit zoom is already below ZOOM_MIN, and a reader who zooms out
 // must be able to get back to the whole picture.
-function clampZoom(value, floor) {
+function clampZoom(value: number, floor: number | undefined): number {
   return Math.max(floor ?? ZOOM_MIN, Math.min(ZOOM_MAX, value));
 }
 
-function renderedSvgScale(svg) {
+function renderedSvgScale(svg: SVGSVGElement): number {
   const bounds = svg.getBoundingClientRect();
   if (bounds.width <= 0 || bounds.height <= 0) return 1;
   return Math.min(bounds.width / VIEW_WIDTH, bounds.height / VIEW_HEIGHT);
 }
 
-function applyTransform(transform) {
+function applyTransform(transform: FieldTransform): void {
   transform.viewport.setAttribute("transform", "translate(" + transform.x.toFixed(3) + " " + transform.y.toFixed(3) + ") scale(" + transform.zoom.toFixed(5) + ")");
   applyScreenScale(transform);
   // §16.2 A11: channels drop whole and in the fixed order as density rises.
@@ -2013,13 +2153,13 @@ function applyTransform(transform) {
   const independentlyEngaged = DENSITY_TIERS.map(
     (tier) => spacing < plateR * tokenNumber(tier.token, tier.fallbackX),
   );
-  const engaged = new Array(DENSITY_TIERS.length);
+  const engaged: boolean[] = new Array(DENSITY_TIERS.length);
   let deeperTierEngaged = false;
   for (let index = DENSITY_TIERS.length - 1; index >= 0; index -= 1) {
     deeperTierEngaged = deeperTierEngaged || independentlyEngaged[index];
     engaged[index] = deeperTierEngaged;
   }
-  const dropped = [];
+  const dropped: string[] = [];
   DENSITY_TIERS.forEach((tier, index) => {
     transform.viewport.classList.toggle(tier.className, engaged[index]);
     if (engaged[index]) dropped.push(tier.copy);
@@ -2039,7 +2179,7 @@ function applyTransform(transform) {
 // and every floor measured in screen pixels has to see it — the dash as much
 // as the stroke and the hit band (§16.4). Written only when it changes, so a
 // pan does not restyle every edge.
-function applyScreenScale(transform) {
+function applyScreenScale(transform: FieldTransform): void {
   const screen = transform.zoom * renderedSvgScale(transform.svg);
   if (transform.screenScale === screen) return;
   const scale = 1 / Math.min(1, screen);
@@ -2065,7 +2205,7 @@ function applyScreenScale(transform) {
   }
 }
 
-function installDensityResize(transform) {
+function installDensityResize(transform: FieldTransform): void {
   densityResizeObserver = new ResizeObserver(() => {
     if (currentTransform === transform && transform.svg.isConnected) {
       applyTransform(transform);
@@ -2074,7 +2214,7 @@ function installDensityResize(transform) {
   densityResizeObserver.observe(transform.svg);
 }
 
-function zoomAt(factor, x, y) {
+function zoomAt(factor: number, x: number, y: number): void {
   if (!currentTransform) return;
   const oldZoom = currentTransform.zoom;
   const nextZoom = clampZoom(oldZoom * factor, currentTransform.minZoom);
@@ -2086,9 +2226,9 @@ function zoomAt(factor, x, y) {
   applyTransform(currentTransform);
 }
 
-function installPanZoom(transform) {
+function installPanZoom(transform: FieldTransform): void {
   const {svg} = transform;
-  let drag = null;
+  let drag: DragState | null = null;
   let moved = false;
   svg.addEventListener("wheel", (event) => {
     event.preventDefault();
@@ -2140,7 +2280,7 @@ function installPanZoom(transform) {
     transform.y += screenDy * VIEW_HEIGHT / svg.clientHeight;
     applyTransform(transform);
   });
-  const stopDrag = (event) => {
+  const stopDrag = (event: PointerEvent): void => {
     if (!drag || drag.pointerId !== event.pointerId) return;
     drag = null;
     svg.classList.remove("dragging");
@@ -2168,9 +2308,9 @@ function installPanZoom(transform) {
   });
 }
 
-function installKeyboardPanZoom(stage, transform) {
+function installKeyboardPanZoom(stage: HTMLElement, transform: FieldTransform): void {
   stage.addEventListener("keydown", (event) => {
-    const focusedNode = event.target.closest && event.target.closest(".node");
+    const focusedNode = (event.target as Element).closest && (event.target as Element).closest(".node");
     if (event.target !== transform.svg && !focusedNode) return;
     // Map semantics: an arrow looks toward that side, so content slides the
     // opposite way (ArrowLeft reveals what lies to the left).
@@ -2187,7 +2327,7 @@ function installKeyboardPanZoom(stage, transform) {
   });
 }
 
-function renderLegend() {
+function renderLegend(): void {
   legend.replaceChildren();
   const nodesSection = htmlElement("section", "legend-nodes");
   nodesSection.append(htmlElement("h2", "", "Nodes"));
@@ -2227,7 +2367,7 @@ function renderLegend() {
   // the same vocabulary the panel rows and list columns use.
   const plateSection = htmlElement("section", "legend-state");
   plateSection.append(htmlElement("h2", "", "Plate"));
-  const textureRows = [
+  const textureRows: readonly (readonly [Texture, string])[] = [
     ["plain", "unseen · no contact"],
     ["dot", "touched · skim"],
     ["hatch", "read"],
@@ -2255,8 +2395,8 @@ function renderLegend() {
           ? [[-4, 4, 4, -4], [-4, 0, 0, -4], [0, 4, 4, 0]]
           : [[-4, 4, 4, -4], [-4, 0, 0, -4], [0, 4, 4, 0], [-4, -4, 4, 4], [-4, 0, 0, 4], [0, -4, 4, 0]]) {
           const stroke = svgElement("line", "tx-ink-concept");
-          stroke.setAttribute("x1", x1); stroke.setAttribute("y1", y1);
-          stroke.setAttribute("x2", x2); stroke.setAttribute("y2", y2);
+          stroke.setAttribute("x1", x1 as unknown as string); stroke.setAttribute("y1", y1 as unknown as string);
+          stroke.setAttribute("x2", x2 as unknown as string); stroke.setAttribute("y2", y2 as unknown as string);
           contents.append(stroke);
         }
       }
@@ -2313,7 +2453,7 @@ function renderLegend() {
   legend.append(nodesSection, edgesSection, plateSection, boundarySection, railSection);
 }
 
-function makeStateSample(className, build) {
+function makeStateSample(className: string, build: (contents: SVGGElement) => void): SVGSVGElement {
   const sample = svgElement("svg", "node-glyph legend-state-sample" + (className ? " " + className : ""));
   sample.setAttribute("viewBox", "0 0 16 16");
   sample.setAttribute("aria-hidden", "true");
@@ -2325,7 +2465,7 @@ function makeStateSample(className, build) {
   return sample;
 }
 
-function setLegendOpen(open) {
+function setLegendOpen(open: boolean): void {
   if (open && !legend.childNodes.length) renderLegend();
   const hadFocus = legend.contains(document.activeElement);
   legend.hidden = !open;
@@ -2336,7 +2476,7 @@ function setLegendOpen(open) {
   else if (hadFocus || focusOrphaned()) legendToggle.focus();
 }
 
-function updateFocus(nodeId) {
+function updateFocus(nodeId: NodeId | null): void {
   const raw = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
   const address = parseFragment(raw);
   const entries = address.kind === "ADDRESS" ? address.entries.filter((entry) => entry.key !== "focus") : [];
@@ -2345,40 +2485,40 @@ function updateFocus(nodeId) {
   location.hash = next;
 }
 
-function appendKnownObject(parent, key, value) {
-  const names = key === "source" ? ["artifact", "encounter"] : ["question", "artifact"];
-  const parts = [];
+function appendKnownObject(parent: Element, key: NodePayloadProperty, value: QuestionSource & EncounterContext): void {
+  const names: readonly (keyof QuestionSource | keyof EncounterContext)[] = key === "source" ? ["artifact", "encounter"] : ["question", "artifact"];
+  const parts: string[] = [];
   for (const name of names) {
     if (Object.prototype.hasOwnProperty.call(value, name)) parts.push(name + ": " + value[name]);
   }
   parent.textContent = parts.join(" · ");
 }
 
-function appendDetailValue(parent, key, value) {
+function appendDetailValue(parent: Element, key: NodePayloadProperty, value: unknown): void {
   if (key === "url") {
-    let parsed = null;
-    try { parsed = new URL(value); } catch (_error) { parsed = null; }
+    let parsed: URL | null = null;
+    try { parsed = new URL(value as string); } catch (_error) { parsed = null; }
     if (parsed && parsed.protocol === "https:") {
-      const link = htmlElement("a", "", value);
-      link.setAttribute("href", value);
+      const link = htmlElement("a", "", value as string);
+      link.setAttribute("href", value as string);
       // No target="_blank": the §16.5 sandbox grants no popups, so an
       // auxiliary context would make user-clicked links inert in a
       // conforming embed; same-context navigation stays the user's click.
       link.setAttribute("rel", "noopener noreferrer");
       parent.append(link);
     } else {
-      parent.textContent = value;
+      parent.textContent = value as string;
     }
   } else if (Array.isArray(value)) {
     parent.textContent = value.length ? value.join(", ") : "—";
   } else if (value && typeof value === "object") {
-    appendKnownObject(parent, key, value);
+    appendKnownObject(parent, key, value as QuestionSource & EncounterContext);
   } else {
     parent.textContent = String(value);
   }
 }
 
-function openPanel(node, edges) {
+function openPanel(node: AtlasNode, edges: readonly AtlasEdge[]): void {
   details.hidden = false;
   shell.classList.add("details-open");
   detailContent.replaceChildren();
@@ -2396,7 +2536,7 @@ function openPanel(node, edges) {
 
   // §16.2 A8: every state drawn in the field is words here, same vocabulary.
   if (STATE_TYPES.has(node.type)) {
-    const entry = accepted.graph.state[node.id];
+    const entry = accepted!.graph.state[node.id];
     const section = htmlElement("section", "state-groups");
     section.append(htmlElement("h3", "", "state"));
     const stateRows = htmlElement("dl", "detail-rows");
@@ -2418,10 +2558,10 @@ function openPanel(node, edges) {
     const description = htmlElement("dd");
     if (LONG_FIELDS.has(key)) {
       const paragraph = htmlElement("p", "detail-long");
-      appendDetailValue(paragraph, key, node[key]);
+      appendDetailValue(paragraph, key, (node as NodePayload)[key]);
       description.append(paragraph);
     } else {
-      appendDetailValue(description, key, node[key]);
+      appendDetailValue(description, key, (node as NodePayload)[key]);
     }
     row.append(term, description);
     rows.append(row);
@@ -2430,7 +2570,7 @@ function openPanel(node, edges) {
   appendEdgeGroups(node, edges);
 }
 
-function appendEdgeGroups(node, edges) {
+function appendEdgeGroups(node: AtlasNode, edges: readonly AtlasEdge[]): void {
   const incident = edges.filter((edge) => edge.source === node.id || edge.target === node.id);
   if (!incident.length) return;
   const container = htmlElement("section", "edge-groups");
@@ -2451,7 +2591,7 @@ function appendEdgeGroups(node, edges) {
       line.append(button);
       if (edge.weight) line.append(document.createTextNode(" (weight: " + edge.weight + ")"));
       list.append(line);
-      const meta = [];
+      const meta: string[] = [];
       if (edge.step) meta.push("step: " + edge.step);
       if (edge.order) meta.push("order: " + edge.order);
       if (edge.context) meta.push("context: " + edge.context);
@@ -2466,7 +2606,7 @@ function appendEdgeGroups(node, edges) {
 // §25.8/§16.5: enforce the byte cap while streaming — an oversized graph is
 // rejected as soon as byte cap+1 arrives, never fully downloaded and
 // allocated first. Returns null on a breach.
-async function readBounded(response, cap) {
+async function readBounded(response: Response, cap: number): Promise<ArrayBuffer | null> {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > cap) {
     void response.body?.cancel?.();
@@ -2477,7 +2617,7 @@ async function readBounded(response, cap) {
     return buffer.byteLength > cap ? null : buffer;
   }
   const reader = response.body.getReader();
-  const chunks = [];
+  const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
     const {done, value} = await reader.read();
@@ -2498,9 +2638,9 @@ async function readBounded(response, cap) {
   return joined.buffer;
 }
 
-async function loadGraph() {
+async function loadGraph(): Promise<void> {
   renderLoadState();
-  let response;
+  let response: Response;
   try {
     response = await fetch("../graph/atlas-graph.json", {cache: "no-store"});
   } catch (_error) {
@@ -2513,7 +2653,7 @@ async function loadGraph() {
     renderLoadState();
     return;
   }
-  let buffer;
+  let buffer: ArrayBuffer | null;
   try {
     buffer = await readBounded(response, CEILINGS.graph_file_bytes);
   } catch (_error) {
@@ -2521,7 +2661,7 @@ async function loadGraph() {
     renderLoadState();
     return;
   }
-  const result = buffer === null
+  const result: GraphAcceptance = buffer === null
     ? {kind: "REJECTED", diagnostic: {path: "", rule: "graphFileBytes"}}
     : acceptGraphBuffer(buffer);
   if (result.kind === "REJECTED") {
@@ -2552,7 +2692,7 @@ listView.addEventListener("click", () => {
   viewMode = "list";
   void dispatch();
 });
-legendToggle.addEventListener("click", () => setLegendOpen(legend.hidden));
+legendToggle.addEventListener("click", () => setLegendOpen(legend.hidden as boolean));
 closeDetails.addEventListener("click", () => updateFocus(null));
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
