@@ -1,0 +1,13 @@
+{
+  "name": "atlas",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/build_viewer.ts",
+    "build:check": "bun scripts/build_viewer.ts --check",
+    "typecheck": "bunx --bun tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}
