@@ -8,6 +8,13 @@ const MODULES = ["contract", "viewer"] as const;
 
 const transpiler = new Bun.Transpiler({ loader: "ts", target: "browser" });
 
+// §25.8's CLI contract: exit 0 success, 1 failure, 2 usage; diagnostics to
+// stderr, one per line, prefixed; stdout carries the result summary.
+function fail(code: number, lines: readonly string[]): never {
+  for (const line of lines) console.error(`ERROR: ${line}`);
+  process.exit(code);
+}
+
 function banner(name: string): string {
   return `// Generated from viewer/src/${name}.ts by scripts/build_viewer.ts — do not edit.\n`;
 }
@@ -36,11 +43,10 @@ function assertErasable(name: string, source: string): void {
   };
   ts.forEachChild(parsed, walk);
   if (found.length > 0) {
-    console.error(
-      "FAIL: decorators emit runtime code, which breaks the pure-erasure " +
-        `floor (§25.8):\n  ${found.join("\n  ")}`,
-    );
-    process.exit(1);
+    fail(1, [
+      ...found.map((at) => `${at}: decorator emits runtime code`),
+      "decorators break the pure-erasure floor (§25.8); remove them",
+    ]);
   }
 }
 
@@ -50,7 +56,19 @@ function emit(name: string, source: string): string {
   return banner(name) + (stripped.endsWith("\n") ? stripped : stripped + "\n");
 }
 
-const check = process.argv.includes("--check");
+// A misspelled flag must not fall through to write mode and overwrite the
+// committed output: the only accepted forms are no argument and --check.
+const args = process.argv.slice(2);
+const unknown = args.filter((arg) => arg !== "--check");
+if (unknown.length > 0 || args.length > 1) {
+  fail(2, [
+    ...unknown.map((arg) => `unknown argument: ${arg}`),
+    ...(unknown.length === 0 ? ["--check given more than once"] : []),
+    "usage: bun scripts/build_viewer.ts [--check]",
+  ]);
+}
+
+const check = args.includes("--check");
 const stale: string[] = [];
 
 for (const name of MODULES) {
@@ -68,11 +86,10 @@ for (const name of MODULES) {
 }
 
 if (check && stale.length > 0) {
-  console.error(
-    `FAIL: built output is stale: ${stale.join(", ")}\n` +
-      "Run `bun run build` and commit the result.",
-  );
-  process.exit(1);
+  fail(1, [
+    ...stale.map((file) => `${file} does not match its source`),
+    "run `bun run build` and commit the result",
+  ]);
 }
 
 console.log(
