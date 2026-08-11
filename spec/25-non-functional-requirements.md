@@ -122,12 +122,16 @@ scripts stay stdlib-only (§20).
 Viewer build: the viewer's source of truth is TypeScript under
 viewer/src/; Bun 1.3.11 type-strips it to the committed
 viewer/*.js the browser loads, and TypeScript 6.0.3 typechecks
-the sources. The emission is pure erasure: the committed output
-must reproduce byte for byte from its source, so a TypeScript
-construct that survives stripping — enum, namespace, parameter
-properties, decorators — is barred. CI enforces the identity
-(scripts/build_viewer.ts --check). Bun is build-time only: no
-Atlas runtime, and no consumer of the viewer, may require it.
+the sources. The emission is pure erasure: a construct that
+survives stripping — enum, namespace, parameter properties,
+import aliases, decorators — is barred in the source, by
+erasableSyntaxOnly and, for decorators (which that flag does not
+reach), by the build refusing to emit them. Output equality is
+the second gate, not the ban: the committed file must reproduce
+byte for byte from its source (scripts/build_viewer.ts --check),
+which alone would pass a regenerated enum. Bun is build-time
+only: no Atlas runtime, and no consumer of the viewer, may
+require it.
 Text: strict UTF-8 without BOM, LF only — every Atlas-authored
 persisted text file (§20.4 states it for frontmatter); delivered
 intake batches and imported plan originals stay as delivered
