@@ -1,0 +1,59 @@
+// Runs every differential harness against the CPython oracle and reports a
+// single verdict. The oracle stays authoritative until the cutover gate, so
+// a non-zero exit here means the port disagrees with the implementation it
+// is replacing — not that a test needs adjusting.
+
+// Zones chosen to break a wall-clock implementation rather than to sample
+// the world: Santiago moves its clock at midnight (so a local midnight can
+// be missing), Apia once skipped a whole calendar day, Kathmandu sits at a
+// 45-minute offset, Lord Howe shifts by 30 minutes, and Kiritimati is the
+// far side of the date line at UTC+14. UTC is included precisely because it
+// hides these faults: a harness that only ran there would pass a broken
+// implementation.
+const ZONES = [
+  "UTC",
+  "America/Santiago",
+  "Pacific/Apia",
+  "Asia/Kathmandu",
+  "Australia/Lord_Howe",
+  "Pacific/Kiritimati",
+] as const;
+
+interface Harness {
+  readonly file: string;
+  // Only calendar arithmetic can be perturbed by an ambient zone; running
+  // the JSON forms six times would buy nothing but wall time.
+  readonly zones: readonly string[];
+}
+
+const HARNESSES: readonly Harness[] = [
+  { file: "scripts/differential/json-forms.ts", zones: ["UTC"] },
+  { file: "scripts/differential/calendar.ts", zones: ZONES },
+];
+
+const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
+if (probe.exitCode !== 0) {
+  console.error("differential: python3 is required as the oracle and is absent");
+  process.exit(2);
+}
+console.log(`oracle: python3 ${probe.stdout.toString().trim()}`);
+
+let failures = 0;
+
+for (const harness of HARNESSES) {
+  for (const zone of harness.zones) {
+    const run = Bun.spawnSync(["bun", harness.file], {
+      env: { ...process.env, TZ: zone },
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if (run.exitCode !== 0) failures += 1;
+  }
+}
+
+console.log(
+  failures === 0
+    ? "differential: all harnesses agree with the oracle"
+    : `differential: ${failures} harness run(s) diverged from the oracle`,
+);
+process.exit(failures === 0 ? 0 : 1);

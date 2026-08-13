@@ -5,9 +5,12 @@
   "scripts": {
     "build": "bun scripts/build_viewer.ts",
     "build:check": "bun scripts/build_viewer.ts --check",
-    "typecheck": "bunx --bun tsc --noEmit"
+    "typecheck": "bunx --bun tsc --noEmit && bunx --bun tsc --noEmit -p tsconfig.scripts.json",
+    "test": "bun test scripts/src",
+    "differential": "bun scripts/differential/run.ts"
   },
   "devDependencies": {
+    "@types/bun": "1.3.14",
     "typescript": "6.0.3"
   }
 }
