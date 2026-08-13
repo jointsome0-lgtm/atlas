@@ -29,6 +29,7 @@ interface Harness {
 const HARNESSES: readonly Harness[] = [
   { file: "scripts/differential/json-forms.ts", zones: ["UTC"] },
   { file: "scripts/differential/calendar.ts", zones: ZONES },
+  { file: "scripts/differential/frontmatter.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
