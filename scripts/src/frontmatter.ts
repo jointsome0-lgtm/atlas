@@ -370,7 +370,12 @@ class Parser {
     initial?: readonly [string, string | undefined, Line],
   ): [FrontmatterMapping, number] {
     this.newNode(initial ? initial[2].number : this.lines[pos]!.number);
-    const result: FrontmatterMapping = {};
+    // Null-prototype: `__proto__` matches the §20.4 key grammar, so it is a
+    // legal key. On a plain `{}` it would hit Object.prototype's accessor —
+    // the field would vanish silently, and a document whose only key was
+    // `__proto__` would leave the mapping empty and abort with a raw
+    // TypeError instead of a §24.2 diagnostic naming the file and line.
+    const result = Object.create(null) as FrontmatterMapping;
     let fields = 0;
 
     const add = (

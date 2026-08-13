@@ -128,4 +128,14 @@ describe("error taxonomy", () => {
       expect(run).toThrow(CalendarError);
     }
   });
+
+  test("refuses a year the day-number arithmetic cannot hold", () => {
+    // Well-formed by shape, outside the calendar: the year starts at 1. Both
+    // ends of the module must agree, or a date parses and then cannot be
+    // shifted.
+    for (const text of ["0000-01-01", "0000-12-31", "0000-02-29"]) {
+      expect(() => parseDate(text)).toThrow(/calendar-date-out-of-range/);
+    }
+    expect(parseDate("0001-01-01").year).toBe(1);
+  });
 });

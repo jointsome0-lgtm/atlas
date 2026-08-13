@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   JsonDisciplineError,
+  MAX_JSON_DEPTH,
   parseStrict,
   stringifyDocument,
   stringifyRow,
@@ -99,5 +100,78 @@ describe("parseStrict", () => {
   test("round-trips a document through the row form", () => {
     const text = '{"a":[1,{"b":null},true],"c":"д"}';
     expect(stringifyRow(parseStrict(text))).toBe(text);
+  });
+
+  test("keeps __proto__ as an ordinary member", () => {
+    const parsed = parseStrict(
+      '{"id":"artifact:1","__proto__":{"sensitivity":"medical"}}',
+    ) as Record<string, unknown>;
+    expect(Object.keys(parsed).sort()).toEqual(["__proto__", "id"]);
+    expect(Object.getPrototypeOf(parsed)).toBeNull();
+    // The whole point: nothing about the parsed object changed, and no other
+    // object learned anything from it.
+    expect(stringifyRow(parsed)).toBe(
+      '{"__proto__":{"sensitivity":"medical"},"id":"artifact:1"}',
+    );
+    expect(({} as Record<string, unknown>)["sensitivity"]).toBeUndefined();
+  });
+
+  test("counts a repeated __proto__ as a duplicate key", () => {
+    expect(() => parseStrict('{"__proto__":1,"__proto__":2}')).toThrow(
+      /duplicate-json-key/,
+    );
+  });
+
+  test("refuses an integer no double can hold exactly", () => {
+    // 9007199254740993 rounds to ...992, which is itself a "safe" integer —
+    // so the check is an exact round-trip of the literal, not a range test.
+    for (const text of ["9007199254740993", "-9007199254740993"]) {
+      expect(() => parseStrict(text)).toThrow(/unrepresentable-json-number/);
+    }
+    expect(parseStrict("9007199254740992")).toBe(9007199254740992);
+    // A float literal is a double in both languages; imprecision there is the
+    // format's, not the port's.
+    expect(parseStrict("1.0000000000000001")).toBe(1);
+  });
+
+  test("refuses an unpaired surrogate, escaped or raw", () => {
+    for (
+      const text of [
+        '"\\ud800"',
+        '"\\udfff"',
+        '"\\ud800\\ud800"',
+        '"\\ud800a"',
+        `"${String.fromCharCode(0xd800)}"`,
+      ]
+    ) {
+      expect(() => parseStrict(text)).toThrow(/lone-surrogate/);
+    }
+    expect(parseStrict('"\\ud83d\\ude00"')).toBe("😀");
+  });
+
+  test("refuses nesting past the stack-safety bound instead of crashing", () => {
+    const deep = (n: number) => "[".repeat(n) + "0" + "]".repeat(n);
+    expect(() => parseStrict(deep(50_000))).toThrow(JsonDisciplineError);
+    expect(() => parseStrict(deep(MAX_JSON_DEPTH + 1))).toThrow(
+      /nesting-too-deep/,
+    );
+    // The bound is stack safety, not policy: this parser also reads Atlas's
+    // own schemas, the deepest of which nests 12.
+    expect(stringifyRow(parseStrict(deep(MAX_JSON_DEPTH)))).toBe(
+      deep(MAX_JSON_DEPTH),
+    );
+  });
+
+  test("counts depth per branch, not per value read", () => {
+    // Siblings must not accumulate: a wide-but-shallow document is legal.
+    const wide = `[${Array.from({ length: 200 }, () => "[[1]]").join(",")}]`;
+    expect(stringifyRow(parseStrict(wide))).toBe(wide);
+  });
+
+  test("reads -0 as an integer literal, keeping the sign only on a float", () => {
+    // The oracle routes an integer literal through int(), which has no signed
+    // zero; a float literal keeps it.
+    expect(Object.is(parseStrict("-0"), 0)).toBe(true);
+    expect(Object.is(parseStrict("-0.0"), -0)).toBe(true);
   });
 });

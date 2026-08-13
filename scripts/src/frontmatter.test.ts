@@ -166,3 +166,28 @@ describe("parseDocument", () => {
     );
   });
 });
+
+describe("keys that mean something to a JavaScript object", () => {
+  test("keeps __proto__ as an ordinary field", () => {
+    const parsed = parseDocument(
+      bytes("id: a\n__proto__: value\n"),
+    ) as Record<string, unknown>;
+    expect(Object.keys(parsed).sort()).toEqual(["__proto__", "id"]);
+    expect(Object.getPrototypeOf(parsed)).toBeNull();
+  });
+
+  test("a document of nothing but __proto__ is still a mapping", () => {
+    // On a plain object the field would vanish, the mapping would look empty,
+    // and the failure would surface as a raw TypeError rather than a §24.2
+    // diagnostic naming the file and line.
+    expect(parseDocument(bytes("__proto__: value\n"))).toEqual({
+      ["__proto__"]: "value",
+    });
+  });
+
+  test("still refuses a repeated __proto__", () => {
+    expect(() => parseDocument(bytes("__proto__: a\n__proto__: b\n"))).toThrow(
+      /duplicate-key/,
+    );
+  });
+});

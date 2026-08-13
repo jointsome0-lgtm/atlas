@@ -116,6 +116,12 @@ const INVALID: string[] = [
   "2026-06-31",
   "2026-09-31",
   "2026-11-31",
+  // Well-formed by the YYYY-MM-DD shape and out of range by the calendar:
+  // the oracle's year starts at 1. Without these the module could accept a
+  // date at one end that its own day-number arithmetic refuses at the other.
+  "0000-01-01",
+  "0000-12-31",
+  "0000-02-29",
 ];
 
 // Rejected by Atlas's grammar but not necessarily by the oracle's parser:

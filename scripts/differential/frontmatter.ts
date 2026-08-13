@@ -107,6 +107,23 @@ add("deep but legal nesting", fenced("a:\n  b:\n    c:\n      d:\n        e:\n  
 add("no body after fence", "---\nid: a\n---\n");
 add("body absent entirely", "---\nid: a\n---");
 
+// ---- keys that a JavaScript object treats as more than keys ------------------
+// `__proto__` satisfies the key grammar, so a document may carry it. On a plain
+// `{}` it is an accessor rather than a member: the field disappears and the
+// values under it become the prototype every later lookup falls back to. The
+// oracle's dict has no such corner, which is precisely why these are compared.
+
+add("proto key alone", fenced("__proto__: value"));
+add("proto key beside a real one", fenced("id: a\n__proto__: value"));
+add("proto key carrying a mapping", fenced("__proto__:\n  sensitivity: medical"));
+add("proto key nested", fenced("outer:\n  __proto__: value"));
+add("proto key in a sequence item", fenced("items:\n  - __proto__: value"));
+add("proto key twice", fenced("__proto__: a\n__proto__: b"));
+add("proto key and a near miss", fenced("__proto__: a\n__proto__x: b\nproto: c"));
+add("constructor key", fenced("constructor: value"));
+add("prototype key", fenced("prototype: value"));
+add("object method names as keys", fenced("toString: a\nvalueOf: b\nhasOwnProperty: c"));
+
 // ---- the strip-set traps ----------------------------------------------------
 // Python's str.strip() removes U+0085 and U+00A0 but not U+FEFF; JavaScript's
 // trim() does the reverse. Each of these decides whether a scalar keeps a

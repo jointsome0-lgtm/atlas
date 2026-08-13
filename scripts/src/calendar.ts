@@ -28,6 +28,14 @@ export function parseDate(text: string): CalendarDate {
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
+  // The pattern admits 0000, which the day-number range below refuses and the
+  // oracle rejects outright ("year 0 is out of range"). Without this the two
+  // ends of the module disagree: a date parses but cannot be shifted.
+  if (year < MIN_YEAR || year > MAX_YEAR) {
+    throw new CalendarError(
+      "calendar-date-out-of-range; expected a year within 1..9999",
+    );
+  }
   if (month < 1 || month > 12) {
     throw new CalendarError(`calendar-invalid-date; month out of range`);
   }
