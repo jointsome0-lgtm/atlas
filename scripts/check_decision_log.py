@@ -16,7 +16,7 @@ import sys
 from typing import Iterable, Optional, Sequence
 
 
-CHECKER_VERSION = "1.1.0"
+CHECKER_VERSION = "2.0.0"
 
 ENTRY_RE = re.compile(r"^- (?P<date>\d{4}-\d{2}-\d{2}) — (?P<text>.*)$")
 ATX_HEADING_RE = re.compile(
@@ -520,16 +520,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-words",
         type=positive_integer,
-        default=140,
+        default=80,
         metavar="N",
-        help="hard word ceiling (default: 140)",
+        help="hard word ceiling (default: 80)",
     )
     parser.add_argument(
         "--warn-words",
         type=positive_integer,
-        default=80,
+        default=40,
         metavar="N",
-        help="word warning threshold (default: 80)",
+        help="word warning threshold (default: 40)",
     )
     parser.add_argument("files", metavar="FILE", nargs="+")
     return parser

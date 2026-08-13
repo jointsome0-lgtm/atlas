@@ -136,7 +136,7 @@ def cmd_sync(target: Path, template_path: Path | None) -> int:
     if template_path is None:
         raise ConventionsError(
             "sync requires a template: pass --template pointing at a selfos-skills "
-            "checkout's plugins/sdd/conventions/SDD-CONVENTIONS.md"
+            "checkout's skills/sdd-conventions/conventions/SDD-CONVENTIONS.md"
         )
     version, body = load_template(template_path)
     block = render_block(version, body)
