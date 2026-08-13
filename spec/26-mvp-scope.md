@@ -14,8 +14,8 @@ suggested routes
 state journals (JSONL, §8)
 observation floor: documented manual capture (#23) — the §9
   journal row shapes appended by hand into state/ or through
-  scripts/append_record.py (#47 — the validated, receipted
-  append; §33.2's manual/ lane), trail segments hand-authored
+  the validated append path (#47 — receipted; §33.2's manual/
+  lane), trail segments hand-authored
   under atlas/trails/ (§8); enough for a real artifact to become
   evidence, movement, and influence input
 trail template
@@ -41,7 +41,7 @@ complex analytics
 automatic confidence upgrades
 support-link weight proposals (links render unassessed until decided, §14.9)
 intake / snapshot / embedding implementation (formats and URL scheme are specified — §33, §16.4)
-observe_artifacts.py (the manual floor above stands in; the script
+the artifact observer (the manual floor above stands in; it
   is a vertical of its own — §29)
 ```
 

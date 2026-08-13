@@ -1,6 +1,6 @@
 ## §20. Graph Builder
 
-`scripts/build_atlas_graph.py` should:
+The graph builder should:
 
 ```text
 1. Read concept, pattern, and zone frontmatter (§32.1).
@@ -90,6 +90,13 @@ Edges are emitted per the §10.2 matrix — the ownership column names the readi
 Normalization: related_to and alternative_to are symmetric
 (#94) — endpoints sort lexicographically before anything else
 sees the edge, so two-sided authoring becomes one identity.
+This sort forms identity rather than presentation: it runs
+before dedup, so a different comparator does not reorder the
+output, it yields a different edge, a different collapse, and
+a different graph. Lexicographic means by Unicode code point
+wherever this specification asks for it — here, the provenance
+lists and edge array above, and §15's frontier array — never a
+locale, a collation table, or a runtime's default ordering.
 Dedup: identity = (type, source, target) plus the §10.2 meta
 discriminant (order / context / step). One identity emits one
 edge; provenance is the union of the collapsed authors' or
@@ -125,22 +132,13 @@ identity order (type, source, target, then the meta
 discriminant).
 ```
 
-No external dependencies for MVP.
+Dependencies: none at run time. Every Atlas entry point runs on the §25.8 runtime and its standard library alone, plus the one compiled filesystem boundary §25.8 pins — a committed artifact of this repository, not a fetched package. Nothing is resolved, downloaded, or installed in order to run a checkout, so no registry is a trust root and no run needs a network. Schema support stays the closed hand-written subset §25.7 already describes: a general validator would accept keywords canon never chose, which is the fail-closed posture §24.2 refuses to trade. Typechecking and the viewer build are build-time tooling (§25.8) and reach no emitted byte.
 
-Allowed standard library:
-
-```text
-json
-pathlib
-datetime
-re
-```
-
-Frontmatter parses by the §20.4 grammar — a closed stdlib parser, never PyYAML (Decision Log 2026-07-16); the §25.7 schemas validate the parsed object.
+Frontmatter parses by the §20.4 grammar — a closed hand-written parser, never a third-party YAML library (Decision Log 2026-07-16); the §25.7 schemas validate the parsed object.
 
 ## §20.4 Frontmatter Grammar
 
-The YAML-shaped persisted surfaces — curated frontmatter blocks and the extracted plan document (§21.2) — are written in one deliberately closed grammar, stated here. It is YAML-shaped, not YAML: a general YAML tool may happen to read these files, but its rewrite carries no conformance promise. This section is the canon; every reader and writer — builder, importer, observer, validator — implements it, and `validate_atlas.py` checks implementations against the conformance fixtures. Bytes in, object or diagnostic out; nothing in between is canonical.
+The YAML-shaped persisted surfaces — curated frontmatter blocks and the extracted plan document (§21.2) — are written in one deliberately closed grammar, stated here. It is YAML-shaped, not YAML: a general YAML tool may happen to read these files, but its rewrite carries no conformance promise. This section is the canon; every reader and writer — builder, importer, observer, validator — implements it, and the validator checks implementations against the conformance fixtures. Bytes in, object or diagnostic out; nothing in between is canonical.
 
 ```text
 Encoding: strict UTF-8, no BOM; invalid UTF-8 is an ERROR. LF is

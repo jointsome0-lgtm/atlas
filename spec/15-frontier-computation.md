@@ -127,7 +127,8 @@ because no consumer could learn a tuning (#108), this one is
 the builder's alone: the cap decides how long a list to write,
 never what a written value means.
 The emitted array is sorted by target id: selection order is
-internal and never surfaces as a ranking (§4).
+internal and never surfaces as a ranking (§4). The ordering is
+§20.3's — by Unicode code point, never a runtime default.
 ```
 
 ---

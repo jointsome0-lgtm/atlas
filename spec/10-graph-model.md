@@ -226,7 +226,7 @@ schema error is a build ERROR naming file and pointer, never a
 silent drop — a misspelled sensitivity key would otherwise emit
 an unclassed node, defeating §32.6's "declared, never inferred"
 — and no graph is emitted from partially valid input. A prior
-validate_atlas.py run is a check, never a prerequisite the
+validation run is a check, never a prerequisite the
 builder assumes.
 fields: [] is legal (no refs, or all dangling): the viewer renders
 the node in the default field and flags "field undefined" — the

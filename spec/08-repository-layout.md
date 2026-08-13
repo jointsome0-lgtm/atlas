@@ -82,14 +82,13 @@ atlas/
       contract.ts # the viewer's source of truth
       viewer.ts
 
-  scripts/
-    import_plan.py
-    process_intake.py
-    observe_artifacts.py
-    build_atlas_graph.py
-    export_snapshot.py
-    check_atlas_boundaries.py
-    validate_atlas.py
+  scripts/        # the runnable surface — one entry point per
+                  # flow: plan import (§12, §21), intake
+                  # processing (§33.2), artifact observation
+                  # (§13), the graph build (§20), snapshot export
+                  # (§33.4), the boundary check (§19), instance
+                  # validation (§25.7). The flows are named here;
+                  # the file names are the implementation's
 ```
 
 ADRs are created when a decision needs one — none are pre-named. Templates (`_template.md`) live inside their entity directory.

@@ -47,7 +47,9 @@ The instance is single-writer (#36). Every writing flow — import (§12/§21), 
 
 ## §25.7 Persisted and Contract Formats
 
-Every persisted format and transient runner-contract format has one machine-readable schema — JSON Schema 2020-12, one file per format, authored under `spec/schemas/` (#30, #46). Schemas are canon like the §§ they sit beside, never emitted artifacts; enum canon stays the § prose (§9, §14 — #24): a schema transcribes and cites the lists, never forks them. `scripts/validate_atlas.py` (§8) validates instance files against the schemas and checks the builder's constants against the same schemas — code constants are checked, never canonical (§20.3's discipline, format-wide). The YAML-shaped surfaces parse by the §20.4 grammar first; a schema validates the parsed object, never raw markdown.
+Every persisted format and transient runner-contract format has one machine-readable schema — JSON Schema 2020-12, one file per format, authored under `spec/schemas/` (#30, #46). Schemas are canon like the §§ they sit beside, never emitted artifacts; enum canon stays the § prose (§9, §14 — #24): a schema transcribes and cites the lists, never forks them. The validator (§8) validates instance files against the schemas and checks the builder's constants against the same schemas — code constants are checked, never canonical (§20.3's discipline, format-wide). The YAML-shaped surfaces parse by the §20.4 grammar first; a schema validates the parsed object, never raw markdown.
+
+Two serialised forms, because a reader must reproduce bytes it did not write and §20.1's byte-identical rebuild leaves no room for a house style. An emitted document — the graph, the snapshot, a report, a run manifest — is indented two spaces, keeps its keys in the order its emitter built them, writes non-ASCII literally rather than escaped, and ends in exactly one LF. A journal or receipt row is one line: no space after any separator, keys sorted by code point (§20.3), non-ASCII literal. The two are not interchangeable, and neither is a formatting preference an implementation may re-choose — adopting either everywhere silently changes the other surface's bytes. Reading is strict on both, and at the §17.7 runner boundary: a duplicate key and a non-finite number are errors, never a last-wins or an infinity (§24.2).
 
 Versioning — stated here once for every registered format (the boundary formats, §33.1, are its instances):
 
@@ -117,21 +119,48 @@ The registry is closed: a new persisted or runner-contract format registers here
 The environment and limits §27 tests against (#23, #42); any value changes only through a Decision Log entry:
 
 ```text
-Runtime: CPython 3.12 — the CI pin and the supported floor;
-scripts stay stdlib-only (§20).
+Runtime: TypeScript executed by Bun 1.3.14 — the CI pin and the
+supported floor; entry points stay dependency-free (§20).
+Platform: Linux and macOS. Windows is a non-goal — the
+root-bound directory operations below have no native equivalent
+there, and a platform that cannot hold §24.2's containment is
+not one Atlas claims.
+Filesystem boundary: one compiled component owns the operations
+whose containment cannot be expressed on a path — root-bound
+no-follow opens, directory reads from a pinned descriptor,
+atomic durable replace, and the lock primitive (§24.2, §25.6).
+It takes descriptors and flags and returns descriptors, bounded
+bytes, and the true errno; it knows no node kind, journal shape,
+schema, id, or diagnostic text, and every containment policy
+stays above it. A descriptor is a capability: re-deriving one
+through a path — including a per-process filesystem view of it —
+re-checks permissions and collapses distinct failures into
+"absent", which turns a use-after-close into an empty successful
+scan. That is the failure this boundary exists to make
+impossible, so no path-based fallback stands behind it: the
+capability probe at startup either finds the boundary or the run
+refuses. The artifact ships committed, one per supported target,
+beside its source and a pinned build recipe, with a CI job that
+rebuilds and verifies it — so a plain checkout still runs
+everything, and §17.5's `deterministic` marking stays literally
+true, the pinned engine revision containing the very bytes that
+ran. The toolchain version, edition, and target triples are
+recorded values here like any other floor.
 Viewer build: the viewer's source of truth is TypeScript under
-viewer/src/; Bun 1.3.11 type-strips it to the committed
-viewer/*.js the browser loads, and TypeScript 6.0.3 typechecks
-the sources. The emission is pure erasure: a construct that
-survives stripping — enum, namespace, parameter properties,
-import aliases, decorators — is barred in the source, by
-erasableSyntaxOnly and, for decorators (which that flag does not
-reach), by the build refusing to emit them. Output equality is
-the second gate, not the ban: the committed file must reproduce
-byte for byte from its source (scripts/build_viewer.ts --check),
-which alone would pass a regenerated enum. Bun is build-time
-only: no Atlas runtime, and no consumer of the viewer, may
-require it.
+viewer/src/; Bun type-strips it to the committed viewer/*.js the
+browser loads, and TypeScript 6.0.3 typechecks the sources. The
+emission is pure erasure: a construct that survives stripping —
+enum, namespace, parameter properties, import aliases,
+decorators — is barred in the source, by erasableSyntaxOnly and,
+for decorators (which that flag does not reach), by the build
+refusing to emit them. Output equality is the second gate, not
+the ban: the committed file must reproduce byte for byte from
+its source, which alone would pass a regenerated enum. No
+consumer of the viewer may require Bun — the emission stays
+committed, and an embedder (§16.4) loads bytes, never a build.
+That half of the rule is untouched by the runtime above: the
+operator of an Atlas command now needs Bun; a viewer consumer
+still does not.
 Text: strict UTF-8 without BOM, LF only — every Atlas-authored
 persisted text file (§20.4 states it for frontmatter); delivered
 intake batches and imported plan originals stay as delivered

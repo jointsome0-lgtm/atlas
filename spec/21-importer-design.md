@@ -1,6 +1,6 @@
 ## §21. Importer Design
 
-`scripts/import_plan.py` should initially support Markdown.
+The plan importer should initially support Markdown.
 
 ## §21.1 MVP Strategy
 
