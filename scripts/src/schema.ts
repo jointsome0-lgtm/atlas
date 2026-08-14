@@ -143,6 +143,18 @@ function jsonEqual(left: unknown, right: unknown): boolean {
  * writer exception would hide the failure the caller came for.
  */
 function show(value: unknown): string {
+  // A closed key set and an enum are lists, and a reader comparing a
+  // diagnostic against the one the previous implementation printed reads the
+  // separators too. Members are spaced out the way the oracle's repr spaces
+  // them; only the quote character differs, which every consumer of these
+  // messages already folds.
+  if (Array.isArray(value)) return `[${value.map(show).join(", ")}]`;
+  if (isObject(value)) {
+    const fields = Object.entries(value).map(
+      ([key, member]) => `${show(key)}: ${show(member)}`,
+    );
+    return `{${fields.join(", ")}}`;
+  }
   try {
     return stringifyRow(value);
   } catch {

@@ -40,6 +40,9 @@ const HARNESSES: readonly Harness[] = [
   // Freshness is recomputed inside the review gate, so the §-rule joins run
   // the hostile-timezone matrix too.
   { file: "scripts/differential/checks.ts", zones: ZONES },
+  // The emitted-graph pass runs the review gate over whole graphs, so its
+  // freshness arithmetic meets the same matrix.
+  { file: "scripts/differential/graph-rules.ts", zones: ZONES },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
