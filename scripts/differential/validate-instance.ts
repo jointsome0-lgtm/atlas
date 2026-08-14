@@ -944,6 +944,141 @@ add(
   { says: ["the redacted graph must carry withheld (§20)"] },
 );
 
+// --- What only shows when two complaints have to be told apart ---
+//
+// Every case above raises one complaint in one place, and a single complaint
+// cannot show whose turn it was, or that a pass carried on after the one
+// before it failed. These do: each puts two diagnostics in flight at once,
+// where dropping either of them, or swapping them, changes the answer.
+
+add(
+  "emitted: a graph that breaks its schema and its edges at the same time",
+  {
+    // A schema complaint does not end the graph's turn. The oracle validates
+    // and then applies the §10.2 rules to the same file, so a graph wrong in
+    // both ways is told about both — and a port that treated the schema as a
+    // gate would report exactly half of this.
+    "graph/atlas-graph.json": (() => {
+      const graph = JSON.parse(GRAPH) as Record<string, unknown>;
+      graph["format"] = "not-atlas-graph";
+      graph["edges"] = [
+        {
+          source: "concept:example",
+          target: "concept:missing",
+          type: "related_to",
+          provenance: ["concept:example"],
+          weight: "low",
+        },
+      ];
+      return `${JSON.stringify(graph, null, 2)}\n`;
+    })(),
+  },
+  { says: ["format", "concept:missing"] },
+);
+
+add(
+  "journals: the same row bytes in two different journals",
+  {
+    // Rows are deduplicated by their bytes, and the bytes are only a key
+    // within one journal. `{}` fails both schemas, so if the two journals
+    // shared a set the second complaint would vanish — and `{}` is the one
+    // row every journal can spell identically.
+    "state/artifacts.jsonl": "{}\n",
+    "state/questions.jsonl": "{}\n",
+  },
+  { says: ["state/artifacts.jsonl:1", "state/questions.jsonl:1"] },
+);
+
+add(
+  "journals: same-date re-proposals across a rotated file and the tail",
+  {
+    // §20.1 makes the rotated file the older prefix and `decisions.jsonl` the
+    // newest tail. Rows that share a date are ordered by where they physically
+    // arrived across the whole journal, so the position counter runs on from
+    // one file into the next — and these two complaints are laid out to swap
+    // if it restarts: the rotated file's re-proposal is its fourth row, and
+    // the tail's is its first.
+    //
+    // Both complaints are the same sentence and differ only in the file that
+    // drew them, which is what makes their order the whole of the evidence.
+    "state/questions.jsonl": QUESTION_ROW,
+    "state/decisions/2026-07-a.jsonl":
+      statusDecision({ to: "resolved", decision: "rejected" }) +
+      statusDecision({ to: "clarified", decision: "rejected" }) +
+      statusDecision({ to: "stale", decision: "rejected" }) +
+      statusDecision({ to: "resolved" }),
+    "state/decisions.jsonl": statusDecision({ to: "clarified" }),
+  },
+  {
+    says: [
+      "state/decisions/2026-07-a.jsonl:4: a rejected proposal cannot be re-proposed",
+      "state/decisions.jsonl:1: a rejected proposal cannot be re-proposed",
+    ],
+  },
+);
+
+add(
+  "plans: an extract that is not spelled with a .yaml suffix",
+  {
+    // The oracle walks every file under `plans/extracted`, whatever it is
+    // called. Narrowing that to one suffix would let an extract through
+    // unchecked and silently — so this one parses, to be counted, and is
+    // wrong only where the schema can see it.
+    "plans/extracted/second.json": PLAN_EXTRACT.replace(
+      "id: plan:example",
+      "id: 12",
+    ),
+  },
+  { says: ["second.json"], counts: { frontmatter: 5 } },
+);
+
+add(
+  "order: the redacted graph and the snapshot complaining at once",
+  {
+    // The emitted files are walked graph, redacted graph, snapshot — the full
+    // graph first because the redacted one is checked against it. Nothing
+    // until now made the last two speak in the same run, so swapping them was
+    // free; here the two complaints trade places.
+    "graph/atlas-graph.redacted.json": GRAPH,
+    "graph/atlas-snapshot.json": SNAPSHOT.replace(
+      '"artifact:2026-07-16-001": {\n      "kind": "artifact",',
+      '"artifact:2026-07-16-001": {\n      "kind": "encounter",',
+    ),
+  },
+  {
+    says: [
+      "the redacted graph must carry withheld (§20)",
+      "evidence_refs",
+    ],
+  },
+);
+
+add(
+  "order: two curated directories complaining at once",
+  {
+    // `concepts` is walked before `zones`, and nothing until now has made both
+    // speak in the same run. Reverse the walk and these two swap.
+    "atlas/concepts/broken.md": "---\nid: 12\n---\n",
+    "atlas/zones/broken.md": "---\nid: 34\n---\n",
+  },
+  { says: ["concepts/broken.md", "zones/broken.md"] },
+);
+
+add(
+  "intake: an envelope naming no source at all",
+  {
+    // An empty source joins to the batch name alone — `PurePosixPath("") / "x"`
+    // is `x` and not `/x` — so this delivery sits exactly where its envelope
+    // says and draws no §33.2 complaint, only the schema's.
+    "intake/watch-sync/2026-07-16-001.json": null,
+    "intake/2026-07-16-001.json": INTAKE_BATCH.replace(
+      '"source": "watch-sync"',
+      '"source": ""',
+    ),
+  },
+  { says: ["source"], absent: ["(§33.2)"] },
+);
+
 // ---------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------
