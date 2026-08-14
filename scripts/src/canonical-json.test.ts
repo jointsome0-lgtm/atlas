@@ -185,6 +185,52 @@ describe("what the writer will accept as a JSON value", () => {
     );
   });
 
+  test("refuses exactly the keys the engine reorders, and no others", () => {
+    // The rule is "JavaScript moved this key", so the test asks JavaScript
+    // rather than restating the spec's array-index definition and hoping the
+    // two agree. 4294967294 is an index; 4294967295 is the length limit and
+    // is not — a hand-written bound is one off away from wrong here.
+    const reordered = (key: string): boolean => {
+      const probe: Record<string, unknown> = {};
+      probe["zzz"] = 1;
+      probe[key] = 2;
+      return Object.keys(probe)[0] === key;
+    };
+    const refused = (key: string): boolean => {
+      try {
+        stringifyDocument({ zzz: 1, [key]: 2 });
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    for (
+      const key of [
+        "0",
+        "1",
+        "10",
+        "4294967293",
+        "4294967294",
+        "4294967295",
+        "4294967296",
+        "99999999999999999999",
+        "1e2",
+        "0.0",
+        " 1",
+        "+1",
+        "-0",
+        "-1",
+        "01",
+        "Infinity",
+        "NaN",
+        "",
+        "1.0",
+      ]
+    ) {
+      expect([key, refused(key)]).toEqual([key, reordered(key)]);
+    }
+  });
+
   test("the reader's domain is the row form's, and the document form is narrower", () => {
     // The one asymmetry in this module, pinned rather than left to be found:
     // the reader takes an index-like key, because a year-keyed map is an
