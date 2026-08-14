@@ -8,7 +8,25 @@ import { types } from "node:util";
 
 import { compareCodePoint } from "./ordering.ts";
 
-export class JsonDisciplineError extends Error {}
+export class JsonDisciplineError extends Error {
+  /**
+   * The 1-based line the document stopped parsing on, for a syntax failure.
+   *
+   * Absent on every other refusal, and deliberately: the oracle raises
+   * `JSONDecodeError` with a position for malformed text and a bare
+   * `JsonDisciplineError` for a duplicate key or a non-finite number, so the
+   * presence of a line is itself the distinction between the two, and callers
+   * that format one shape for each read it that way. A line number is stable
+   * diagnostic material under the cutover contract; the English tail is not.
+   */
+  readonly line: number | undefined;
+
+  constructor(message: string, line?: number) {
+    super(message);
+    this.name = "JsonDisciplineError";
+    this.line = line;
+  }
+}
 
 export type JsonValue =
   | null
@@ -285,7 +303,17 @@ class StrictParser {
   }
 
   private fail(): never {
-    throw new JsonDisciplineError("invalid-json; expected a JSON document");
+    // Counted from the failure point rather than tracked as the parser walks:
+    // the scan is over text already read, it runs once per document and only
+    // on the way out, and a running counter would have to be maintained by
+    // every branch that advances the index — including the ones that advance
+    // it past an escape or a surrogate pair.
+    let line = 1;
+    for (let at = this.text.indexOf("\n"); at >= 0 && at < this.index; ) {
+      line += 1;
+      at = this.text.indexOf("\n", at + 1);
+    }
+    throw new JsonDisciplineError("invalid-json; expected a JSON document", line);
   }
 
   private skipWhitespace(): void {

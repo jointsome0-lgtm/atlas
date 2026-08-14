@@ -148,13 +148,24 @@ export class ScannedFile {
   }
 
   /**
+   * A read descriptor, opened no-follow from the root. The caller closes it.
+   *
+   * For readers that must not hold the whole file: a journal is bounded per
+   * row (§25.8) and not in total, so the one check that stays honest on a
+   * large one is the one that never materialises it.
+   */
+  open(): number {
+    return this.reader.openFile(this.parts);
+  }
+
+  /**
    * The file's bytes, read through a descriptor opened no-follow from the root.
    *
    * The path is walked again rather than remembered: a descriptor handed out
    * earlier would say nothing about what the name points at now.
    */
   readBytes(): Uint8Array {
-    const fd = this.reader.openFile(this.parts);
+    const fd = this.open();
     try {
       return new Uint8Array(fs.readFileSync(fd));
     } finally {

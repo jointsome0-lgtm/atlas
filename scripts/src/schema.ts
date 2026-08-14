@@ -24,7 +24,14 @@ export interface SchemaError {
   readonly message: string;
 }
 
-const SUPPORTED_KEYWORDS: ReadonlySet<string> = new Set([
+/**
+ * The only JSON Schema keywords the authored schemas may use (§25.7).
+ *
+ * Exported so a differential can compare the set itself rather than infer it
+ * from behaviour: a keyword quietly missing here is a rule quietly not
+ * enforced, and every schema that uses it goes on validating clean.
+ */
+export const SUPPORTED_KEYWORDS: ReadonlySet<string> = new Set([
   "$schema",
   "$id",
   "$ref",
