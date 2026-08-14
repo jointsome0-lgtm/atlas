@@ -248,6 +248,64 @@ add(
   },
 );
 
+// The cases below put two complaints in flight at once. Everything above
+// raises one, in one place, and one complaint cannot show whose turn it was
+// or that a pass carried on after the pass before it had something to say.
+
+add(
+  "an accept fixture and a reject fixture both wrong at once",
+  // The order is the evidence: swap the two loops and every case above still
+  // passes, because none of them makes both groups complain. Here the two
+  // messages come back in one list, and the list is compared against the
+  // oracle's as it stands — position included.
+  {
+    "fixtures/grammar/accept/basic.fm": UNFENCED,
+    "fixtures/grammar/reject/unfenced.fm": VALID,
+  },
+  {
+    says: [
+      "basic.fm: frontmatter line 1: opening fence must be the exact line",
+      "unfenced.fm: reject fixture unexpectedly parsed",
+    ],
+    count: 5,
+  },
+);
+
+add(
+  "a missing manifest with an accept fixture already complaining",
+  // A missing manifest replaces what was found rather than adding to it. With
+  // clean fixtures in front of it there is nothing to accumulate and the two
+  // readings are the same answer, so the fixture has to be broken too for the
+  // difference to exist at all.
+  {
+    "fixtures/grammar/accept/basic.json": null,
+    "fixtures/grammar/generated.json": null,
+  },
+  { says: ["fixtures/grammar/generated.json: missing manifest"], count: 2 },
+);
+
+add(
+  "a manifest that is not JSON, with an accept fixture already complaining",
+  { "fixtures/grammar/accept/basic.json": null, "fixtures/grammar/generated.json": "[\n" },
+  { says: ["generated.json:2: invalid JSON"], count: 2 },
+);
+
+add(
+  "a manifest entry whose mode is a number",
+  // Present and the wrong type is not absent. The oracle indexes the key, so
+  // it finds the `0`, matches it against neither name, and the case passes —
+  // a port that demanded a string here would refuse a manifest the oracle
+  // reads. Whether canon should be stricter is a question for canon.
+  {
+    "fixtures/grammar/generated.json": `${JSON.stringify(
+      [{ generator: "bom", mode: 0 }],
+      null,
+      2,
+    )}\n`,
+  },
+  { count: 3 },
+);
+
 add(
   "a manifest naming a generator nobody wrote",
   { "fixtures/grammar/generated.json": manifest([{ generator: "no-such", mode: "accept" }]) },

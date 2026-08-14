@@ -1065,6 +1065,40 @@ add(
 );
 
 add(
+  "runs: a manifest that breaks its schema and its runner binding at once",
+  {
+    // The schema pass and the §17.7 binding pass both read this one file, and
+    // until now no manifest has made both speak. Reverse the two pushes and
+    // every other run case still passes.
+    "runs/2026-07-21-001.json": JSON.stringify({
+      ...(JSON.parse(RUN_MANIFEST) as Record<string, unknown>),
+      run_id: 12,
+      prompt_bundle: {
+        components: [{ id: "plan-importer-core", version: "1", sha256: "a".repeat(64) }],
+        sha256: "b".repeat(64),
+      },
+    }),
+  },
+  {
+    says: [
+      "run_id",
+      "prompt bundle must contain 'runner-plan-importer-input' exactly once (§17.7)",
+    ],
+  },
+);
+
+add(
+  "order: the other two curated directories complaining at once",
+  {
+    // The pair above is the first two entries of the walk; these are the
+    // fourth and the sixth, and swapping them is invisible to it.
+    "atlas/materials/broken.md": "---\nid: 12\n---\n",
+    "atlas/suggested-routes/broken.md": "---\nid: 34\n---\n",
+  },
+  { says: ["materials/broken.md", "suggested-routes/broken.md"] },
+);
+
+add(
   "intake: an envelope naming no source at all",
   {
     // An empty source joins to the batch name alone — `PurePosixPath("") / "x"`

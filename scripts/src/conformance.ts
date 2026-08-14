@@ -242,25 +242,52 @@ export function generatedCase(name: string): [Uint8Array, FrontmatterMapping | n
 /**
  * `PurePosixPath(path).with_suffix(".json")`.
  *
- * The suffix is the last dot in the last component, and a name that is all
- * suffix has none: CPython reads `.fm` as a dotfile with an empty suffix and
- * appends rather than replaces, so a fixture named `.fm` looks for `.fm.json`
- * and not for `.json`. Slicing three characters off the end would disagree
- * there, on the one input where nobody would look.
+ * The suffix is the last dot in the last component, and there are two ways for
+ * a name not to have one. A name that is all suffix: CPython reads `.fm` as a
+ * dotfile with an empty suffix and appends rather than replaces, so a fixture
+ * named `.fm` looks for `.fm.json` and not for `.json` — slicing three
+ * characters off the end would disagree there, on the one input where nobody
+ * would look. And a name that ends in the dot: `foo.` has nothing after it, so
+ * CPython appends there too and asks for `foo..json`.
+ *
+ * What this does not do is normalize, because `with_suffix` is only half of
+ * `PurePosixPath` and the other half is not needed here. CPython would read
+ * `./a` as `a` and `a//b` as `a/b`, and would refuse `""` outright; this
+ * would keep all three as they were written. Nothing can arrive that way: the
+ * only caller passes a `relativePath` from a reader scan, which is normalized
+ * before it is handed out and always ends in `.fm`. Anyone calling this with a
+ * path from somewhere else has to normalize it first.
  */
 function withJsonSuffix(path: string): string {
   const slash = path.lastIndexOf("/");
   const name = path.slice(slash + 1);
   const dot = name.lastIndexOf(".");
-  const stem = dot <= 0 ? name : name.slice(0, dot);
+  const stem = dot <= 0 || dot === name.length - 1 ? name : name.slice(0, dot);
   return `${path.slice(0, slash + 1)}${stem}.json`;
 }
 
-/** A manifest field that has to be there, read the way a missing key reads. */
-function required(entry: Record<string, unknown>, key: string): string {
-  const value = entry[key];
-  if (typeof value !== "string") {
+/**
+ * A manifest field that has to be there, read the way a missing key reads.
+ *
+ * Absent is the whole test, and a present value of the wrong type is not it.
+ * The oracle indexes the entry, so a missing key stops the run and a `mode` of
+ * `0` does not — it simply matches neither name and the case passes. Refusing
+ * the second would be a divergence dressed as strictness, and tightening what
+ * a committed manifest may say is a decision to take on its own rather than
+ * inside a port.
+ */
+function required(entry: Record<string, unknown>, key: string): unknown {
+  if (!(key in entry)) {
     throw new Error(`fixtures/grammar/generated.json: entry has no ${key}`);
+  }
+  return entry[key];
+}
+
+/** The same, for the one field that is used as a string and not compared. */
+function requiredName(entry: Record<string, unknown>, key: string): string {
+  const value = required(entry, key);
+  if (typeof value !== "string") {
+    throw new Error(`fixtures/grammar/generated.json: ${key} is not a name`);
   }
   return value;
 }
@@ -348,9 +375,13 @@ export function runConformance(repoRoot: string): ConformanceReport {
     // of it is none. The oracle stops on the missing key rather than guessing
     // a mode, and a guess here would silently turn an unwritten case into a
     // passing one.
-    const generator = required(entry, "generator");
-    const mode = required(entry, "mode");
+    //
+    // The generator is resolved before the mode is looked at, which is the
+    // order the oracle reads them in: an entry naming an unknown generator and
+    // no mode has to fail on the generator, not on the missing key after it.
+    const generator = requiredName(entry, "generator");
     const [data, wanted] = generatedCase(generator);
+    const mode = required(entry, "mode");
     const source = `generated:${generator}`;
     try {
       const parsed = parseFrontmatter(data, source);

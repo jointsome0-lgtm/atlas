@@ -26,21 +26,31 @@
  * character is not folded into agreement — CPython switches to double quotes
  * there and the two spellings genuinely diverge (#133).
  *
- * That last sentence is enforced rather than hoped for. A delimiter around a
- * value that is itself a quote puts three quote characters in a row — `'"'`
- * for a double quote, `"'"` for an apostrophe — and blind substitution turns
- * both into `"""`, so a port naming the wrong one of the two would agree with
- * the oracle about a key it got wrong. A run that long is never punctuation
- * around an ordinary value, so the fold declines it and the two messages are
- * compared as they stand. Two quotes in a row are left alone: that is the
- * empty string, where `''` and `""` mean the same thing and nothing else.
+ * That last sentence is enforced rather than hoped for, and structurally
+ * rather than by a veto over the whole message. Both delimiters are matched
+ * together with the value between them, and the value may not contain a quote
+ * of either kind. So `'"'` and `"'"` — the two spellings a port could confuse
+ * — both fail to match and are compared as they stand, which is the point:
+ * substituting blindly would turn both into `"""` and let a port that named
+ * the wrong character agree with the oracle about a value it got wrong. `''`
+ * still folds, because the empty string is the one value where `''` and `""`
+ * mean the same thing and nothing else.
+ *
+ * Matching the pair is also what keeps the fold out of the path. An earlier
+ * version rewrote every delimiter-looking apostrophe on its own, so a path
+ * that differed from the oracle's by exactly a quote character — `/x/'bad.fm`
+ * against `/x/"bad.fm` — folded into agreement with it. A path is not prose
+ * and it is not punctuation; it is the half of the diagnostic that is
+ * promised. Here the closing delimiter has to be there, delimiting, before the
+ * opening one moves, and a quote inside a path has nothing to close.
+ *
+ * The value class excluding both quote characters carries a second property
+ * worth naming: a fold can never reach across one delimiter to another, so two
+ * separate values in one message can never be run together.
  */
-const RENDERED_QUOTE = /['"]{3,}/;
+const DELIMITED = /(?<![\p{L}\p{N}_])'([^'"]*)'(?![\p{L}\p{N}_])/gu;
 
-export const foldQuotes = (text: string): string =>
-  RENDERED_QUOTE.test(text)
-    ? text
-    : text.replaceAll(/(?<![\p{L}\p{N}_])'|'(?![\p{L}\p{N}_])/gu, '"');
+export const foldQuotes = (text: string): string => text.replaceAll(DELIMITED, '"$1"');
 
 /**
  * A parser's own prose replaced by a marker, keeping everything in front of it.
@@ -56,6 +66,11 @@ export const foldQuotes = (text: string): string =>
  * alone would find it inside a path that happened to contain it and throw away
  * the line, the §-tag and the identity behind it — the half that is promised —
  * folding two unrelated diagnostics into one.
+ *
+ * `s` because a path may contain a newline: POSIX allows one, and without the
+ * flag the lead-in simply stops matching and two messages differing only in
+ * parser prose are reported as a divergence. The match stays greedy, so a path
+ * that contains the lead-in itself loses to the real one at the end.
  */
 export const foldParserProse = (text: string): string =>
-  text.replace(/^(.*:\d+: invalid JSON: ).*$/, "$1<parser prose>");
+  text.replace(/^(.*:\d+: invalid JSON: ).*$/s, "$1<parser prose>");
