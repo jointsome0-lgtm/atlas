@@ -79,7 +79,11 @@ export function isCalendarDate(value: string): boolean {
   const year = Number(day.slice(0, 4));
   const month = Number(day.slice(5, 7));
   const date = Number(day.slice(8, 10));
-  if (month < 1 || month > 12 || date < 1) return false;
+  // Year zero is a shape, not a day: the proleptic Gregorian calendar the
+  // oracle's `date.fromisoformat` implements starts at year 1, and the two
+  // implementations must refuse the same strings or a graph dated `0000-…`
+  // reads as an as-of here and as no as-of there (found by review, 2026-08-14).
+  if (year < 1 || month < 1 || month > 12 || date < 1) return false;
   const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
   const lengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   return date <= (lengths[month - 1] as number);

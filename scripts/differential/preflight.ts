@@ -27,7 +27,7 @@ import {
   runnerManifestErrors,
   schemaErrors,
 } from "../src/schema-registry.ts";
-import { SUPPORTED_KEYWORDS } from "../src/schema.ts";
+import { SUPPORTED_KEYWORDS, isCalendarDate } from "../src/schema.ts";
 import { AtlasReader, ReaderError } from "../src/reader.ts";
 import { compareCodePoint } from "../src/ordering.ts";
 
@@ -122,6 +122,9 @@ def run_op(root, op):
         return {"ok": [message.split(": ", 1)[0]
                        for message in validate_atlas._schema_errors(
                            op["value"], op["schema"], op["source"])]}
+    if name == "calendar_date":
+        return {"ok": [validate_atlas._is_calendar_date(value)
+                       for value in op["values"]]}
     if name == "vocabulary":
         return {"ok": [sorted(validate_atlas.SCHEMA_NAMES),
                        validate_atlas.CURATED_DIRS,
@@ -227,6 +230,8 @@ function runOp(root: string, op: Op): Result {
           op.source,
         ).map(sourceOnly),
       };
+    case "calendar_date":
+      return { ok: (op.values as string[]).map(isCalendarDate) };
     case "vocabulary":
       return {
         ok: [
@@ -269,6 +274,30 @@ const MULTILINE = (fault: string): string =>
   `{\n  "a": 1,\n  "b": [\n    2,\n    3\n  ],\n  ${fault}\n}\n`;
 
 const ROW = (id: string): string => `{"id":"${id}"}`;
+
+/** Every date string the two calendar implementations could disagree about. */
+const CALENDAR_PROBES: string[] = (() => {
+  const years = new Set<number>();
+  for (let year = 0; year <= 16; year += 1) years.add(year);
+  for (const year of [99, 100, 200, 400, 1600, 1700, 1900, 2000, 2026, 9999]) {
+    years.add(year);
+  }
+  const values: string[] = [];
+  const pad = (value: number, width: number): string =>
+    String(value).padStart(width, "0");
+  for (const year of [...years].sort((left, right) => left - right)) {
+    for (let month = 0; month <= 13; month += 1) {
+      for (const day of [0, 1, 28, 29, 30, 31, 32]) {
+        const stamp = `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+        values.push(stamp, `${stamp}T00:00:00Z`);
+      }
+    }
+  }
+  // Shapes the pattern gate lets through and the calendar still has to judge,
+  // plus two it must refuse before judging anything.
+  values.push("2026-07-16T23:59:59Z", "2026-07-16T24:00:00Z", "2026-7-16", "");
+  return values;
+})();
 
 const SCENARIOS: Scenario[] = [
   {
@@ -688,6 +717,16 @@ const SCENARIOS: Scenario[] = [
   {
     name: "the vocabulary itself",
     ops: [{ op: "vocabulary" }],
+  },
+  {
+    // The oracle asks `date.fromisoformat` and this port does the arithmetic,
+    // so the two agree only where the proleptic Gregorian calendar and a
+    // hand-written leap rule agree. That is nowhere worth guessing at: every
+    // year from 0000 to 0016 (where the rule's own edges are, and where the
+    // oracle's minimum year sits), every century boundary, and every month
+    // with its last valid day, the day after it, and day zero.
+    name: "every day the two calendars could disagree about",
+    ops: [{ op: "calendar_date", values: CALENDAR_PROBES }],
   },
   {
     name: "each complaint carries the source in front of it",

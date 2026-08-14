@@ -106,6 +106,19 @@ function dropEdge(graph: Dict, type: string, source: string, target: string): vo
   edgesOf(graph).splice(edgeIndexOf(graph, type, source, target), 1);
 }
 
+/** Two edges exchanged in place, for the orders `addEdge` will not produce. */
+function swapEdges(
+  graph: Dict,
+  left: (edge: Dict) => boolean,
+  right: (edge: Dict) => boolean,
+): void {
+  const edges = edgesOf(graph);
+  const here = edges.findIndex(left);
+  const there = edges.findIndex(right);
+  if (here < 0 || there < 0) throw new Error("no such pair of edges to swap");
+  [edges[here], edges[there]] = [edges[there] as Dict, edges[here] as Dict];
+}
+
 /**
  * §20.3's canonical identity order, spelled here so an inserted edge lands
  * where a real build would have put it.
@@ -248,6 +261,16 @@ interface Case {
   readonly name: string;
   readonly files: Readonly<Record<string, string>>;
   readonly expect: Expect;
+  /**
+   * Words the oracle must use about this case.
+   *
+   * `fires` only asks that *a* rule spoke, and a mutation can perfectly well
+   * draw a different one — a review found one case here doing exactly that.
+   * Where a mutation is close enough to another rule for that to be plausible,
+   * the case names the sentence it is about and stops being satisfiable by
+   * the neighbour.
+   */
+  readonly says: readonly string[];
 }
 
 const cases: Case[] = [];
@@ -256,6 +279,7 @@ function add(
   name: string,
   files: Record<string, unknown>,
   expect: Expect = "fires",
+  says: readonly string[] = [],
 ): void {
   const text: Record<string, string> = {};
   for (const [filename, value] of Object.entries(files)) {
@@ -265,7 +289,7 @@ function add(
     text[filename] =
       typeof value === "string" ? value : JSON.stringify(value, null, 1);
   }
-  cases.push({ name, files: text, expect });
+  cases.push({ name, files: text, expect, says });
 }
 
 /** One mutation of the base full graph, emitted on its own. */
@@ -273,10 +297,11 @@ function graph(
   name: string,
   mutate: (graph: Dict) => void,
   expect: Expect = "fires",
+  says: readonly string[] = [],
 ): void {
   const subject = clone();
   mutate(subject);
-  add(name, { "atlas-graph.json": subject }, expect);
+  add(name, { "atlas-graph.json": subject }, expect, says);
 }
 
 /** A full graph and its redacted sibling, each mutable in turn. */
@@ -312,10 +337,23 @@ graph("base: the demo emission is silent", () => {}, "clean");
 // so the schema's own spellings belong in this corpus: an enum and a closed
 // key set are rendered as *lists*, and no earlier harness had a case where a
 // list in a message held more than one member.
-// A rung off the ladder is also a rung with no evidence behind it, so this one
-// draws the §14.5 rule as well as the enum — which is the honest shape of the
-// two passes running side by side.
-graph("schema: a value outside its enum", (subject) => {
+// The enum has to be one no `oneOf` sits in front of, or the complaint folds
+// into a count of matching branches and the list is never printed at all —
+// which is what an earlier version of this case did, agreeing loudly about a
+// spelling it never reached. The sentence is named so it cannot happen again.
+graph(
+  "schema: a value outside its enum",
+  (subject) => {
+    nodeOf(subject, "concept:redis")["type"] = "mastery";
+  },
+  "fires",
+  ["value is outside allowed choices ["],
+);
+
+// A state value off its ladder, which the oracle folds into a `oneOf` count —
+// the same mutation, met by the other half of the schema layer, and the reason
+// the case above had to move.
+graph("schema: a value outside a folded enum", (subject) => {
   (stateOf(subject)["concept:redis"] as Dict)["exposure"] = "mastered";
 });
 
@@ -327,6 +365,7 @@ graph(
     subject["mastery"] = "high";
   },
   "quiet",
+  ["unknown property outside the closed key set ["],
 );
 
 graph(
@@ -397,6 +436,15 @@ graph("as-of: a node dated after it", (subject) => {
 // only way a kind dropped from that table shows up.
 graph("as-of: an artifact dated after it", (subject) => {
   nodeOf(subject, "artifact:demo-retry-script")["observed_at"] = "2026-07-11";
+});
+
+graph("as-of: a question dated after it", (subject) => {
+  nodeOf(subject, "question:demo-when-is-retry-safe")["created_at"] = "2026-07-11";
+});
+
+graph("as-of: a segment dated after it", (subject) => {
+  nodeOf(subject, "trail-segment:2026-07-10-retry-with-idempotency")["date"] =
+    "2026-07-11";
 });
 
 graph("as-of: dated state with no generated_at and no dated node", (subject) => {
@@ -623,6 +671,65 @@ graph("canonical: symmetric endpoints not sorted", (subject) => {
   edge["target"] = "concept:http-methods";
 });
 
+// The other symmetric type. Two members of one set are two chances to drop
+// one, and the sorted-endpoint rule reads the set rather than the type.
+graph("canonical: the second symmetric type unsorted", (subject) => {
+  addEdge(subject, {
+    source: "concept:rest-api",
+    target: "concept:http-methods",
+    type: "alternative_to",
+    provenance: ["concept:rest-api"],
+  });
+});
+
+// Two edges alike in type, source and target, separated only by the context
+// they hang off. The demo field has one route, so the second context has to be
+// a node of another kind and the rest of the complaints are the honest price
+// of that — the sentence this case is about is named so the price cannot be
+// mistaken for the goods.
+graph(
+  "canonical: two edges separated only by their context",
+  (subject) => {
+    const index = edgeIndexOf(
+      subject,
+      "suggested_next",
+      "concept:idempotency",
+      "concept:redis",
+    );
+    const edge = edgesOf(subject)[index] as Dict;
+    edgesOf(subject).splice(index, 0, {
+      ...edge,
+      context: "trail-segment:2026-07-10-retry-with-idempotency",
+    });
+  },
+  "fires",
+  ["are not in canonical identity order"],
+);
+
+// Two route roles alike in everything the identity key holds but the step:
+// the last element of that key, and the only shape in which it decides.
+graph(
+  "canonical: two route roles separated only by their step",
+  (subject) => {
+    for (const step of ["concept:idempotency", "concept:redis"]) {
+      addEdge(subject, {
+        source: "part:mdn-http-methods/idempotency",
+        target: "suggested-route:demo-backend-default",
+        type: "primary_for",
+        provenance: ["suggested-route:demo-backend-default"],
+        step,
+      });
+    }
+    swapEdges(
+      subject,
+      (edge) => edge["type"] === "primary_for" && edge["step"] === "concept:idempotency",
+      (edge) => edge["type"] === "primary_for" && edge["step"] === "concept:redis",
+    );
+  },
+  "fires",
+  ["are not in canonical identity order"],
+);
+
 graph("canonical: the same identity twice", (subject) => {
   addEdge(subject, {
     ...edgeOf(subject, "related_to", "concept:http-methods", "concept:rest-api"),
@@ -678,6 +785,33 @@ graph(
   },
   "clean",
 );
+
+// A question role legally has no step (§11.2), so the disjointness sentence
+// has to name an absence — which the two implementations spell differently.
+// Recorded as #133.
+graph("canonical: one material in both roles at no step", (subject) => {
+  addEdge(subject, {
+    ...edgeOf(
+      subject,
+      "primary_for",
+      "part:mdn-http-methods/idempotency",
+      "question:demo-when-is-retry-safe",
+    ),
+    type: "supporting_for",
+  });
+});
+
+// CPython holds a boolean to be an integer, so the oracle folds this order into
+// 1 and goes on to judge the route; the port finds a boolean where a number
+// belongs and stops. Both refuse the graph. Recorded as #131.
+graph("canonical: a step order spelled as a boolean", (subject) => {
+  edgeOf(
+    subject,
+    "step_of_route",
+    "concept:redis",
+    "suggested-route:demo-backend-default",
+  )["order"] = true;
+});
 
 graph("canonical: one material both primary and supporting", (subject) => {
   for (const type of ["primary_for", "supporting_for"]) {
@@ -846,6 +980,17 @@ graph("roles: a question role the citing depth folds the other way", (subject) =
   nodeOf(subject, "encounter:demo-mdn-idempotency-read")["depth"] = "read";
 });
 
+// The other depth that folds to primary. The base carries `applied`, so a
+// reading that admitted only that one would be indistinguishable from this
+// one everywhere except here (§11.2).
+graph(
+  "roles: a question role cited at the deepest depth",
+  (subject) => {
+    nodeOf(subject, "encounter:demo-mdn-idempotency-read")["depth"] = "taught";
+  },
+  "clean",
+);
+
 graph("roles: a question role naming no deriving encounter", (subject) => {
   edgeOf(
     subject,
@@ -922,6 +1067,13 @@ graph("roles: a backed supporting_for whose provenance omits the encounter", (su
 
 graph("projections: a key that is not a zone id", (subject) => {
   subject["projections"] = { "concept:rest-api": "torso" };
+});
+
+// A key is any string, so one holding the quote character reaches the two
+// spellings of the same sentence. Recorded as #133, and only visible since the
+// harness's quote fold started declining messages it cannot fold honestly.
+graph("projections: a key holding the quote character", (subject) => {
+  subject["projections"] = { 'zone:"bad': "torso" };
 });
 
 /** The demo graph carries no zone, so the §32.1 arm needs one made. */
@@ -1185,7 +1337,14 @@ const theirs = JSON.parse(run.stdout.toString()) as Array<{
 // Python quotes a value with apostrophes where JSON uses double quotes; the
 // §-tag and the ids around it are the rule's identity and are compared as
 // they stand.
-const foldQuotes = (text: string): string => text.replaceAll("'", '"');
+//
+// A message already carrying a double quote is left alone. There the
+// apostrophes are no longer unambiguously delimiters, and folding them would
+// turn two genuinely different sentences into one — an independent review
+// found exactly that hiding a divergence, so the fold now declines the cases
+// it cannot do honestly and they surface instead.
+const foldQuotes = (text: string): string =>
+  text.includes('"') ? text : text.replaceAll("'", '"');
 
 /**
  * A schema complaint, told apart from a rule's by where it is placed.
@@ -1206,11 +1365,22 @@ const KNOWN: ReadonlyMap<string, string> = new Map([
   // schema refuses it as a non-integer; the port reads the value and the rule
   // refuses it as a wrong count. Recorded as #132.
   ["redacted: a withheld state count spelled as a float", "#132"],
+  // A value inside a diagnostic is spelled as JSON here and as CPython `repr`
+  // there: `null` for `None`, and double quotes where a value already holds
+  // one. §24.4 makes the source a contract and the prose after it not one.
+  ["canonical: one material in both roles at no step", "#133"],
+  ["projections: a key holding the quote character", "#133"],
+  // CPython holds a boolean to be an integer, so the oracle keeps judging a
+  // route this port has already refused. Recorded as #131.
+  ["canonical: a step order spelled as a boolean", "#131"],
 ]);
 
 let diverged = 0;
 let recorded = 0;
 let vacuous = 0;
+// A recorded divergence that quietly stopped diverging is a stale note
+// about the port, and the next reader would believe it.
+const stillDiverging = new Set<string>();
 
 cases.forEach((item, index) => {
   const root = roots[index] as string;
@@ -1245,6 +1415,7 @@ cases.forEach((item, index) => {
   if (mineText !== theirsText) {
     if (KNOWN.has(item.name)) {
       recorded += 1;
+      stillDiverging.add(item.name);
       return;
     }
     diverged += 1;
@@ -1263,16 +1434,28 @@ cases.forEach((item, index) => {
       : item.expect === "quiet"
         ? rules.length > 0 || said.length === 0
         : rules.length === 0;
-  if (wrong) {
+  const unsaid = item.says.filter(
+    (phrase) => !said.some((message) => message.includes(phrase)),
+  );
+  if (wrong || unsaid.length > 0) {
     vacuous += 1;
     console.error(
-      `graph-rules: ${item.name}: expected ${item.expect}, got ` +
-        `${rules.length} rule and ${said.length - rules.length} schema ` +
-        "diagnostic(s)",
+      unsaid.length > 0
+        ? `graph-rules: ${item.name}: the oracle never said ${unsaid.join(", ")}`
+        : `graph-rules: ${item.name}: expected ${item.expect}, got ` +
+            `${rules.length} rule and ${said.length - rules.length} schema ` +
+            "diagnostic(s)",
     );
     for (const message of said) console.error(`  ${message.replaceAll(workspace, "…")}`);
   }
 });
+
+const stale = [...KNOWN.keys()].filter((name) => !stillDiverging.has(name));
+for (const name of stale) {
+  console.error(
+    `graph-rules: ${name}: recorded as a divergence and no longer one`,
+  );
+}
 
 fs.rmSync(workspace, { recursive: true, force: true });
 
@@ -1281,4 +1464,4 @@ console.log(
   `graph-rules [TZ=${zone}]: ${cases.length} cases compared, ` +
     `${diverged} unexplained, ${recorded} recorded, ${vacuous} vacuous`,
 );
-process.exit(diverged === 0 && vacuous === 0 ? 0 : 1);
+process.exit(diverged === 0 && vacuous === 0 && stale.length === 0 ? 0 : 1);
