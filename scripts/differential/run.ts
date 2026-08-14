@@ -32,6 +32,7 @@ const HARNESSES: readonly Harness[] = [
   { file: "scripts/differential/frontmatter.ts", zones: ["UTC"] },
   { file: "scripts/differential/posix.ts", zones: ["UTC"] },
   { file: "scripts/differential/reader.ts", zones: ["UTC"] },
+  { file: "scripts/differential/instance.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
