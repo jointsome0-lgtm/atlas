@@ -37,6 +37,9 @@ const HARNESSES: readonly Harness[] = [
   // for the same reason the calendar harness does.
   { file: "scripts/differential/domain.ts", zones: ZONES },
   { file: "scripts/differential/preflight.ts", zones: ["UTC"] },
+  // Freshness is recomputed inside the review gate, so the §-rule joins run
+  // the hostile-timezone matrix too.
+  { file: "scripts/differential/checks.ts", zones: ZONES },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
