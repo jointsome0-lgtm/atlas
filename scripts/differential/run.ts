@@ -50,6 +50,8 @@ const HARNESSES: readonly Harness[] = [
   // a quarter of a megabyte several times over. Running it six times would
   // buy a repeat of an answer that cannot depend on the clock.
   { file: "scripts/differential/conformance.ts", zones: ["UTC"] },
+  // The §32.6 closure is a fixpoint over ids and fields, with no date in it.
+  { file: "scripts/differential/redact.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
