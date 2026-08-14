@@ -11,7 +11,6 @@
 
 import fs from "node:fs";
 import { constants as C } from "node:fs";
-import { resolve } from "node:path";
 
 import {
   AT_SYMLINK_NOFOLLOW,
@@ -25,6 +24,7 @@ import {
   statat,
 } from "./posix.ts";
 import { compareCodePoint } from "./ordering.ts";
+import { abspath } from "./paths.ts";
 
 export const ReasonCode = {
   InvalidRoot: "invalid-root",
@@ -114,7 +114,7 @@ export function relativeParts(relativePath: string): string[] {
  */
 function nameAsText(bytes: Uint8Array, parts: readonly string[]): string {
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
     const lossy = new TextDecoder().decode(bytes);
     throw new ReaderError(ReasonCode.UnsafePath, [...parts, lossy].join("/"));
@@ -191,7 +191,11 @@ export class AtlasReader {
   constructor(root: string) {
     let absolute: string;
     try {
-      absolute = resolve(root);
+      // `os.path.abspath`, not `path.resolve`: the two differ on a root
+      // spelled with exactly two leading slashes, which POSIX and CPython
+      // keep and Node collapses. That string is what every diagnostic out of
+      // this reader names, so collapsing it would rename the caller's root.
+      absolute = abspath(root);
     } catch {
       throw new ReaderError(ReasonCode.InvalidRoot);
     }

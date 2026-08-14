@@ -57,6 +57,11 @@ const HARNESSES: readonly Harness[] = [
   // The builder folds freshness onto the graph it emits, so its whole-graph
   // comparison meets the hostile-timezone matrix as well.
   { file: "scripts/differential/build.ts", zones: ZONES },
+  // The command line runs two programs per case, which is expensive, and adds
+  // nothing the clock can reach: argument grammar, path resolution, the lock
+  // and what a run leaves behind. The fold underneath it already meets the
+  // matrix on the line above.
+  { file: "scripts/differential/build-cli.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);

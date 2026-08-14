@@ -77,7 +77,7 @@ export function* readJsonl(path: ScannedFile): Generator<JournalRow> {
     }
     let text: string;
     try {
-      text = new TextDecoder("utf-8", { fatal: true }).decode(line.raw);
+      text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(line.raw);
     } catch {
       throw new JsonInputError(
         `${path}:${line.number}: input is not strict UTF-8`,
@@ -105,13 +105,15 @@ interface JournalLine {
   readonly oversized: boolean;
 }
 
-/** Yield rows without retaining more than the §25.8 ceiling plus one. */
+/**
+ * The boundary validator's row reader: a BOM refuses the file, and so does a
+ * file the reader will not open.
+ *
+ * §25.8 scopes UTF-8/LF/no-BOM to Atlas-authored files, and the preflight pass
+ * is where that is enforced — one bad byte at the front and the journal is not
+ * read at all.
+ */
 export function* journalLines(path: ScannedFile): Generator<JournalLine> {
-  let number = 1;
-  let row = new Uint8Array(0);
-  let discarding = false;
-  let first = true;
-
   let fd: number;
   try {
     fd = path.open();
@@ -119,6 +121,34 @@ export function* journalLines(path: ScannedFile): Generator<JournalLine> {
     if (error instanceof ReaderError) throw new JsonInputError(error.message);
     throw error;
   }
+  yield* readLines(fd, path, true);
+}
+
+/**
+ * The builder's row reader, which is deliberately not the one above.
+ *
+ * The oracle carries these as two functions, and the difference is not an
+ * oversight on either side: the boundary refuses a BOM'd journal outright,
+ * while the builder has no BOM check at all and meets those bytes as an
+ * ordinary row that fails to parse — reported at its line, after which the
+ * rest of the file is still read. Collapsing the two would make a stray BOM
+ * on line 1 silently swallow every row after it. It also lets a ReaderError
+ * out unwrapped, because the builder answers that one itself.
+ */
+export function* builderJournalLines(path: ScannedFile): Generator<JournalLine> {
+  yield* readLines(path.open(), path, false);
+}
+
+/** Yield rows without retaining more than the §25.8 ceiling plus one. */
+function* readLines(
+  fd: number,
+  path: ScannedFile,
+  refuseBom: boolean,
+): Generator<JournalLine> {
+  let number = 1;
+  let row = new Uint8Array(0);
+  let discarding = false;
+  let first = true;
 
   const buffer = new Uint8Array(READ_BYTES);
   try {
@@ -128,7 +158,12 @@ export function* journalLines(path: ScannedFile): Generator<JournalLine> {
       const chunk = buffer.subarray(0, read);
       if (first) {
         first = false;
-        if (chunk[0] === 0xef && chunk[1] === 0xbb && chunk[2] === 0xbf) {
+        if (
+          refuseBom &&
+          chunk[0] === 0xef &&
+          chunk[1] === 0xbb &&
+          chunk[2] === 0xbf
+        ) {
           throw new JsonInputError(`${path}:1: UTF-8 BOM is unsupported`);
         }
       }

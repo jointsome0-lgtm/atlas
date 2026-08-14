@@ -484,6 +484,115 @@ add(
   { silent: true, counts: { nodes: 19, state: 6 } },
 );
 
+// A refused row is one row refused, and the reader goes on to the next. Every
+// malformed-row case above this one puts its bad row last, where a reader that
+// gave up on the whole file would look exactly like one that did not — which
+// is how the builder came to share the boundary's BOM check and silently drop
+// every row after a stray BOM on line 1.
+add(
+  "a-refused-row-does-not-end-the-file",
+  {
+    "state/questions.jsonl": "{not json at all\n" + QUESTIONS,
+  },
+  { says: ["invalid JSONL row"], counts: { nodes: 19, state: 6 } },
+);
+
+add(
+  "a-BOM-is-a-refused-row-and-not-a-refused-journal",
+  {
+    // §25.8 scopes no-BOM to the boundary reader. The builder has no BOM check
+    // at all: those three bytes are the front of a row that will not parse,
+    // reported at line 1, after which line 2 is read like any other.
+    "state/questions.jsonl": `﻿${row({
+      id: "question:extra",
+      type: "question",
+      text: "Does this row survive? (Vera Example)",
+      created_at: "2026-01-03",
+      pulls: ["concept:gamma"],
+      source: { artifact: "artifact:2026-01-03-001" },
+    })}${QUESTIONS}`,
+  },
+  {
+    says: ["invalid JSONL row"],
+    absent: ["question:extra"],
+    counts: { nodes: 19, state: 6 },
+  },
+);
+
+add(
+  "a-duplicate-row-spanning-the-rotation-boundary",
+  // §20.1 makes the rotated files and the tail one journal, so the byte the
+  // dedup set remembers has to be remembered across the file boundary too.
+  { "state/questions/2026.jsonl": QUESTIONS },
+  { warns: ["byte-identical duplicate row folded once (§20.1)"] },
+);
+
+add(
+  "the-fold-position-counts-through-the-rotation-boundary",
+  // §20.1 counts position through the whole concatenation, not per file. Both
+  // rows below are line 1 of their own file and the same day, so a fold that
+  // read the physical line number would call them equal — and §14.5's
+  // explained-then-reviewed rule turns equality into `taught`.
+  {
+    "state/artifacts/2026.jsonl": row({
+      id: "artifact:2026-01-06-001",
+      type: "note",
+      path: "vera-example.md",
+      observed_at: "2026-01-06",
+      summary: "Reviewed the beta write-up (Vera Example).",
+      touches: [],
+      supports_state_updates: ["concept:beta"],
+      evidence_strength: "reviewed",
+    }),
+    "state/artifacts.jsonl":
+      row({
+        id: "artifact:2026-01-06-002",
+        type: "note",
+        path: "vera-example.md",
+        observed_at: "2026-01-06",
+        summary: "Explained beta to someone (Vera Example).",
+        touches: [],
+        supports_state_updates: ["concept:beta"],
+        evidence_strength: "explained",
+      }) + ARTIFACTS,
+  },
+  { silent: true, counts: { nodes: 21, state: 6 } },
+);
+
+// Two shapes CPython spells with `repr` and this port spells as JSON. The
+// quote fold reaches a bare string and stops there: it has nothing to say
+// about `None` against `null`, or about the space CPython puts after a key.
+add(
+  "a-material-role-attached-to-no-step-at-all",
+  {
+    "suggested-routes/default.md": ROUTE.replace(
+      "  - step: concept:alpha\n    primary_materials:",
+      "  - primary_materials:",
+    ),
+  },
+  { says: ["is not a member of steps (§9.4)"] },
+);
+
+add(
+  "an-encounter-context-that-is-not-one",
+  {
+    "state/encounters.jsonl": ENCOUNTERS.replace(
+      '"context":{"question":"question:why","artifact":"artifact:2026-01-03-001"}',
+      '"context":{"question":0}',
+    ),
+  },
+  { says: ["is not a §9.7 context object"] },
+);
+
+add(
+  "a-route-carrying-the-plan-it-came-from",
+  { "suggested-routes/default.md": ROUTE.replace(
+    "status: available",
+    "status: available\nsource_plan: plan:learn-basics",
+  ) },
+  { warns: ["source_plan", "the ref dangles in this build"] },
+);
+
 // --- §34.4 retired ids -----------------------------------------------------
 
 add(
@@ -1030,6 +1139,30 @@ add(
   { root: `${ROOT}/fixtures/demo-instance`, asOf: "2026-01-01" },
 );
 
+// The same tree named through a root POSIX gives a meaning of its own. Exactly
+// two leading slashes are an implementation-defined root and CPython keeps
+// them; `path.resolve` throws them away, which would rename the caller's root
+// and, here, strip a repository prefix that no longer matches. One slash is
+// the difference between an origin the reader gave and one it invented.
+add(
+  "the-demo-instance-fixture-under-a-doubled-root",
+  {},
+  { warns: ["§34.4"] },
+  { root: `/${ROOT}/fixtures/demo-instance` },
+);
+
+// The command line refuses an as-of that is not a date before a build starts,
+// so this can only be reached by calling `build` directly — which the harnesses
+// and any future caller do. Both sides refuse; they name the refusal
+// differently, and the sentence after it differently again.
+add(
+  "an-as-of-that-is-not-a-date-at-all",
+  {},
+  // Whatever each side calls the failure, both name the value they refused.
+  { raises: '"x"' },
+  { asOf: "x" },
+);
+
 // ---------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------
@@ -1073,7 +1206,21 @@ interface OracleReport {
 const theirs = JSON.parse(run.stdout.toString()) as OracleReport[];
 
 /** Divergences that are understood, each pinned by the issue that holds it. */
-const KNOWN: ReadonlyMap<string, string> = new Map([]);
+const KNOWN: ReadonlyMap<string, string> = new Map([
+  // A value inside a diagnostic is spelled as JSON here and as CPython `repr`
+  // there. The quote fold reaches a bare string and no further: it has nothing
+  // to say about `None` against `null`, or about the space CPython puts after
+  // a key inside a mapping. §24.4 makes the place and the reason the contract
+  // and the punctuation around a value not one. Recorded as #133.
+  ["a-material-role-attached-to-no-step-at-all", "#133"],
+  ["an-encounter-context-that-is-not-one", "#133"],
+  // A refusal that crosses the language boundary: CPython raises `ValueError`
+  // out of `date.fromisoformat` and this port raises `CalendarError` out of its
+  // own calendar, with each one's own sentence. The class and the English are
+  // not the contract; the CLI refuses this argument before a build starts, so
+  // only a direct caller can reach it. Recorded as #134.
+  ["an-as-of-that-is-not-a-date-at-all", "#134"],
+]);
 
 let diverged = 0;
 let recorded = 0;
@@ -1138,6 +1285,11 @@ cases.forEach((item, index) => {
             `carry ${JSON.stringify(item.raises ?? "")}`,
         );
       }
+      return;
+    }
+    if (KNOWN.has(item.name)) {
+      recorded += 1;
+      stillDiverging.add(item.name);
       return;
     }
     console.error(

@@ -80,7 +80,7 @@ export function readJsonFile(file: ScannedFile, delivered = false): JsonValue {
       `${file}:${lineAt(data, invalid)}: input is not strict UTF-8`,
     );
   }
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(data);
+  const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(data);
 
   try {
     return jsonLoads(text);

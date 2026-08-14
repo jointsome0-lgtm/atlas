@@ -474,7 +474,7 @@ function decodeJson(
   }
   let text: string;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(body);
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body);
   } catch {
     fail(ReasonCode.InvalidUtf8, display);
   }
@@ -1177,7 +1177,7 @@ export class AtlasInstance {
     closeQuietly(opened.parentFd);
 
     const rows: Array<[number, unknown]> = [];
-    const decoder = new TextDecoder("utf-8", { fatal: true });
+    const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
     let number = 1;
     let row: number[] = [];
     let discarding = false;

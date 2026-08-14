@@ -146,7 +146,7 @@ export function firstInvalidUtf8Offset(data: Uint8Array): number {
   return -1;
 }
 
-const DECODER = new TextDecoder("utf-8", { fatal: true });
+const DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 function decodeStrict(data: Uint8Array): string {
   return DECODER.decode(data);

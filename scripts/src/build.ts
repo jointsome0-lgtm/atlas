@@ -58,7 +58,6 @@ import {
   NODE_TYPES,
   PART_ID_RE,
   PROPOSERS,
-  PROPOSERS as _PROPOSERS,
   QUESTION_DEFAULT_STATUS,
   REGION_PREFIXES,
   REGISTRY_FIELDS,
@@ -77,13 +76,12 @@ import { JOURNAL_ROW_BYTES } from "./instance.ts";
 import { ReaderError, ReasonCode, AtlasReader } from "./reader.ts";
 import type { ScannedFile } from "./reader.ts";
 import { frontmatterBody, parseFrontmatter } from "./frontmatter.ts";
-import { journalLines } from "./journal.ts";
+import { builderJournalLines } from "./journal.ts";
 import { compareCodePoint, sortedByCodePoint } from "./ordering.ts";
+import { splitPath } from "./paths.ts";
 import { show } from "./checks.ts";
 import { CalendarError, parseDate } from "./calendar.ts";
 import { realpathSync } from "node:fs";
-
-void _PROPOSERS;
 
 /**
  * A value inside a diagnostic, spelled the way the rest of this port spells
@@ -132,8 +130,16 @@ interface DocumentPath {
  */
 const REPO_ROOT = realpathSync(`${import.meta.dir}/../..`);
 
-function relativeToRoot(path: string): string {
+/** `PurePosixPath.anchor` for an absolute path: `//` only when exactly two. */
+const anchorOf = (path: string): string =>
+  /^\/\/(?!\/)/.test(path) ? "//" : "/";
+
+export function relativeToRoot(path: string): string {
   if (!path.startsWith("/")) return path;
+  // `PurePosixPath.parts` leads with the anchor, and `//x` anchors at `//`
+  // while `/x` anchors at `/`. Two paths with different anchors are never
+  // relative to one another, however much of the rest they share.
+  if (anchorOf(path) !== anchorOf(REPO_ROOT)) return path;
   const rootParts = REPO_ROOT.split("/").filter((part) => part !== "");
   const parts = path.split("/").filter((part) => part !== "");
   if (parts.length < rootParts.length) return path;
@@ -168,30 +174,6 @@ const CURATED: ReadonlyArray<readonly [string, string]> = [
 
 const isDict = (value: unknown): value is Dict =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-
-/**
- * `PurePosixPath(path).name` and `.parent`, for the one argument this takes.
- *
- * Only what the caller can hand in is covered: an absolute or relative
- * directory path, possibly with trailing slashes. `..` is left alone exactly
- * as `PurePosixPath` leaves it — this resolves nothing, it only splits.
- */
-function splitPath(path: string): { name: string; parent: string } {
-  // Exactly two leading slashes are their own root in POSIX and in CPython;
-  // one, or three or more, collapse to `/`.
-  const leading = /^\/*/.exec(path)?.[0].length ?? 0;
-  const root = leading === 0 ? "" : leading === 2 ? "//" : "/";
-  const parts = path.slice(leading).split("/").filter((part) => part !== "" && part !== ".");
-  const name = parts.length === 0 ? "" : (parts[parts.length - 1] as string);
-  const rest = parts.slice(0, -1);
-  const parent =
-    root === ""
-      ? rest.length === 0
-        ? "."
-        : rest.join("/")
-      : `${root}${rest.join("/")}`;
-  return { name, parent };
-}
 
 /**
  * A payload with its absent fields dropped, in the order they were written.
@@ -1217,7 +1199,7 @@ export function build(curated: string, asOf: string | null = null): BuildResult 
     const seenRows = new Set<string>();
     for (const path of paths) {
       try {
-        for (const line of journalLines(path)) {
+        for (const line of builderJournalLines(path)) {
           const number = line.number;
           const raw = line.raw;
           if (line.oversized) {
@@ -1256,7 +1238,7 @@ export function build(curated: string, asOf: string | null = null): BuildResult 
           }
           let row: unknown;
           try {
-            row = parseStrict(new TextDecoder("utf-8", { fatal: true }).decode(raw));
+            row = parseStrict(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw));
           } catch (error) {
             // The oracle splits this two ways: malformed text is a
             // `JSONDecodeError` and reads as a bad row, while a duplicate key
@@ -1342,15 +1324,12 @@ export function build(curated: string, asOf: string | null = null): BuildResult 
           yield { origin, row, date: rowDate };
         }
       } catch (error) {
-        if (error instanceof ReaderError) {
-          errors.push(error.message);
-          continue;
-        }
-        if (error instanceof Error && error.name === "JsonInputError") {
-          errors.push(error.message);
-          continue;
-        }
-        throw error;
+        // The builder's row reader raises exactly one thing — the reader
+        // refusing to open the file — and the rest of the journal's files are
+        // still read. Anything else is not this pass's to answer for.
+        if (!(error instanceof ReaderError)) throw error;
+        errors.push(error.message);
+        continue;
       }
     }
   }
