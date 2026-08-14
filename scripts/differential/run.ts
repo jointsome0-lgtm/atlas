@@ -52,6 +52,8 @@ const HARNESSES: readonly Harness[] = [
   { file: "scripts/differential/conformance.ts", zones: ["UTC"] },
   // The §32.6 closure is a fixpoint over ids and fields, with no date in it.
   { file: "scripts/differential/redact.ts", zones: ["UTC"] },
+  // Durability is about descriptors and renames; the clock has no part in it.
+  { file: "scripts/differential/emit.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
