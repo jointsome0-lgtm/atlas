@@ -159,8 +159,16 @@ describe("what the writer will accept as a JSON value", () => {
   });
 
   test("refuses a value nested deeper than the reader accepts", () => {
-    const nest = (n: number): unknown =>
-      n === 0 ? 0 : [nest(n - 1)] as unknown;
+    // Built by iteration, not recursion: a recursive builder overflows the
+    // stack while *constructing* the deep case, which looks exactly like the
+    // failure this test is asserting against and hides whether the writer
+    // refused at all. It passed here and failed on a CI runner with a smaller
+    // stack.
+    const nest = (n: number): unknown => {
+      let value: unknown = 0;
+      for (let i = 0; i < n; i += 1) value = [value];
+      return value;
+    };
     // Without a bound the writer emits documents its own reader refuses, and
     // past ~12,000 dies with a bare RangeError instead of a diagnostic.
     expect(() => stringifyRow(nest(MAX_JSON_DEPTH + 1))).toThrow(
