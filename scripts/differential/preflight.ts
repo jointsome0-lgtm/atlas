@@ -30,6 +30,7 @@ import {
 import { SUPPORTED_KEYWORDS, isCalendarDate } from "../src/schema.ts";
 import { AtlasReader, ReaderError } from "../src/reader.ts";
 import { compareCodePoint } from "../src/ordering.ts";
+import { foldParserProse } from "./spelling.ts";
 
 interface SetupEntry {
   readonly kind: "dir" | "file";
@@ -1010,10 +1011,6 @@ SCENARIOS.push({
 // here rather than back-ported, which would mean carrying CPython's wording
 // and its punctuation into a codebase that has neither.
 const PROSE: ReadonlyArray<{ from: RegExp; to: string }> = [
-  // CPython names the token it wanted ("Expecting ',' delimiter"); this port
-  // names the rule that was broken. The line in front of both is identical in
-  // every case the corpus covers, and that is the half a consumer reads.
-  { from: /invalid JSON: .*$/, to: "invalid JSON: <parser prose>" },
   // Python's repr quotes a name with apostrophes and JavaScript with double
   // quotes. The keyword itself is kept, because which keyword is the finding.
   {
@@ -1024,7 +1021,7 @@ const PROSE: ReadonlyArray<{ from: RegExp; to: string }> = [
 
 /** Fold the run's own temporary root away; the path inside it is the contract. */
 const fold = (text: string, root: string): string => {
-  let folded = text.split(root).join("<root>");
+  let folded = foldParserProse(text.split(root).join("<root>"));
   for (const rule of PROSE) folded = folded.replace(rule.from, rule.to);
   return folded;
 };

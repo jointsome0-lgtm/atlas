@@ -23,6 +23,7 @@ import { emittedGraphErrors } from "../src/graph-rules.ts";
 import { readJsonFile } from "../src/json-input.ts";
 import { AtlasReader } from "../src/reader.ts";
 import { loadRegistry, schemaErrors } from "../src/schema-registry.ts";
+import { foldQuotes } from "./spelling.ts";
 
 type Dict = Record<string, unknown>;
 
@@ -1333,18 +1334,6 @@ const theirs = JSON.parse(run.stdout.toString()) as Array<{
   warnings?: string[];
   raised?: string;
 }>;
-
-// Python quotes a value with apostrophes where JSON uses double quotes; the
-// §-tag and the ids around it are the rule's identity and are compared as
-// they stand.
-//
-// A message already carrying a double quote is left alone. There the
-// apostrophes are no longer unambiguously delimiters, and folding them would
-// turn two genuinely different sentences into one — an independent review
-// found exactly that hiding a divergence, so the fold now declines the cases
-// it cannot do honestly and they surface instead.
-const foldQuotes = (text: string): string =>
-  text.includes('"') ? text : text.replaceAll("'", '"');
 
 /**
  * A schema complaint, told apart from a rule's by where it is placed.

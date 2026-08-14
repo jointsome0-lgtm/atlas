@@ -266,10 +266,17 @@ export class SchemaValidator {
    * A definition is not a schema on its own: lift it out and every `#/$defs/…`
    * inside it stops resolving, so the sub-schema is the starting point and the
    * root stays the resolution context.
+   *
+   * `path` names where the instance sits in its container, so a record lifted
+   * out of an envelope still says `$.records[3].id` and the reader can find it.
    */
-  validateAgainst(instance: unknown, schema: unknown): SchemaError[] {
+  validateAgainst(
+    instance: unknown,
+    schema: unknown,
+    path = "$",
+  ): SchemaError[] {
     const errors: SchemaError[] = [];
-    this.check(instance, schema, "$", errors);
+    this.check(instance, schema, path, errors);
     return errors;
   }
 

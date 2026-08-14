@@ -28,6 +28,7 @@ import {
   userSelfProposalErrors,
 } from "../src/checks.ts";
 import { jsonLoads } from "../src/json-input.ts";
+import { foldQuotes } from "./spelling.ts";
 
 const SCRIPTS = `${import.meta.dir}/..`;
 
@@ -1168,11 +1169,6 @@ add("snapshot scales: a state key that looks like an array index", "snapshot_sta
 // ---------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------
-
-// The §-tag in a message is the rule's identity and is compared; the English
-// around it is not a contract, and the two sides quote a value differently —
-// Python's repr uses apostrophes where JSON uses double quotes.
-const foldQuotes = (text: string): string => text.replaceAll("'", '"');
 
 function normalise(value: unknown): unknown {
   if (typeof value === "string") return foldQuotes(value);

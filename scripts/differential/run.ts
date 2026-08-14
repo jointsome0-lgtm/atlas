@@ -43,6 +43,8 @@ const HARNESSES: readonly Harness[] = [
   // The emitted-graph pass runs the review gate over whole graphs, so its
   // freshness arithmetic meets the same matrix.
   { file: "scripts/differential/graph-rules.ts", zones: ZONES },
+  // The whole-instance driver reaches every pass, review gate included.
+  { file: "scripts/differential/validate-instance.ts", zones: ZONES },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
