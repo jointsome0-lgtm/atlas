@@ -5,9 +5,11 @@
   "scripts": {
     "build": "bun scripts/build_viewer.ts",
     "build:check": "bun scripts/build_viewer.ts --check",
+    "build:native": "cargo build --release --offline --manifest-path native/atlas-posix/Cargo.toml",
     "typecheck": "bunx --bun tsc --noEmit && bunx --bun tsc --noEmit -p tsconfig.scripts.json",
     "test": "bun test scripts/src",
-    "differential": "bun scripts/differential/run.ts"
+    "differential": "bun scripts/differential/run.ts",
+    "verify": "bun run build:native && bun run typecheck && bun run build:check && bun run test && bun run differential"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",

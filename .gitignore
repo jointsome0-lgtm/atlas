@@ -27,3 +27,7 @@ secrets/
 .atlas-lock
 __pycache__/
 node_modules/
+
+# Rust build products for the POSIX boundary (native/). The library is built
+# from source by 'bun run build:native'; nothing compiled is tracked.
+native/*/target/

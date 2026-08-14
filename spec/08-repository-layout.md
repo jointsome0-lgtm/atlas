@@ -82,6 +82,10 @@ atlas/
       contract.ts # the viewer's source of truth
       viewer.ts
 
+  native/         # the §25.8 filesystem boundary — one crate per
+                  # compiled component, source beside its build
+                  # recipe. Nothing here knows an Atlas kind.
+
   scripts/        # the runnable surface — one entry point per
                   # flow: plan import (§12, §21), intake
                   # processing (§33.2), artifact observation

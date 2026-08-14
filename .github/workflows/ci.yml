@@ -16,6 +16,20 @@ jobs:
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
+      # rust-toolchain.toml pins the compiler §25.8 records; rustup honours it,
+      # so the boundary CI builds is the one the floor names.
+      - name: Build the POSIX boundary from source
+        run: bun run build:native
+      - name: Check the boundary reaches no further than it claims
+        run: |
+          export LC_ALL=C
+          undefined=$(nm -D -u native/atlas-posix/target/release/libatlas_posix.so | awk '{print $2}' | grep -vE '^(__cxa_finalize|__gmon_start__|_ITM_(de)?registerTMCloneTable|memcpy|memset)$' | sort)
+          expected=$(printf '%s\n' __errno_location close closedir fdopendir mkdirat openat readdir renameat statx unlinkat | sort)
+          if [ "$undefined" != "$expected" ]; then
+            echo "the boundary's calls changed; §25.8 says this list is its whole reach" >&2
+            diff <(echo "$expected") <(echo "$undefined") >&2 || true
+            exit 1
+          fi
       - name: Typecheck the viewer and script sources
         run: bun run typecheck
       - name: Check the committed viewer build matches its source

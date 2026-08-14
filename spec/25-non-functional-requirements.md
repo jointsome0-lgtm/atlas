@@ -121,10 +121,16 @@ The environment and limits §27 tests against (#23, #42); any value changes only
 ```text
 Runtime: TypeScript executed by Bun 1.3.14 — the CI pin and the
 supported floor; entry points stay dependency-free (§20).
-Platform: Linux and macOS. Windows is a non-goal — the
-root-bound directory operations below have no native equivalent
-there, and a platform that cannot hold §24.2's containment is
-not one Atlas claims.
+Platform: the platforms the boundary below has a registered
+target for, today Linux alone; macOS is intended and becomes
+supported in the change that registers its triple, not before.
+Since nothing falls back to a path, an unbuilt target is a
+refusal at startup rather than a slower route — so a platform
+listed here and a platform Atlas runs on are the same list, and
+this line is the one that has to move. Windows is a non-goal —
+the root-bound directory operations below have no native
+equivalent there, and a platform that cannot hold §24.2's
+containment is not one Atlas claims.
 Filesystem boundary: one compiled component owns the operations
 whose containment cannot be expressed on a path — root-bound
 no-follow opens, directory reads from a pinned descriptor,
@@ -145,7 +151,15 @@ rebuilds and verifies it — so a plain checkout still runs
 everything, and §17.5's `deterministic` marking stays literally
 true, the pinned engine revision containing the very bytes that
 ran. The toolchain version, edition, and target triples are
-recorded values here like any other floor.
+recorded values here like any other floor: Rust 1.96.0, edition
+2024, `x86_64-unknown-linux-gnu`; further triples register here
+in the change that first builds them, which is the same change
+that widens the platform line above. The crate is `no_std`,
+declares the libc entry points it calls, and resolves no
+dependency, so the built library's undefined-symbol list is the
+complete set of calls it can make — the blindness claimed above
+is something a reviewer checks in one command rather than a
+promise the prose makes.
 Viewer build: the viewer's source of truth is TypeScript under
 viewer/src/; Bun type-strips it to the committed viewer/*.js the
 browser loads, and TypeScript 6.0.3 typechecks the sources. The
