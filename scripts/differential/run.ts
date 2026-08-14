@@ -67,6 +67,9 @@ const HARNESSES: readonly Harness[] = [
   // computed — a receipt's date is the record's own — so the clock has
   // nothing to perturb.
   { file: "scripts/differential/intake.ts", zones: ["UTC"] },
+  // The capture lane carries the date it is given onto its receipts and never
+  // asks what day it is, so one zone is the whole matrix here too.
+  { file: "scripts/differential/capture.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
