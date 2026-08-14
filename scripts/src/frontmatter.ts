@@ -10,7 +10,12 @@
 // superset — anchors, flow collections, sexagesimals, `no` as false — and
 // every one of those is a document Atlas must refuse, not interpret.
 
-export class FrontmatterError extends Error {}
+export class FrontmatterError extends Error {
+  constructor(message?: string) {
+    super(message);
+    this.name = "FrontmatterError";
+  }
+}
 
 export type FrontmatterValue =
   | string

@@ -95,7 +95,7 @@ export const WEAK_HALO_EDGE_TYPES: ReadonlySet<string> = new Set([
 // §10.4: fields = the union of the fields of the region nodes reachable
 // through the kind's listed refs; chains bottom out at the §10.1 registry
 // (concept → knowledge; zone, pattern → body), so resolution is acyclic.
-const REGISTRY_FIELDS: ReadonlyMap<string, readonly string[]> = new Map([
+export const REGISTRY_FIELDS: ReadonlyMap<string, readonly string[]> = new Map([
   ["concept", ["knowledge"]],
   ["zone", ["body"]],
   ["pattern", ["body"]],
@@ -375,7 +375,7 @@ export const QUESTION_DEFAULT_STATUS = "open";
  * §14.5 — the artifact strength → concept exposure ladder, as ranks into
  * CONCEPT_EXPOSURE. Encounters enter the same ladder capped at `read`.
  */
-const ARTIFACT_EXPOSURE_RANK: ReadonlyMap<string, number> = new Map([
+export const ARTIFACT_EXPOSURE_RANK: ReadonlyMap<string, number> = new Map([
   ["noticed", 1],
   ["read", 2],
   ["summarized", 3],

@@ -1,4 +1,9 @@
-export class CalendarError extends Error {}
+export class CalendarError extends Error {
+  constructor(message?: string) {
+    super(message);
+    this.name = "CalendarError";
+  }
+}
 
 const DATE_PATTERN = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
 const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];

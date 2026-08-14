@@ -54,6 +54,9 @@ const HARNESSES: readonly Harness[] = [
   { file: "scripts/differential/redact.ts", zones: ["UTC"] },
   // Durability is about descriptors and renames; the clock has no part in it.
   { file: "scripts/differential/emit.ts", zones: ["UTC"] },
+  // The builder folds freshness onto the graph it emits, so its whole-graph
+  // comparison meets the hostile-timezone matrix as well.
+  { file: "scripts/differential/build.ts", zones: ZONES },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
