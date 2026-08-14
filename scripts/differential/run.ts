@@ -45,6 +45,11 @@ const HARNESSES: readonly Harness[] = [
   { file: "scripts/differential/graph-rules.ts", zones: ZONES },
   // The whole-instance driver reaches every pass, review gate included.
   { file: "scripts/differential/validate-instance.ts", zones: ZONES },
+  // The grammar knows nothing about dates, so one zone is the whole matrix
+  // here — and this one builds every ceiling fixture from its limit, which is
+  // a quarter of a megabyte several times over. Running it six times would
+  // buy a repeat of an answer that cannot depend on the clock.
+  { file: "scripts/differential/conformance.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
