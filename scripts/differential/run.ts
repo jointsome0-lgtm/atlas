@@ -62,6 +62,11 @@ const HARNESSES: readonly Harness[] = [
   // and what a run leaves behind. The fold underneath it already meets the
   // matrix on the line above.
   { file: "scripts/differential/build-cli.ts", zones: ["UTC"] },
+  // A case here is a sequence of runs over one tree, which is the most
+  // expensive shape in this list. Dates in a delivery are carried, never
+  // computed — a receipt's date is the record's own — so the clock has
+  // nothing to perturb.
+  { file: "scripts/differential/intake.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
