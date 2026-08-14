@@ -234,6 +234,10 @@ const add = (name: string, check: string, rest: Dict): void => {
 // -- has a dated input -------------------------------------------------------
 for (const [label, entry] of [
   ["a bare last_seen", { last_seen: "2026-03-01" }],
+  // Presence, not a value: a key holding null is a dated input in both
+  // languages, and a rule that read the value instead would agree with the
+  // oracle on every entry that carries a date.
+  ["a last_seen holding null", { last_seen: null }],
   ["a dated decision", { decisions: [{ dimension: "status", date: "2026-03-01" }] }],
   ["an undated decision", { decisions: [{ dimension: "status" }] }],
   ["decisions that are not objects", { decisions: ["x", 7, null] }],
@@ -246,8 +250,12 @@ for (const [label, entry] of [
 }
 
 // -- status evidence on an emitted state entry -------------------------------
+// `resolved`, not `answered`: §9.8's question statuses are open | clarified |
+// resolved | stale, and a status outside them returns before the evidence
+// restriction is ever consulted. The whole ordinary arm of this rule went
+// untested behind that early return until Codex named it.
 const STATUS_ENTRY = (over: Dict): Dict => ({
-  status: "answered",
+  status: "resolved",
   evidence: ["artifact:read"],
   decisions: [{ dimension: "status", date: "2026-03-02", evidence: ["artifact:read"] }],
   ...over,
@@ -263,6 +271,15 @@ for (const [label, entry] of [
     "a status decision citing a question",
     STATUS_ENTRY({
       decisions: [{ dimension: "status", evidence: ["question:q"] }],
+    }),
+  ],
+  // The one citation the two arms disagree about: an encounter resolves a
+  // question and cannot make it stale. Everything else the corpus cites is
+  // an artifact, which both arms admit.
+  [
+    "a status decision citing an encounter",
+    STATUS_ENTRY({
+      decisions: [{ dimension: "status", evidence: ["encounter:session"] }],
     }),
   ],
   [
@@ -450,6 +467,19 @@ for (const [label, entry, nodeType, nodes] of [
     "question",
     NODES,
   ],
+  // CPython's `1 == True` (#131). The oracle finds these two lists equal and
+  // says nothing; the port compares with `===`, finds them different and
+  // fires. Kept as a divergence rather than fixed: both values are already
+  // schema-invalid, and agreeing would mean accepting more.
+  [
+    "a question whose evidence is an integer against a boolean",
+    {
+      evidence: [1],
+      decisions: [{ dimension: "status", evidence: [true] }],
+    },
+    "question",
+    NODES,
+  ],
   [
     "a question whose evidence objects agree on keys and not on values",
     {
@@ -588,11 +618,25 @@ for (const [label, entry, nodeType, asOf] of [
     "material",
     "2026-03-10",
   ],
+  // Mixed provenance: every cited row must be an encounter, and a corpus of
+  // all-encounter and no-encounter cases cannot tell `every` from `some`.
+  [
+    "a depth reached on one encounter and one artifact",
+    { depth_reached: "skim", evidence: ["encounter:session", "artifact:read"] },
+    "material",
+    "2026-03-10",
+  ],
   ["contact without last_seen", GATE({ last_seen: undefined }), "concept", "2026-03-10"],
   ["contact without freshness", GATE({ freshness: undefined }), "concept", "2026-03-10"],
   [
     "no contact but a last_seen anyway",
     { exposure: "unseen", last_seen: "2026-03-02", evidence: [] },
+    "concept",
+    "2026-03-10",
+  ],
+  [
+    "no contact but a freshness anyway",
+    { exposure: "unseen", freshness: "fresh", evidence: [] },
     "concept",
     "2026-03-10",
   ],
@@ -625,6 +669,14 @@ for (const [label, entry, nodeType, asOf] of [
         { dimension: "confidence", date: "2026-03-02", evidence: ["artifact:read"] },
         { dimension: "confidence", date: "2026-03-03", evidence: ["artifact:read"] },
       ],
+    }),
+    "concept",
+    "2026-03-10",
+  ],
+  [
+    "a decision dated exactly on the as-of",
+    GATE({
+      decisions: [{ dimension: "confidence", date: "2026-03-10", evidence: ["artifact:read"] }],
     }),
     "concept",
     "2026-03-10",
@@ -813,6 +865,7 @@ for (const [label, row] of [
   ["a rejected stale citing a reading", { dimension: "status", to: "stale", decision: "rejected", evidence: ["artifact:read"] }],
   ["a confirmed stale citing a dangling artifact", { dimension: "status", to: "stale", decision: "confirmed", evidence: ["artifact:gone"] }],
   ["a stale citing an encounter", { dimension: "status", to: "stale", evidence: ["encounter:session"] }],
+  ["a status decision citing nothing", { dimension: "status", to: "resolved", evidence: [] }],
   ["a decision on another dimension", { dimension: "confidence", to: "solid", evidence: [] }],
   ["a row that is not an object", 7],
 ] as ReadonlyArray<readonly [string, unknown]>) {
@@ -1022,6 +1075,24 @@ for (const [label, snapshot] of [
     "a zone carrying a concept dimension",
     SNAPSHOT({ state: { "zone:z": { contact: "some", clarity: "clear" } } }),
   ],
+  // Every zone ladder at once, on a concept. A set is only as closed as its
+  // least-named member: drop one and it stops being cross-kind anywhere,
+  // because the union of the sets is what decides what counts as a dimension
+  // at all. Naming them individually is what makes each one load-bearing.
+  [
+    "a concept carrying each zone dimension in turn",
+    SNAPSHOT({
+      state: {
+        "concept:a": {
+          contact: "some",
+          strength: "steady",
+          endurance: "held",
+          mobility: "free",
+          condition: "quiet",
+        },
+      },
+    }),
+  ],
   [
     "a concept carrying the material ladder",
     SNAPSHOT({ state: { "concept:a": { depth_reached: "practiced" } } }),
@@ -1033,6 +1104,16 @@ for (const [label, snapshot] of [
   [
     "a pattern exposure from its own ladder",
     SNAPSHOT({ state: { "pattern:p": { exposure: "drilled" } } }),
+  ],
+  // The rungs at the ends of a ladder: a corpus that samples the middle
+  // cannot tell a shortened ladder from the whole one.
+  [
+    "a pattern exposure at the top of its ladder",
+    SNAPSHOT({ state: { "pattern:p": { exposure: "reviewed" } } }),
+  ],
+  [
+    "a pattern exposure at the bottom of its ladder",
+    SNAPSHOT({ state: { "pattern:p": { exposure: "unseen" } } }),
   ],
   [
     "a zone exposure, which has no ladder to check",
@@ -1100,6 +1181,13 @@ function normalise(value: unknown): unknown {
 }
 
 const KNOWN: ReadonlyMap<string, string> = new Map([
+  // Python holds `1 == True`, so the oracle finds a state entry's evidence
+  // equal to its decision's and stays quiet where the port fires. Recorded as
+  // #131: the port keeps `===` and refuses input the schema refuses anyway.
+  [
+    "provenance: a question whose evidence is an integer against a boolean",
+    "#131",
+  ],
   // Object.entries visits an integer-like key first whatever order it arrived
   // in, so a state table holding one reports the same errors in another
   // sequence. Recorded as #128; the set is identical.

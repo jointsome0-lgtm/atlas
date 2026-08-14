@@ -60,7 +60,7 @@ const asString = (value: unknown): string | null =>
  * Python's quoting would be carrying an accident of the implementation it
  * replaces into the one that replaces it.
  */
-function show(value: unknown): string {
+export function show(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(show).join(", ")}]`;
   return JSON.stringify(value) ?? String(value);
 }
@@ -818,7 +818,7 @@ export function snapshotStateKindErrors(snapshot: Dict, path: unknown): string[]
  * Structural, because the oracle's `==` is: a list of strings compared here
  * arrives from two different documents and is never the same object.
  */
-function sameJson(left: unknown, right: unknown): boolean {
+export function sameJson(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (Array.isArray(left) && Array.isArray(right)) {
     return (
