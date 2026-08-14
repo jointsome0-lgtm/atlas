@@ -1,3 +1,11 @@
+// A runtime builtin, not a dependency: nothing is fetched or installed, and
+// this module runs only under Bun (the viewer has its own contract layer and
+// never imports it). There is no portable way to recognise a Proxy — that is
+// the point of one — and a Proxy is the one value whose canonical form is not
+// a function of the value, so the alternative is not "no import" but "no
+// guarantee".
+import { types } from "node:util";
+
 import { compareCodePoint } from "./ordering.ts";
 
 export class JsonDisciplineError extends Error {}
@@ -9,6 +17,23 @@ export type JsonValue =
   | string
   | JsonValue[]
   | { [key: string]: JsonValue };
+
+// A guard against stack exhaustion, not a policy ceiling. §25.8's depth ≤ 8 is
+// the *intake* reader's bound on foreign records; this same parser also reads
+// Atlas's own closed schemas, and atlas-graph.schema.json nests 12 deep. So the
+// bound here is the measured worst × ~5 rounded to a power of two, the way
+// §25.8 derives its other ceilings. Without it a deeply nested document exits
+// with a RangeError and a stack trace instead of a diagnostic, which §24.2 does
+// not allow; the oracle has the same gap, raising RecursionError. Reader and
+// writer share it, so neither can produce what the other refuses.
+export const MAX_JSON_DEPTH = 64;
+
+function tooDeep(): never {
+  throw new JsonDisciplineError(
+    `nesting-too-deep; expected a document nested at most ` +
+      `${MAX_JSON_DEPTH} levels`,
+  );
+}
 
 const ESCAPES: ReadonlyMap<number, string> = new Map([
   [0x08, "\\b"],
@@ -23,7 +48,18 @@ const ESCAPES: ReadonlyMap<number, string> = new Map([
 function encodeString(value: string): string {
   let out = '"';
   for (const character of value) {
+    // Iteration is by code point, so a well-formed pair arrives as one
+    // character above 0xFFFF and never lands in this range. What does land
+    // here is an unpaired half — which has no UTF-8 encoding, so writing it
+    // out substitutes U+FFFD and changes the value on its way to disk. The
+    // reader refuses the same thing; a writer that did not would leave the
+    // one direction canon cannot check against an input document.
     const point = character.codePointAt(0) as number;
+    if (point >= 0xd800 && point <= 0xdfff) {
+      throw new JsonDisciplineError(
+        "lone-surrogate; expected paired surrogate escapes",
+      );
+    }
     const escape = ESCAPES.get(point);
     if (escape !== undefined) {
       out += escape;
@@ -55,67 +91,178 @@ function encodeNumber(value: number): string {
   return String(value);
 }
 
-function encode(
-  value: unknown,
-  sortKeys: boolean,
-  indent: string | null,
-  depth: number,
-): string {
-  if (value === null) return "null";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "number") return encodeNumber(value);
-  if (typeof value === "string") return encodeString(value);
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "[]";
-    const parts = value.map((item) => encode(item, sortKeys, indent, depth + 1));
-    if (indent === null) return "[" + parts.join(",") + "]";
-    const inner = indent.repeat(depth + 1);
-    return "[\n" + inner + parts.join(",\n" + inner) + "\n" +
-      indent.repeat(depth) + "]";
-  }
-
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const keys = Object.keys(record);
-    if (sortKeys) keys.sort(compareCodePoint);
-    if (keys.length === 0) return "{}";
-    const colon = indent === null ? ":" : ": ";
-    const parts = keys.map(
-      (key) =>
-        encodeString(key) +
-        colon +
-        encode(record[key], sortKeys, indent, depth + 1),
-    );
-    if (indent === null) return "{" + parts.join(",") + "}";
-    const inner = indent.repeat(depth + 1);
-    return "{\n" + inner + parts.join(",\n" + inner) + "\n" +
-      indent.repeat(depth) + "}";
-  }
-
+function unserializable(): never {
   throw new JsonDisciplineError(
     "unserializable-json-value; expected a JSON value",
   );
 }
 
+// `typeof value === "object"` is true of a Date, a Map, a Set, a RegExp, a
+// boxed primitive and every class instance — all of which have no own
+// enumerable keys and would have been written as `{}`. The document would
+// emit, validate against a schema expecting an object, and carry nothing.
+// Only two shapes are a JSON object here: a literal, and the null-prototype
+// one the reader produces.
+function isPlainObject(value: object): boolean {
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+// Every own name must be an ordinary enumerable data property. A symbol key, a
+// non-enumerable one, and an accessor are each invisible to `Object.keys` and
+// would drop out of the document in silence. Taking the value out of the
+// descriptor rather than off the container is what rules out the second read:
+// an accessor that answers differently each time never gets called at all, so
+// no canonical form can be built from two different answers.
+function plainDataValues(container: object, keys: string[]): unknown[] {
+  if (Object.getOwnPropertySymbols(container).length > 0) unserializable();
+  return keys.map((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(container, key);
+    if (descriptor === undefined || !("value" in descriptor)) unserializable();
+    return descriptor.value;
+  });
+}
+
+// JavaScript orders an array-index-like key ahead of every other one, ascending
+// — `{"b":1,"2":2,"1":3}` has key order 1, 2, b. The oracle keeps insertion
+// order. The row form sorts, so content decides it and the two agree; the
+// document form is emitter order, and for such a key that order was already
+// lost when the object was built, before this writer saw it. No Atlas field
+// name is a number, so refusing costs nothing and is the fail-closed half of
+// §25.7 — better than emitting an order nothing chose.
+//
+// This is the one place the two forms do not share a domain, so it is worth
+// being exact about the rule the rest of this module keeps: what the reader
+// returns, the *row* writer can always write — that is the form journal rows,
+// receipts and every mandatory byte-equality contract use. The document form
+// is narrower by exactly this key shape. The reader still accepts it, because
+// refusing would turn away an ordinary foreign document (a year-keyed map is
+// a normal JSON idiom) over an order Atlas would never need to reproduce.
+function isIndexLikeKey(key: string): boolean {
+  const asNumber = Number(key);
+  return (
+    Number.isInteger(asNumber) &&
+    asNumber >= 0 &&
+    asNumber < 2 ** 32 - 1 &&
+    String(asNumber) === key
+  );
+}
+
+function encode(
+  value: unknown,
+  sortKeys: boolean,
+  indent: string | null,
+  depth: number,
+  open: WeakSet<object>,
+): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return encodeNumber(value);
+  if (typeof value === "string") return encodeString(value);
+  if (typeof value !== "object") unserializable();
+
+  const container = value as object;
+  // Every check below reflects on the container, and a Proxy answers each
+  // reflection with arbitrary code — it can report Object.prototype, invent
+  // keys, hide symbols, and return a different value for the same key on every
+  // pass. Two writes of one object then produce two canonical forms, which is
+  // the single property §25.7 exists to provide. A revoked one throws a bare
+  // TypeError mid-write, which §24.2 does not allow either.
+  if (types.isProxy(container)) unserializable();
+  // Before the depth bound, not after: a cycle reached at exactly the bound is
+  // a cycle, and saying "nesting-too-deep" would point at the wrong defect.
+  // A repeated reference is fine and writes twice; a reference back into a
+  // container still being written never terminates. Membership is dropped on
+  // the way out so the two stay distinguishable.
+  if (open.has(container)) {
+    throw new JsonDisciplineError(
+      "cyclic-json-value; expected an acyclic JSON value",
+    );
+  }
+  // The reader refuses past this bound; a writer without it emits documents its
+  // own reader will not take back, and dies at about 12,000 with a bare
+  // RangeError instead of a diagnostic. Level is depth + 1, so the two sides
+  // accept exactly the same shapes.
+  if (depth >= MAX_JSON_DEPTH) tooDeep();
+  open.add(container);
+  try {
+    if (Array.isArray(value)) {
+      // The own enumerable names must be exactly 0..length-1, in order.
+      // Counting them is not enough: `a.length = 1; a.note = 7` has one own
+      // key and length 1, yet no element 0 — an ordinary stringify writes
+      // `[null]` and this writer used to write `[7]`, inventing an element out
+      // of a property that is not one. Comparing each name to its position
+      // catches that, holes, extra properties and a subclassed array together;
+      // the name count then catches a hidden own property, since an array's
+      // names are `length` plus the indices and nothing else.
+      if (Object.getPrototypeOf(value) !== Array.prototype) unserializable();
+      const indices = Object.keys(value);
+      if (indices.length !== value.length) unserializable();
+      if (indices.some((key, position) => key !== String(position))) {
+        unserializable();
+      }
+      if (Object.getOwnPropertyNames(value).length !== indices.length + 1) {
+        unserializable();
+      }
+      const items = plainDataValues(value, indices);
+      if (items.length === 0) return "[]";
+      const parts = items.map((item) =>
+        encode(item, sortKeys, indent, depth + 1, open)
+      );
+      if (indent === null) return "[" + parts.join(",") + "]";
+      const inner = indent.repeat(depth + 1);
+      return "[\n" + inner + parts.join(",\n" + inner) + "\n" +
+        indent.repeat(depth) + "]";
+    }
+
+    if (!isPlainObject(container)) unserializable();
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record);
+    if (Object.getOwnPropertyNames(record).length !== keys.length) {
+      unserializable();
+    }
+    const values = plainDataValues(record, keys);
+    if (sortKeys) {
+      const order = keys
+        .map((key, position) => [key, values[position]] as const)
+        .sort((left, right) => compareCodePoint(left[0], right[0]));
+      keys.length = 0;
+      values.length = 0;
+      for (const [key, item] of order) {
+        keys.push(key);
+        values.push(item);
+      }
+    } else if (keys.some(isIndexLikeKey)) {
+      throw new JsonDisciplineError(
+        "unorderable-json-key; expected keys JavaScript keeps in insertion order",
+      );
+    }
+    if (keys.length === 0) return "{}";
+    const colon = indent === null ? ":" : ": ";
+    const parts = keys.map(
+      (key, position) =>
+        encodeString(key) +
+        colon +
+        encode(values[position], sortKeys, indent, depth + 1, open),
+    );
+    if (indent === null) return "{" + parts.join(",") + "}";
+    const inner = indent.repeat(depth + 1);
+    return "{\n" + inner + parts.join(",\n" + inner) + "\n" +
+      indent.repeat(depth) + "}";
+  } finally {
+    open.delete(container);
+  }
+}
+
 export function stringifyDocument(value: unknown): string {
-  return encode(value, false, "  ", 0) + "\n";
+  return encode(value, false, "  ", 0, new WeakSet()) + "\n";
 }
 
 export function stringifyRow(value: unknown): string {
-  return encode(value, true, null, 0);
+  return encode(value, true, null, 0, new WeakSet());
 }
 
 const WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d]);
-
-// A guard against stack exhaustion, not a policy ceiling. §25.8's depth ≤ 8 is
-// the *intake* reader's bound on foreign records; this same parser also reads
-// Atlas's own closed schemas, and atlas-graph.schema.json nests 12 deep. So the
-// bound here is the measured worst × ~5 rounded to a power of two, the way
-// §25.8 derives its other ceilings. Without it a deeply nested document exits
-// with a RangeError and a stack trace instead of a diagnostic, which §24.2 does
-// not allow; the oracle has the same gap, raising RecursionError.
-export const MAX_JSON_DEPTH = 64;
 
 class StrictParser {
   private index = 0;
@@ -163,12 +310,7 @@ class StrictParser {
   // decrement needs no unwinding.
   private enter(): void {
     this.depth += 1;
-    if (this.depth > MAX_JSON_DEPTH) {
-      throw new JsonDisciplineError(
-        `nesting-too-deep; expected a document nested at most ` +
-          `${MAX_JSON_DEPTH} levels`,
-      );
-    }
+    if (this.depth > MAX_JSON_DEPTH) tooDeep();
   }
 
   private parseValue(): JsonValue {
@@ -381,26 +523,32 @@ class StrictParser {
         "non-finite-json-number; expected a finite JSON number",
       );
     }
-    if (/[.eE]/.test(literal)) return value;
-
-    // An integer literal has no signed zero: the oracle routes it through
-    // int(), where -0 is 0, and keeps the sign only on a float literal like
-    // -0.0. IEEE-754 keeps it on both. Nothing in the canon distinguishes the
-    // two zeroes, and both emit as "0", but a reader that quietly hands back a
-    // different value than the oracle is exactly the kind of gap this port
-    // must not carry forward.
-    if (Object.is(value, -0)) return 0;
-
-    // Python's int is exact, a double is not: 9007199254740993 reads back as
-    // ...992 and still looks like a plain integer to a schema. The emitter
-    // already refuses a number it cannot write back exactly, so accepting one
-    // here would leave a document that reads, validates, and then cannot be
-    // re-emitted. Refusing at the boundary is the fail-closed half of §25.7.
-    if (BigInt(literal) !== BigInt(value)) {
+    // One numeric domain, shared with the writer: what this returns, the
+    // writer can always write back. The three tests below are exactly
+    // `encodeNumber`'s, applied to the value rather than to the literal — so
+    // the answer does not depend on how the number was spelled. `1`, `1.0` and
+    // `1e0` all read as 1; `9007199254740993`, `9007199254740993e0` and
+    // `9007199254740992.0` are all refused, none of them sneaking past through
+    // the exponent or fraction form.
+    //
+    // Judging the value also means a `.0` or exponent spelling is not
+    // preserved on the way out, where the oracle would keep it (`1.0` stays
+    // `1.0`). That difference is Python's int/float split, which JavaScript
+    // does not have and the canon does not use: no Atlas schema declares a
+    // non-integer field.
+    if (!Number.isInteger(value)) {
+      throw new JsonDisciplineError(
+        "non-integer-json-number; expected an integer JSON number",
+      );
+    }
+    if (!Number.isSafeInteger(value)) {
       throw new JsonDisciplineError(
         "unrepresentable-json-number; expected an exactly representable integer",
       );
     }
+    // No signed zero survives: the writer emits "0" for both, so returning -0
+    // would hand back a value it cannot write faithfully.
+    if (Object.is(value, -0)) return 0;
     return value;
   }
 }

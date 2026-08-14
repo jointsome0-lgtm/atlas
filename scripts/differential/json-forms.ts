@@ -64,14 +64,39 @@ for text in payload["read"]:
         project(value), ensure_ascii=False, separators=(",", ":")
     )
     try:
+        row = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        document = json.dumps(value, ensure_ascii=False, indent=2) + "\\n"
+    except ValueError:
+        # The oracle read it but cannot write it back either: 1e999 becomes
+        # inf, which allow_nan=False refuses (#122). Nothing to compare.
+        read.append(
+            {"ok": True, "projection": projection, "row": None, "document": None}
+        )
+        continue
+    try:
         projection.encode("utf-8")
+        row.encode("utf-8")
+        document.encode("utf-8")
     except UnicodeEncodeError:
         # A lone surrogate the oracle accepted (#123). It cannot cross this
         # pipe at all, which is most of the point. The accept/reject
-        # comparison still runs; only the value comparison is skipped.
-        read.append({"ok": True, "projection": None})
+        # comparison still runs; only the value comparisons are skipped.
+        read.append(
+            {"ok": True, "projection": None, "row": None, "document": None}
+        )
         continue
-    read.append({"ok": True, "projection": projection})
+    read.append({
+        "ok": True,
+        "projection": projection,
+        "row": row,
+        "document": document,
+    })
 
 sys.stdout.write(
     json.dumps({"emit": emitted, "read": read}, ensure_ascii=False)
@@ -105,7 +130,6 @@ const CASES: unknown[] = [
   "non-ascii: привет ünïcodë 日本語 emoji 🜂",
   "astral \u{1f600}\u{10000}\u{10ffff}",
   "combining é and zwj ‍",
-  { "10": 1, "9": 2, "1": 3, a: 4, A: 5, _: 6 },
   { "�": "bmp", "\u{10000}": "astral", "": "pua" },
   { z: 1, a: 2, M: 3, "": 4 },
   { "key with space": 1, "key\nwith\nnewline": 2, 'key"quote': 3 },
@@ -141,12 +165,32 @@ CASES.push(
   [withKeys([["__proto__", "in-array"]])],
 );
 
+// An index-like key is not an ordinary key in JavaScript: the engine puts it
+// first, ascending, whatever order it was written in. So the insertion order
+// the oracle emits in document form is already gone before the writer is
+// called, and the writer refuses rather than emitting an order nothing chose.
+// The row form is decided by content, so it still has to match byte for byte —
+// which is what these cases check, alongside the required refusal.
+const ROW_ONLY_CASES: unknown[] = [
+  { "10": 1, "9": 2, "1": 3, a: 4, A: 5, _: 6 },
+  { b: 1, "2": 2, "1": 3, a: 4, "10": 5, "-1": 6, "01": 7 },
+  { "0": "zero" },
+  { outer: { "1": 1, b: 2 } },
+];
+
 interface EmitResult {
   document: string;
   row: string;
 }
 
-type ReadResult = { ok: false } | { ok: true; projection: string | null };
+type ReadResult =
+  | { ok: false }
+  | {
+    ok: true;
+    projection: string | null;
+    row: string | null;
+    document: string | null;
+  };
 
 interface OracleResult {
   emit: EmitResult[];
@@ -205,6 +249,27 @@ interface ReadCase {
   // note names the issue. The harness then *requires* the disagreement to
   // still be there, so a silent convergence cannot rot the record.
   oracleDiffers?: string;
+  // The narrower case: both sides accept, and the values differ. `ours` is the
+  // answer canon requires, not merely "something else" — a marker that asked
+  // only for inequality would accept any wrong answer as the expected
+  // divergence, which is a check that cannot fail for the reason it claims.
+  oracleValueDiffers?: Divergence;
+  // Both sides accept and agree on the value, but writing it back gives
+  // different bytes — the oracle keeps `1.0` a float where §25.7 has one
+  // integer domain. Pinned the same way, by value.
+  oracleRowDiffers?: Divergence;
+  // The document form is narrower than the row form by exactly one key shape
+  // (see `isIndexLikeKey`): JavaScript has already lost the insertion order
+  // the oracle would emit. Recorded per case rather than inferred, so the
+  // asymmetry is stated where someone reading the corpus will see it.
+  documentRefuses?: string;
+  // As `oracleRowDiffers`, for the order-preserving form.
+  oracleDocumentDiffers?: Divergence;
+}
+
+interface Divergence {
+  issue: string;
+  ours: string;
 }
 
 const READS: ReadCase[] = [
@@ -228,16 +293,64 @@ const READS: ReadCase[] = [
   { text: '{"nested":{"a":[1,{"b":null}]}}', reason: null },
   { text: '"\\u0041\\u00e9\\ud83d\\ude00"', reason: null },
   { text: '  { "a" : 1 }  ', reason: null },
-  { text: '{"a":1.5}', reason: null },
-  // "-0" loses its sign (the oracle reads an integer literal through int());
-  // "-0.0" keeps it. Both are here so a blanket normalisation of either one
-  // shows up as a divergence rather than as a quiet behaviour change.
+  // A fraction is refused however it is written (#123): no Atlas schema
+  // declares a non-integer field, and the oracle's int/float split is a
+  // Python distinction JavaScript does not have.
+  {
+    text: '{"a":1.5}',
+    reason: "non-integer-json-number",
+    oracleDiffers: "#123",
+  },
+  {
+    text: "-1.5e-3",
+    reason: "non-integer-json-number",
+    oracleDiffers: "#123",
+  },
+  // Written as a fraction, integral once rounded to a double, so it reads as
+  // that integer on both sides.
+  {
+    text: "1.0000000000000001",
+    reason: null,
+    oracleRowDiffers: { issue: "#123", ours: "1" },
+    oracleDocumentDiffers: { issue: "#123", ours: "1\n" },
+  },
+  // §25.7 has one zero. The oracle keeps a sign on "-0.0" only because it
+  // reads that spelling as a float; ours emits "0" for both, so returning -0
+  // would be a value the writer could not put back on disk.
   { text: "-0", reason: null },
-  { text: "-0.0", reason: null },
+  {
+    text: "-0.0",
+    reason: null,
+    // +0's bits, where the oracle keeps -0's.
+    oracleValueDiffers: { issue: "#123", ours: '["num","0000000000000000"]' },
+    oracleRowDiffers: { issue: "#123", ours: "0" },
+    oracleDocumentDiffers: { issue: "#123", ours: "0\n" },
+  },
   { text: "0", reason: null },
-  { text: "1e2", reason: null },
-  { text: "1E+2", reason: null },
-  { text: "-1.5e-3", reason: null },
+  {
+    text: "0.0",
+    reason: null,
+    oracleRowDiffers: { issue: "#123", ours: "0" },
+    oracleDocumentDiffers: { issue: "#123", ours: "0\n" },
+  },
+  {
+    text: "1e2",
+    reason: null,
+    oracleRowDiffers: { issue: "#123", ours: "100" },
+    oracleDocumentDiffers: { issue: "#123", ours: "100\n" },
+  },
+  {
+    text: "1E+2",
+    reason: null,
+    oracleRowDiffers: { issue: "#123", ours: "100" },
+    oracleDocumentDiffers: { issue: "#123", ours: "100\n" },
+  },
+  {
+    text: "1.0",
+    reason: null,
+    oracleRowDiffers: { issue: "#123", ours: "1" },
+    oracleDocumentDiffers: { issue: "#123", ours: "1\n" },
+  },
   { text: "9007199254740991", reason: null },
   { text: '{"":1}', reason: null },
   { text: "true", reason: null },
@@ -257,6 +370,28 @@ const READS: ReadCase[] = [
     reason: null,
   },
   { text: '{"привет":"мир","日本":"語"}', reason: null },
+  // Read, and writable as a row — but not as a document, whose order the
+  // engine already discarded. A year-keyed map is an ordinary foreign shape,
+  // so the reader takes it; the asymmetry is stated here rather than left to
+  // be discovered by whoever first emits one.
+  {
+    text: '{"0":1}',
+    reason: null,
+    documentRefuses: "unorderable-json-key",
+  },
+  {
+    text: '{"b":1,"2":2,"1":3}',
+    reason: null,
+    documentRefuses: "unorderable-json-key",
+  },
+  {
+    text: '{"2026":"year","2025":"prior"}',
+    reason: null,
+    documentRefuses: "unorderable-json-key",
+  },
+  // Not canonical indices, so they keep insertion order and stay writable in
+  // both forms.
+  { text: '{"01":1,"-1":2,"1.0":3}', reason: null },
   // The key that turns a parsed object into a prototype if the parser builds
   // on a plain `{}`: the field vanishes and every absent field afterwards is
   // answered from attacker-chosen values.
@@ -282,7 +417,29 @@ const READS: ReadCase[] = [
     reason: "unrepresentable-json-number",
     oracleDiffers: "#123",
   },
-  { text: "9007199254740992", reason: null },
+  {
+    text: "9007199254740992",
+    reason: "unrepresentable-json-number",
+    oracleDiffers: "#123",
+  },
+  // The fraction and exponent spellings of the same value. These used to
+  // return before the precision check, so ...993e0 was read as ...992 while
+  // the plain spelling was refused — one contract, one answer.
+  {
+    text: "9007199254740992.0",
+    reason: "unrepresentable-json-number",
+    oracleDiffers: "#123",
+  },
+  {
+    text: "9007199254740993e0",
+    reason: "unrepresentable-json-number",
+    oracleDiffers: "#123",
+  },
+  {
+    text: "-9007199254740993e0",
+    reason: "unrepresentable-json-number",
+    oracleDiffers: "#123",
+  },
   { text: '"\\ud800"', reason: "lone-surrogate", oracleDiffers: "#123" },
   { text: '"\\udfff"', reason: "lone-surrogate", oracleDiffers: "#123" },
   { text: '"\\ud800\\ud800"', reason: "lone-surrogate", oracleDiffers: "#123" },
@@ -292,13 +449,102 @@ const READS: ReadCase[] = [
     reason: "nesting-too-deep",
     oracleDiffers: "#123",
   },
-  { text: `${"[".repeat(64)}0${"]".repeat(64)}`, reason: null },
+  // Deep but legal. Not the exact boundary: check 3 renders the parsed value
+  // through `project`, which wraps every level in one of its own, so a case at
+  // 64 would exceed the writer's bound inside the harness rather than say
+  // anything about the reader. MAX_JSON_DEPTH exactly is a unit test.
+  { text: `${"[".repeat(24)}0${"]".repeat(24)}`, reason: null },
 ];
 
 let divergences = 0;
 let compared = 0;
 
-const oracle = runOracle(CASES, READS.map((read) => read.text));
+function write(emit: () => string): string | { refusal: string } {
+  try {
+    return emit();
+  } catch (error) {
+    return {
+      refusal: error instanceof JsonDisciplineError
+        ? error.message
+        : `unexpected-error; ${String(error)}`,
+    };
+  }
+}
+
+// A recorded divergence has to name the answer canon requires. Asking only for
+// inequality would let any wrong answer stand in for the expected one: if the
+// reader started returning 1 for "-0.0", `1 !== -0` is still a difference and
+// the check would pass while the port was broken.
+function reportAgainst(
+  label: string,
+  what: string,
+  ours: string,
+  oracle: string,
+  divergence: Divergence | undefined,
+): void {
+  if (divergence === undefined) {
+    if (ours === oracle) return;
+    divergences += 1;
+    console.error(`DIVERGENCE ${label}: ${what}`);
+    console.error(`  oracle: ${show(oracle)}`);
+    console.error(`  ours:   ${show(ours)}`);
+    return;
+  }
+  if (ours === oracle) {
+    divergences += 1;
+    console.error(
+      `DIVERGENCE ${label}: ${what} recorded as a canon-over-oracle ` +
+        `divergence (${divergence.issue}), but the two now agree — retire ` +
+        `the note`,
+    );
+    return;
+  }
+  if (ours !== divergence.ours) {
+    divergences += 1;
+    console.error(
+      `DIVERGENCE ${label}: ${what} differs from the oracle as recorded ` +
+        `(${divergence.issue}), but not in the recorded way`,
+    );
+    console.error(`  canon: ${show(divergence.ours)}`);
+    console.error(`  ours:  ${show(ours)}`);
+  }
+}
+
+const oracle = runOracle(
+  [...CASES, ...ROW_ONLY_CASES],
+  READS.map((read) => read.text),
+);
+
+for (let i = 0; i < ROW_ONLY_CASES.length; i += 1) {
+  const expected = oracle.emit[CASES.length + i] as EmitResult;
+  const label = `row-only case ${i}`;
+
+  compared += 1;
+  const row = stringifyRow(ROW_ONLY_CASES[i]);
+  if (row !== expected.row) {
+    divergences += 1;
+    console.error(`DIVERGENCE ${label} row`);
+    console.error(`  oracle: ${show(expected.row)}`);
+    console.error(`  ours:   ${show(row)}`);
+  }
+
+  compared += 1;
+  let refusal: string | null = null;
+  try {
+    stringifyDocument(ROW_ONLY_CASES[i]);
+  } catch (error) {
+    refusal = error instanceof JsonDisciplineError
+      ? error.message
+      : `unexpected-error; ${String(error)}`;
+  }
+  if (refusal === null || !refusal.startsWith("unorderable-json-key")) {
+    divergences += 1;
+    console.error(
+      `DIVERGENCE ${label} document: expected unorderable-json-key`,
+    );
+    console.error(`  ours: ${refusal ?? "<emitted>"}`);
+  }
+}
 
 for (let i = 0; i < CASES.length; i += 1) {
   const expected = oracle.emit[i] as EmitResult;
@@ -373,11 +619,69 @@ for (let i = 0; i < READS.length; i += 1) {
   if (expected.ok && expected.projection !== null && failure === null) {
     compared += 1;
     const ours = stringifyRow(project(value as JsonValue));
-    if (ours !== expected.projection) {
+    reportAgainst(label, "parsed value", ours, expected.projection, read.oracleValueDiffers);
+  }
+
+  // 4. Read, then written back. The emit and read corpora are otherwise
+  // disjoint — no value crosses both directions — so nothing above would
+  // notice a reader that returns something its own writer cannot write. That
+  // is the whole numeric and surrogate contract, checked over the corpus
+  // rather than case by case.
+  if (expected.ok && expected.row !== null && failure === null) {
+    compared += 1;
+    const written = write(() => stringifyRow(value));
+    if (typeof written !== "string") {
       divergences += 1;
-      console.error(`DIVERGENCE ${label}: parsed value`);
-      console.error(`  oracle: ${expected.projection}`);
-      console.error(`  ours:   ${ours}`);
+      console.error(`DIVERGENCE ${label}: read but the row form refuses it`);
+      console.error(`  ours: ${written.refusal}`);
+    } else {
+      reportAgainst(
+        label,
+        "written back",
+        written,
+        expected.row,
+        read.oracleRowDiffers,
+      );
+    }
+
+    // Both writers, not one. The document form is narrower by exactly the
+    // index-like key, and a corpus that only ever exercised the row form
+    // could not see the difference — the check would report a shared domain
+    // it had not looked at.
+    compared += 1;
+    const asDocument = write(() => stringifyDocument(value));
+    if (read.documentRefuses === undefined) {
+      if (typeof asDocument !== "string") {
+        divergences += 1;
+        console.error(
+          `DIVERGENCE ${label}: read but the document form refuses it`,
+        );
+        console.error(`  ours: ${asDocument.refusal}`);
+      }
+    } else if (typeof asDocument === "string") {
+      divergences += 1;
+      console.error(
+        `DIVERGENCE ${label}: recorded as refused by the document form ` +
+          `(${read.documentRefuses}), but it emitted — retire the note`,
+      );
+    } else if (!asDocument.refusal.startsWith(read.documentRefuses)) {
+      divergences += 1;
+      console.error(`DIVERGENCE ${label}: wrong document-form reason`);
+      console.error(`  canon: ${read.documentRefuses}`);
+      console.error(`  ours:  ${asDocument.refusal}`);
+    }
+
+    // And its bytes, which is where a key-order defect actually shows: the
+    // document form is the one §25.7 leaves in emitter order.
+    if (typeof asDocument === "string" && expected.document !== null) {
+      compared += 1;
+      reportAgainst(
+        label,
+        "written back as a document",
+        asDocument,
+        expected.document,
+        read.oracleDocumentDiffers,
+      );
     }
   }
 }
