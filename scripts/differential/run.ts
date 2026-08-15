@@ -70,6 +70,10 @@ const HARNESSES: readonly Harness[] = [
   // The capture lane carries the date it is given onto its receipts and never
   // asks what day it is, so one zone is the whole matrix here too.
   { file: "scripts/differential/capture.ts", zones: ["UTC"] },
+  // The server's only clock is the Date header, which is folded away because
+  // two processes cannot share a second — and it is GMT by construction, so an
+  // ambient zone cannot reach it either.
+  { file: "scripts/differential/serve.ts", zones: ["UTC"] },
 ];
 
 const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
