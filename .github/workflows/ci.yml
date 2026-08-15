@@ -39,8 +39,8 @@ jobs:
       - name: Compare the ported modules against the Python oracle
         run: bun run differential
       - run: python scripts/check_public_hygiene.py
-      - run: python scripts/check_sdd_conventions.py check AGENTS.md --template conventions/SDD-CONVENTIONS.md
-      - run: python scripts/check_decision_log.py --baseline 2026-08-11 DECISION-LOG.md
+      - run: bun scripts/check_sdd_conventions.ts check AGENTS.md --template conventions/SDD-CONVENTIONS.md
+      - run: bun scripts/check_decision_log.ts --baseline 2026-08-11 DECISION-LOG.md
       - name: Check schema and implementation constants
         run: python scripts/validate_atlas.py check-constants
       - name: Validate public golden fixtures
