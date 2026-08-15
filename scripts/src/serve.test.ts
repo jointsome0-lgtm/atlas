@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs";
 
 import { AtlasReader } from "./reader.ts";
-import { DEFAULT_PORT, INDEX_ROUTE, buildRoutes, originsFor, printable } from "./serve.ts";
+import {
+  DEFAULT_PORT,
+  INDEX_ROUTE,
+  buildRoutes,
+  originsFor,
+  parseArgs,
+  printable,
+} from "./serve.ts";
 
 // The differential harness proves this server answers, byte for byte, what
 // CPython's answers. What is pinned here is what a comparison of two running
@@ -127,5 +134,99 @@ describe("what a diagnostic may carry", () => {
     expect(printable("𝔞".repeat(10), 4)).toBe("𝔞𝔞𝔞𝔞…");
     expect(printable("abcd", 4)).toBe("abcd");
     expect(printable("abcde", 4)).toBe("abcd…");
+  });
+});
+
+describe("reading the arguments the way the oracle's parser reads them", () => {
+  /** The port a run would bind, or the kind of refusal it met instead. */
+  const read = (...argv: string[]): number | string => {
+    const parsed = parseArgs(argv);
+    if (parsed.kind === "args") return parsed.args.port;
+    return parsed.kind === "help" ? "help" : parsed.message;
+  };
+
+  test("an unambiguous prefix addresses the option it abbreviates", () => {
+    // `allow_abbrev` is on by default, so a caller who types `--po` has named
+    // the only option that begins that way.
+    expect(read("--po", "9999", "/instance")).toBe(9999);
+    expect(read("--p=9999", "/instance")).toBe(9999);
+    expect(read("--h")).toBe("help");
+  });
+
+  test("a prefix that names every option names none of them", () => {
+    // The empty prefix. argparse says which ones it could have meant, in the
+    // order they were declared, and quotes the word as typed.
+    expect(read("--=1", "/instance")).toBe(
+      "ambiguous option: --=1 could match --help, --port",
+    );
+  });
+
+  test("every argument is classified before any of them is used", () => {
+    // Help would have fired first if the parser read left to right and acted
+    // as it went; it builds the whole pattern first instead.
+    expect(read("-h", "--=1")).toBe("ambiguous option: --=1 could match --help, --port");
+  });
+
+  test("digits are read from any script that writes them", () => {
+    // `int()` reads every Unicode decimal digit. The mathematical sets are the
+    // hard case: they abut, so a digit's value is its place within its own ten
+    // and not its distance from wherever the run of digits started.
+    const spell = (zero: number): string =>
+      [8, 1, 3, 8].map((digit) => String.fromCodePoint(zero + digit)).join("");
+    expect(read("--port", spell(0x0660), "/instance")).toBe(8138);
+    expect(read("--port", spell(0x0966), "/instance")).toBe(8138);
+    expect(read("--port", spell(0xff10), "/instance")).toBe(8138);
+    expect(read("--port", spell(0x1d7ce), "/instance")).toBe(8138);
+    expect(read("--port", spell(0x1d7d8), "/instance")).toBe(8138);
+  });
+
+  test("the whitespace around a number is the one int() skips", () => {
+    // Not the runtime's list and not `str.strip()`'s: the rewrite `int()` does
+    // first only asks Unicode about characters past ASCII.
+    expect(read("--port", "\u0085443\u00a0", "/instance")).toBe(443);
+    expect(read("--port", "\u001c443", "/instance")).toBe(
+      "argument --port: port must be an integer",
+    );
+    expect(read("--port", "\ufeff443", "/instance")).toBe(
+      "argument --port: port must be an integer",
+    );
+  });
+
+  test("a word that only looks like an option is a path", () => {
+    // There are no options here that look like negative numbers, and an
+    // argument with a space in it was meant to be a name.
+    expect(read("-")).toBe(DEFAULT_PORT);
+    expect(read("-5")).toBe(DEFAULT_PORT);
+    expect(read("-x y")).toBe(DEFAULT_PORT);
+    expect(read("--", "--port")).toBe(DEFAULT_PORT);
+  });
+
+  test("an option-looking word is not the value of the option before it", () => {
+    expect(read("/instance", "--port", "--help")).toBe(
+      "argument --port: expected one argument",
+    );
+    // A negative number is a value, though — it is not an option here.
+    expect(read("/instance", "--port", "-1")).toBe(
+      "argument --port: port must be between 1 and 65535",
+    );
+  });
+
+  test("a missing instance is refused before a leftover word is counted", () => {
+    // Two refusals are available and only one of them happens: the parse fails
+    // inside argparse, and the words it could not place are counted after it
+    // returns.
+    expect(read("--open")).toBe("the following arguments are required: INSTANCE_DIR");
+    expect(read("--open", "/instance")).toBe(
+      "1 unrecognized argument(s); values withheld",
+    );
+  });
+
+  test("a long option that takes no value refuses one, a short one does not", () => {
+    expect(read("--help=please")).toBe(
+      "argument -h/--help: ignored explicit argument 'please'",
+    );
+    // One dash carries its value in the same word, so `-hx` is `-h` and an `x`
+    // that help never gets to look at.
+    expect(read("-hx")).toBe("help");
   });
 });

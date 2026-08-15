@@ -206,11 +206,51 @@ function helpText(program: string): string {
   );
 }
 
+/**
+ * The characters `int()` skips around a number.
+ *
+ * Neither `String.trim()` nor `str.strip()`: `int()` rewrites the string
+ * before it parses it, and that pass only asks Unicode about characters past
+ * ASCII. So the next-line character is skipped and the file separator — which
+ * `str.strip()` does remove — is not, and the byte-order mark `trim()` removes
+ * is not skipped either.
+ */
+const INT_SPACE =
+  "[\\t\\n\\v\\f\\r \\x85\\xa0\\u1680\\u2000-\\u200a"
+  + "\\u2028\\u2029\\u202f\\u205f\\u3000]";
+const INT_STRIP = new RegExp(`^${INT_SPACE}+|${INT_SPACE}+$`, "gu");
+
+/**
+ * The value of one decimal digit, in any script that writes them.
+ *
+ * `int()` reads every character Unicode gives a decimal value, not the ten
+ * ASCII ones, so `--port ٨١٣٨` is port 8138 to the oracle. Unicode encodes
+ * each set of ten contiguously and in ascending order, so a digit's value is
+ * its distance from the start of the run of digits it sits in, and the runs
+ * that abut (the mathematical alphanumerics) are whole sets end to end — hence
+ * the remainder. The runtime's Unicode table can be newer than the oracle's,
+ * which is a difference about which scripts have digits at all.
+ */
+function decimalValue(digit: string): number {
+  const isDigit = (code: number): boolean => /^\p{Nd}$/u.test(String.fromCodePoint(code));
+  const code = digit.codePointAt(0) as number;
+  let start = code;
+  while (start > 0 && isDigit(start - 1)) start -= 1;
+  return (code - start) % 10;
+}
+
 function portNumber(value: string): number | string {
   // CPython's `int()` takes surrounding whitespace, a sign, and underscores
   // between digits; anything else is the same refusal as a word.
-  if (!/^[+-]?\d(?:_?\d)*$/.test(value.trim())) return "port must be an integer";
-  const port = Number(value.trim().replaceAll("_", ""));
+  const text = value.replace(INT_STRIP, "");
+  const digits = /^[+-]?(\p{Nd}(?:_?\p{Nd})*)$/u.exec(text);
+  if (digits === null) return "port must be an integer";
+  const sign = text.startsWith("-") ? -1 : 1;
+  const written = [...(digits[1] as string)]
+    .filter((character) => character !== "_")
+    .map((character) => decimalValue(character))
+    .join("");
+  const port = sign * Number(written);
   if (port === 0) {
     // Port 0 asks the kernel for whatever is free; a shell that has to
     // allowlist the origin cannot allowlist a surprise (§16.4).
@@ -228,36 +268,164 @@ type Parsed =
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
 
+/** Every option string, in the order the oracle's parser was given them. */
+const OPTION_STRINGS = ["-h", "--help", "--port"] as const;
+
+/** What the parser's own message calls each option it can complain about. */
+const OPTION_NAMES: ReadonlyMap<string, string> = new Map([
+  ["--help", "-h/--help"],
+  ["--port", "--port"],
+]);
+
+/** One argument, classified the way `_parse_optional` classifies it. */
+type Word =
+  | { readonly kind: "positional"; readonly value: string }
+  | { readonly kind: "unknown" }
+  | { readonly kind: "ambiguous" }
+  | {
+      readonly kind: "option";
+      /** The action addressed, named by its long spelling. */
+      readonly option: "--help" | "--port";
+      /** Whether the caller spelled it with one dash, which changes a refusal. */
+      readonly short: boolean;
+      /** A value attached to the word itself, by `=` or by juxtaposition. */
+      readonly explicit: string | null;
+    };
+
+const asOption = (option: string, short: boolean, explicit: string | null): Word => ({
+  kind: "option",
+  option: (option === "-h" ? "--help" : option) as "--help" | "--port",
+  short,
+  explicit,
+});
+
+/**
+ * Read one argument as the oracle's parser reads it, before anything is used.
+ *
+ * The order is argparse's and it is load-bearing: an exact spelling wins, then
+ * an exact spelling with `=value`, then an unambiguous *prefix* — `--po` is
+ * `--port` because `allow_abbrev` is on by default — and only what is left
+ * over is measured against the two rules that hand a word back to the
+ * positionals: a negative number (there are no options here that look like
+ * one) and an argument with a space in it, which was meant to be a path.
+ */
+function classify(argument: string): Word {
+  const positional = { kind: "positional", value: argument } as const;
+  if (argument === "" || !argument.startsWith("-")) return positional;
+  // A lone dash names a file by convention, so it is never an option.
+  if (argument === "-") return positional;
+  if ((OPTION_STRINGS as readonly string[]).includes(argument)) {
+    return asOption(argument, !argument.startsWith("--"), null);
+  }
+  const equals = argument.indexOf("=");
+  const beforeEquals = equals < 0 ? argument : argument.slice(0, equals);
+  const afterEquals = equals < 0 ? null : argument.slice(equals + 1);
+  if (equals >= 0 && (OPTION_STRINGS as readonly string[]).includes(beforeEquals)) {
+    return asOption(beforeEquals, !beforeEquals.startsWith("--"), afterEquals);
+  }
+  const matches: Word[] = [];
+  if (argument.startsWith("--")) {
+    // Two dashes: the word is split at `=` and the rest is a prefix. `--=1`
+    // has the empty prefix, which is every option at once.
+    for (const option of OPTION_STRINGS) {
+      if (option.startsWith(beforeEquals)) matches.push(asOption(option, false, afterEquals));
+    }
+  } else {
+    // One dash: a short option carries its value in the same word, so `-hx`
+    // addresses `-h` and hands it an `x` it has no use for.
+    for (const option of OPTION_STRINGS) {
+      if (option === argument.slice(0, 2)) matches.push(asOption(option, true, argument.slice(2)));
+      else if (option.startsWith(argument)) matches.push(asOption(option, false, null));
+    }
+  }
+  if (matches.length > 1) return { kind: "ambiguous" };
+  if (matches.length === 1) return matches[0] as Word;
+  if (/^-\d+$|^-\d*\.\d+$/.test(argument)) return positional;
+  if (argument.includes(" ")) return positional;
+  return { kind: "unknown" };
+}
+
+/** A word the parser kept: an ambiguous one never becomes anything. */
+type Placed = Exclude<Word, { readonly kind: "ambiguous" }>;
+
 export function parseArgs(argv: readonly string[]): Parsed {
+  // Every argument is classified before any of them is used: argparse builds
+  // its whole pattern first, which is why an ambiguous option later in the
+  // line is refused even though `-h` came earlier and would have printed help.
+  const words: Placed[] = [];
+  let separated = false;
+  for (const argument of argv) {
+    if (separated) {
+      words.push({ kind: "positional", value: argument });
+      continue;
+    }
+    // The first bare `--` is the separator itself and is not a word.
+    if (argument === "--") {
+      separated = true;
+      continue;
+    }
+    const word = classify(argument);
+    if (word.kind === "ambiguous") {
+      return {
+        kind: "error",
+        message: `ambiguous option: ${argument} could match --help, --port`,
+      };
+    }
+    words.push(word);
+  }
+
   const positional: string[] = [];
   let unrecognized = 0;
   let port: number = DEFAULT_PORT;
-  let index = 0;
-  while (index < argv.length) {
-    const argument = argv[index] as string;
-    if (argument === "-h" || argument === "--help") return { kind: "help" };
-    if (argument === "--port" || argument.startsWith("--port=")) {
-      const value =
-        argument === "--port"
-          ? ((argv[index + 1] ?? null) as string | null)
-          : argument.slice("--port=".length);
-      if (value === null) {
-        return { kind: "error", message: "argument --port: expected one argument" };
-      }
-      const answer = portNumber(value);
-      if (typeof answer === "string") {
-        return { kind: "error", message: `argument --port: ${answer}` };
-      }
-      port = answer;
-      index += argument === "--port" ? 2 : 1;
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index] as Placed;
+    if (word.kind === "positional") {
+      // A bare word past the first is a positional this parser does not have.
+      if (positional.length === 0) positional.push(word.value);
+      else unrecognized += 1;
       continue;
     }
-    // A leading `-` is an option this parser does not have; a bare word past
-    // the first is a positional it does not have. Both are counted, never
-    // quoted.
-    if (argument.startsWith("-") || positional.length === 1) unrecognized += 1;
-    else positional.push(argument);
-    index += 1;
+    if (word.kind === "unknown") {
+      unrecognized += 1;
+      continue;
+    }
+    if (word.option === "--help") {
+      // A long spelling that carries a value has nowhere to put it; a short
+      // one re-reads the rest as more options, and help fires before they are
+      // looked at.
+      if (word.explicit !== null && !word.short) {
+        return {
+          kind: "error",
+          message: `argument -h/--help: ignored explicit argument ${pythonRepr(word.explicit)}`,
+        };
+      }
+      return { kind: "help" };
+    }
+    let value = word.explicit;
+    if (value === null) {
+      // The next word is the value only if it is a value: an option-looking
+      // word leaves `--port` with nothing, exactly as the pattern match does.
+      const next = words[index + 1];
+      if (next === undefined || next.kind !== "positional") {
+        return { kind: "error", message: "argument --port: expected one argument" };
+      }
+      value = next.value;
+      index += 1;
+    }
+    const answer = portNumber(value);
+    if (typeof answer === "string") {
+      const name = OPTION_NAMES.get(word.option) as string;
+      return { kind: "error", message: `argument ${name}: ${answer}` };
+    }
+    port = answer;
+  }
+  // A missing INSTANCE_DIR is refused inside the parse, and the arguments it
+  // could not place are only counted after the parse returns.
+  if (positional.length === 0) {
+    return {
+      kind: "error",
+      message: "the following arguments are required: INSTANCE_DIR",
+    };
   }
   if (unrecognized > 0) {
     // Quoting the rejected arguments verbatim would echo them, and a mistyped
@@ -266,12 +434,6 @@ export function parseArgs(argv: readonly string[]): Parsed {
     return {
       kind: "error",
       message: `${unrecognized} unrecognized argument(s); values withheld`,
-    };
-  }
-  if (positional.length === 0) {
-    return {
-      kind: "error",
-      message: "the following arguments are required: INSTANCE_DIR",
     };
   }
   return { kind: "args", args: { instance: positional[0] as string, port } };
@@ -369,6 +531,15 @@ interface Request {
   readonly target: string;
   /** Every Host header seen, in order; the count is part of the answer. */
   readonly hosts: string[];
+  /**
+   * That the request line carried no version, and so gets no response head.
+   *
+   * HTTP/0.9 has no status line and no headers — the body is the whole
+   * response. The oracle enforces that in `send_response_only`, which returns
+   * without writing anything when the version is 0.9, so it applies to a served
+   * file exactly as much as to an error page.
+   */
+  readonly headless: boolean;
 }
 
 /**
@@ -452,12 +623,41 @@ function parseRequestLine(raw: string): RequestLine | Reply | null {
  */
 const HEADER_LINE = /^(?:From |[\x21-\x39\x3b-\x7e]*:|[\t ])/;
 
+/**
+ * The block cut into lines the way the mail parser cuts it.
+ *
+ * The socket reader that measured this block counted line feeds, because a
+ * binary `readline` knows nothing else. The mail parser then buffers the whole
+ * block into a `StringIO(newline='')` and reads it back: universal newlines,
+ * untranslated. So a bare carriage return ends a header line for the parser
+ * and not for the reader, and a `Host` after one on the same physical line is
+ * a header the server does see.
+ */
+function logicalLines(block: string): string[] {
+  const lines: string[] = [];
+  let start = 0;
+  let index = 0;
+  while (index < block.length) {
+    const character = block[index] as string;
+    if (character !== "\r" && character !== "\n") {
+      index += 1;
+      continue;
+    }
+    index += character === "\r" && block[index + 1] === "\n" ? 2 : 1;
+    lines.push(block.slice(start, index));
+    start = index;
+  }
+  if (start < block.length) lines.push(block.slice(start));
+  return lines;
+}
+
 /** Every Host value in a header block, joined and stripped as the parser does. */
 function hostsIn(block: string): string[] {
   const lines: string[] = [];
-  for (const raw of block.split("\n")) {
-    const line = `${raw}\n`;
-    if (line === "\n" || line === "\r\n") break;
+  for (const line of logicalLines(block)) {
+    // A line that is only a line ending ends the head, and one that cannot be
+    // a header ends it too — everything after either is a body.
+    if (line === "\n" || line === "\r\n" || line === "\r") break;
     if (!HEADER_LINE.test(line)) break;
     lines.push(line);
   }
@@ -543,15 +743,16 @@ const hostIsOurs = (request: Request, serving: Serving): boolean =>
   serving.origins.has((request.hosts[0] as string).toLowerCase());
 
 function answer(request: Request, serving: Serving): [Reply, number | null] {
+  const bare = request.headless;
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return [errorReply(501, `Unsupported method (${pythonRepr(request.method)})`), null];
+    return [errorReply(501, `Unsupported method (${pythonRepr(request.method)})`, bare), null];
   }
-  if (!hostIsOurs(request, serving)) return [errorReply(400), null];
+  if (!hostIsOurs(request, serving)) return [errorReply(400, undefined, bare), null];
   // Exact match against the raw request target — no decoding, no
   // normalization, no query tolerance: the two paths the viewer asks for are
   // the two paths that answer, and traversal has nothing to walk through.
   const route = serving.routes.get(request.target);
-  if (route === undefined) return [errorReply(404), null];
+  if (route === undefined) return [errorReply(404, undefined, bare), null];
   let fd: number | null;
   try {
     fd = openRoute(route);
@@ -570,14 +771,14 @@ function answer(request: Request, serving: Serving): [Reply, number | null] {
       throw error;
     }
   }
-  if (fd === null) return [errorReply(404), null];
+  if (fd === null) return [errorReply(404, undefined, bare), null];
   let size: number;
   try {
     size = fs.fstatSync(fd).size;
   } catch (error) {
     fs.closeSync(fd);
     diagnose(error instanceof Error ? error.message : String(error));
-    return [errorReply(404), null];
+    return [errorReply(404, undefined, bare), null];
   }
   return [
     {
@@ -591,7 +792,7 @@ function answer(request: Request, serving: Serving): [Reply, number | null] {
         ["Referrer-Policy", "no-referrer"],
       ],
       body: null,
-      headless: false,
+      headless: bare,
     },
     fd,
   ];
@@ -604,15 +805,36 @@ function answer(request: Request, serving: Serving): [Reply, number | null] {
  * double a whole file in memory. The builder replaces the graph atomically, so
  * this descriptor keeps serving the bytes fstat measured.
  */
-function sendBody(socket: net.Socket, fd: number, size: number): void {
+async function sendBody(socket: net.Socket, fd: number, size: number): Promise<void> {
   const buffer = Buffer.allocUnsafe(Math.min(BODY_CHUNK_BYTES, Math.max(size, 1)));
   let remaining = size;
   while (remaining > 0) {
+    if (socket.destroyed || socket.writableEnded) return;
     const read = fs.readSync(fd, buffer, 0, Math.min(buffer.length, remaining), null);
     if (read === 0) return;
-    socket.write(Uint8Array.prototype.slice.call(buffer, 0, read));
+    const flushed = socket.write(Uint8Array.prototype.slice.call(buffer, 0, read));
     remaining -= read;
+    // The oracle writes to a blocking socket, so a client that reads slower
+    // than the disk delivers slows the write down. Here the same client would
+    // instead fill this process's memory with the rest of the file, so the
+    // next chunk waits for the socket's own buffer to drain.
+    if (!flushed) await drained(socket);
   }
+}
+
+/** Wait for the socket to want more bytes — or to stop wanting anything. */
+function drained(socket: net.Socket): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (): void => {
+      socket.off("drain", done);
+      socket.off("close", done);
+      socket.off("error", done);
+      resolve();
+    };
+    socket.once("drain", done);
+    socket.once("close", done);
+    socket.once("error", done);
+  });
 }
 
 /** A connection that stops talking mid-request holds a socket open. */
@@ -706,20 +928,30 @@ function serveConnection(socket: net.Socket, serving: Serving): void {
       method: line.method,
       target: line.target,
       hosts: hostsIn(head.subarray(first + 1, scan.end).toString("latin1")),
+      headless: line.headless,
     };
     const [reply, fd] = answer(parsed, serving);
     const withBody = parsed.method !== "HEAD";
     socket.write(serialize(reply, withBody));
-    if (fd !== null) {
+    if (fd === null) {
+      socket.end();
+      return;
+    }
+    const size = Number((reply.headers[1] as [string, string])[1]);
+    void (async () => {
       try {
-        if (withBody) {
-          sendBody(socket, fd, Number((reply.headers[1] as [string, string])[1]));
-        }
+        if (withBody) await sendBody(socket, fd, size);
+        socket.end();
+      } catch (error) {
+        // `handle_error`: one line naming the failure, never a traceback with
+        // paths and request data in it (§24.4), and the server keeps serving.
+        const name = error instanceof Error ? error.constructor.name : "Error";
+        diagnose(`request failed: ${name}`);
+        socket.destroy();
       } finally {
         fs.closeSync(fd);
       }
-    }
-    socket.end();
+    })();
   });
 }
 
@@ -805,11 +1037,13 @@ export function main(argv: readonly string[], program: string): Promise<number> 
           `— read-only view of ${shownPath(instance)} — Ctrl-C stops\n`,
       );
     });
-    const stop = (): void => {
+    // Ctrl-C only. The oracle catches `KeyboardInterrupt` and returns 0; it
+    // has nothing for SIGTERM, so a terminated server dies of the signal and
+    // says so in its exit status. Handling it here would invent a shutdown a
+    // caller cannot tell from a clean stop.
+    process.on("SIGINT", () => {
       server.close();
       resolve(0);
-    };
-    process.on("SIGINT", stop);
-    process.on("SIGTERM", stop);
+    });
   });
 }

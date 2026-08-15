@@ -60,6 +60,8 @@ interface Case {
   readonly links?: Readonly<Record<string, string>>;
   /** Arguments, with `{root}` for the tree and `{port}` for the bound port. */
   readonly args: readonly string[];
+  /** Environment laid over the caller's, for the variables a run reads. */
+  readonly env?: Readonly<Record<string, string>>;
   /** Set when the program is expected to exit instead of serving. */
   readonly exit?: number;
   readonly says?: readonly string[];
@@ -119,9 +121,134 @@ const cases: Case[] = [
     prints: ["usage:"],
   },
   {
+    // argparse measures the terminal before it wraps anything, and `COLUMNS`
+    // is where it looks first. The port carries one layout (#135): the usage
+    // line and the option spellings are the same at every width, the help
+    // column's line breaks are not.
+    name: "the help text at a terminal width that is not the default",
+    args: ["--help"],
+    env: { COLUMNS: "40" },
+    exit: 0,
+    prints: ["usage:", "INSTANCE_DIR", "--port PORT", "loopback port"],
+  },
+  {
     name: "a port that is not a number",
     files: INSTANCE,
     args: ["{root}", "--port", "eighty"],
+    exit: 2,
+    says: ["argument --port: port must be an integer"],
+  },
+  {
+    // argparse accepts any unambiguous prefix of a long option, and `--port`
+    // is the only one here, so `--po` is `--port`. The run gets past the
+    // arguments and fails on the root instead, which is what proves the option
+    // was understood rather than merely tolerated.
+    name: "the port option written as an abbreviation",
+    args: ["/definitely-absent", "--po", "{port}"],
+    exit: 1,
+    says: ["invalid-root"],
+  },
+  {
+    // `int()` reads every Unicode decimal digit, not just ASCII, so these are
+    // the digits of a port number and the run reaches the root check. A port
+    // that only knew `[0-9]` would refuse the argument instead.
+    name: "a port written in digits that are not ASCII",
+    args: ["/definitely-absent", "--port", "٨١٣٨"],
+    exit: 1,
+    says: ["invalid-root"],
+  },
+  {
+    // The same abbreviation rule reaching the other option: `--h` is `--help`
+    // because nothing else begins that way.
+    name: "the help option written as an abbreviation",
+    args: ["--h"],
+    exit: 0,
+    prints: ["usage:"],
+  },
+  {
+    // A long option that takes no value, handed one anyway. The parser refuses
+    // the *word*, so help is never printed — an implementation that simply
+    // looked for `--help` in the arguments would print it.
+    name: "the help option given a value it cannot take",
+    args: ["--help=please"],
+    exit: 2,
+    says: ["argument -h/--help: ignored explicit argument 'please'"],
+  },
+  {
+    // One dash carries its value in the same word, so this is `-h` followed by
+    // an `x` the parser never gets to look at: help fires first.
+    name: "a short option with letters stuck to it",
+    args: ["-hx"],
+    exit: 0,
+    prints: ["usage:"],
+  },
+  {
+    // The empty prefix, which is every long option at once. The parser says so
+    // before it runs anything, which is why the `--help` after it is not help.
+    name: "an option that abbreviates all of them",
+    args: ["--=1", "--help"],
+    exit: 2,
+    says: ["ambiguous option: --=1 could match --help, --port"],
+  },
+  {
+    // `--` ends the options, so what follows is a path even when it starts
+    // with a dash. The run reaches the root check, which is the proof.
+    name: "the separator that ends the options",
+    args: ["--", "/definitely-absent"],
+    exit: 1,
+    says: ["invalid-root"],
+  },
+  {
+    // A lone dash is a name, not an option: there is no one-character option
+    // for it to be.
+    name: "an instance named with a single dash",
+    args: ["-"],
+    exit: 1,
+    says: ["invalid-root"],
+  },
+  {
+    // This command has no option that looks like a negative number, so a word
+    // that does is a path.
+    name: "an instance whose name reads as a negative number",
+    args: ["-5"],
+    exit: 1,
+    says: ["invalid-root"],
+  },
+  {
+    // Two refusals are available and their order is not obvious: the missing
+    // instance is refused inside the parse, and the leftover word is only
+    // counted after the parse returns.
+    name: "an unknown option and no instance at all",
+    args: ["--open"],
+    exit: 2,
+    says: ["the following arguments are required: INSTANCE_DIR"],
+  },
+  {
+    // An option-looking word is not a value, so `--port` is left with nothing
+    // rather than served a `--help` as its number.
+    name: "an option where the port's value belongs",
+    files: INSTANCE,
+    args: ["{root}", "--port", "--help"],
+    exit: 2,
+    says: ["argument --port: expected one argument"],
+  },
+  {
+    // The whitespace `int()` skips is neither the runtime's nor even
+    // `str.strip()`'s: the rewrite it does first only asks Unicode about
+    // characters past ASCII, so the next-line character is whitespace to it
+    // and this is a number one too large.
+    name: "a port wrapped in whitespace only Python skips",
+    files: INSTANCE,
+    args: ["{root}", "--port", "\u008570000\u0085"],
+    exit: 2,
+    says: ["port must be between 1 and 65535"],
+  },
+  {
+    // And the other side of that line: the file separator is whitespace to
+    // `str.strip()` and to `str.isspace()`, and is still not a number.
+    name: "a port wrapped in whitespace Python strips but does not skip",
+    files: INSTANCE,
+    args: ["{root}", "--port", "\u001c70000\u001c"],
     exit: 2,
     says: ["argument --port: port must be an integer"],
   },
@@ -882,6 +1009,38 @@ const cases: Case[] = [
     ],
   },
   {
+    // The success half of the same rule, which the refusal above hides: a GET
+    // with no version is HTTP/0.9, and HTTP/0.9 has no response head at all.
+    // The oracle sends the file and nothing else — no status line, no headers.
+    // A port that answered this one with `HTTP/1.0 200 OK` would be prepending
+    // its own head to the body of every 0.9 client.
+    name: "a request older than the version line, answered",
+    files: INSTANCE,
+    args: ["{root}", "--port", "{port}"],
+    steps: [
+      {
+        request: "GET /graph/atlas-graph.json\r\nHost: 127.0.0.1:{port}\r\n\r\n",
+        status: null,
+        holds: ['"format":"atlas-graph"'],
+      },
+    ],
+  },
+  {
+    // A bare CR inside the header block. CPython reads headers through
+    // `email.feedparser`, which treats CR, LF and CRLF alike as line
+    // boundaries — so this is a well-formed Host followed by a second header,
+    // not one Host value with a control character in it.
+    name: "a header block split by a bare carriage return",
+    files: INSTANCE,
+    args: ["{root}", "--port", "{port}"],
+    steps: [
+      {
+        request: "GET /graph/atlas-graph.json HTTP/1.1\r\nHost: 127.0.0.1:{port}\rX: y\r\n\r\n",
+        status: 200,
+      },
+    ],
+  },
+  {
     // The request line is measured before it is parsed, so an enormous target
     // is refused rather than walked — and never printed. The pair is the whole
     // point: a ceiling proves nothing until a line one byte under it is read
@@ -1148,6 +1307,9 @@ async function once(side: string, index: number, item: Case, argv: string[]): Pr
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",
+    // Inherited unless a case says otherwise: the two sides differ in
+    // the program under test and nothing else.
+    env: item.env === undefined ? undefined : { ...process.env, ...item.env },
   });
 
   const replies: string[] = [];
@@ -1190,7 +1352,9 @@ async function once(side: string, index: number, item: Case, argv: string[]): Pr
 // ---------------------------------------------------------------------------
 
 /** Divergences with an issue behind them, counted apart rather than hidden. */
-const KNOWN: ReadonlyMap<string, string> = new Map([]);
+const KNOWN: ReadonlyMap<string, string> = new Map([
+  ["the help text at a terminal width that is not the default", "#135"],
+]);
 
 let diverged = 0;
 let recorded = 0;
