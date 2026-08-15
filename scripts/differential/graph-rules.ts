@@ -1130,23 +1130,25 @@ pair("redacted: a withheld state count that does not add up", WITHHELD, (_full, 
   (out["withheld"] as Dict)["state"] = 0;
 });
 
-// A count spelled with a fraction part. Both sides refuse the document and
-// they refuse it in different words: CPython reads `2.0` as a float, so the
-// schema's integer test fires and the rule never runs, while the port reads
-// the value — 2 — satisfies the schema and reports the count mismatch.
-// Recorded rather than matched: the reader judges numbers by value on purpose
-// (§25.7) and no Atlas schema declares a non-integer field, so the two are
-// disagreeing about which complaint to make, not about validity.
+// A count spelled with a fraction part. `2.0` is a float on both sides now, so
+// the schema's integer test refuses the document before any rule looks at the
+// count — which is why this expects `quiet` rather than a rule firing. It used
+// to be recorded as #132, back when the reader folded `2.0` to `2` and the two
+// sides disagreed about which complaint to make.
 {
   const full = clone();
   const out = redact(full, WITHHELD);
   const outText = JSON.stringify(out, null, 1);
   const floated = outText.replace('"state": 1', '"state": 2.0');
   if (floated === outText) throw new Error("the withheld state count moved");
-  add("redacted: a withheld state count spelled as a float", {
-    "atlas-graph.json": full,
-    "atlas-graph.redacted.json": floated,
-  });
+  add(
+    "redacted: a withheld state count spelled as a float",
+    {
+      "atlas-graph.json": full,
+      "atlas-graph.redacted.json": floated,
+    },
+    "quiet",
+  );
 }
 
 // A count that is a boolean. CPython holds `True` to be an `int` and excludes
@@ -1350,10 +1352,6 @@ function isSchemaMessage(message: string): boolean {
 
 /** Divergences with an issue behind them, counted apart rather than hidden. */
 const KNOWN: ReadonlyMap<string, string> = new Map([
-  // CPython keeps the int/float split a JSON `2.0` spelling carries, so the
-  // schema refuses it as a non-integer; the port reads the value and the rule
-  // refuses it as a wrong count. Recorded as #132.
-  ["redacted: a withheld state count spelled as a float", "#132"],
   // A value inside a diagnostic is spelled as JSON here and as CPython `repr`
   // there: `null` for `None`, and double quotes where a value already holds
   // one. §24.4 makes the source a contract and the prose after it not one.

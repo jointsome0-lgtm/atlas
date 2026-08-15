@@ -28,10 +28,35 @@ export class JsonDisciplineError extends Error {
   }
 }
 
+/**
+ * A JSON number the oracle would hold as a float rather than an int.
+ *
+ * Python has two numeric types and JavaScript has one, and the difference is
+ * not academic: `isinstance(version, int)` is False for `1.0`, so an intake
+ * envelope spelling its version that way is refused (§33.2) — while a parser
+ * that folded `1.0` to `1` would accept the delivery and write it into the
+ * instance. Every check that asks "is this an integer" is written as
+ * `typeof value === "number"`, so wrapping the float is what makes those
+ * checks answer the way the oracle's `isinstance` does, without any of them
+ * having to know that floats exist.
+ *
+ * Nothing may write one: no Atlas schema declares a non-integer field, so a
+ * float only ever exists between reading a foreign document and the schema
+ * refusing it. The writer refuses it too, which is what keeps that true.
+ */
+export class JsonFloat {
+  readonly value: number;
+
+  constructor(value: number) {
+    this.value = value;
+  }
+}
+
 export type JsonValue =
   | null
   | boolean
   | number
+  | JsonFloat
   | string
   | JsonValue[]
   | { [key: string]: JsonValue };
@@ -187,6 +212,15 @@ function encode(
   // the single property §25.7 exists to provide. A revoked one throws a bare
   // TypeError mid-write, which §24.2 does not allow either.
   if (types.isProxy(container)) unserializable();
+  // After the Proxy defence, never before: `instanceof` reads the prototype,
+  // which is a trap a revoked Proxy answers with a bare TypeError. A float can
+  // be read but never written — it exists only long enough for a schema to
+  // refuse the document that carried it.
+  if (container instanceof JsonFloat) {
+    throw new JsonDisciplineError(
+      "non-integer-json-number; expected an integer JSON number",
+    );
+  }
   // Before the depth bound, not after: a cycle reached at exactly the bound is
   // a cycle, and saying "nesting-too-deep" would point at the wrong defect.
   // A repeated reference is fine and writes twice; a reference back into a
@@ -526,7 +560,7 @@ class StrictParser {
     );
   }
 
-  private parseNumber(): number {
+  private parseNumber(): number | JsonFloat {
     const start = this.index;
     if (this.text[this.index] === "-") this.index += 1;
     while (/[0-9]/.test(this.text[this.index] ?? "")) this.index += 1;
@@ -551,19 +585,17 @@ class StrictParser {
         "non-finite-json-number; expected a finite JSON number",
       );
     }
-    // One numeric domain, shared with the writer: what this returns, the
-    // writer can always write back. The three tests below are exactly
-    // `encodeNumber`'s, applied to the value rather than to the literal — so
-    // the answer does not depend on how the number was spelled. `1`, `1.0` and
-    // `1e0` all read as 1; `9007199254740993`, `9007199254740993e0` and
-    // `9007199254740992.0` are all refused, none of them sneaking past through
-    // the exponent or fraction form.
+    // Reading is where the oracle's two numeric types have to survive, because
+    // downstream checks ask which one they got. A fraction or an exponent makes
+    // a Python float, and a float is not an int: `{"version": 1.0}` fails the
+    // envelope's integer test rather than passing it as 1. Refusing the whole
+    // document here instead would be both stricter and more permissive than the
+    // oracle at once — it would turn a structured `schema-invalid` report into
+    // a bare `invalid-json`, and it would let `1.0` through as `1`.
     //
-    // Judging the value also means a `.0` or exponent spelling is not
-    // preserved on the way out, where the oracle would keep it (`1.0` stays
-    // `1.0`). That difference is Python's int/float split, which JavaScript
-    // does not have and the canon does not use: no Atlas schema declares a
-    // non-integer field.
+    // The literal decides, not the value: Python reads `1.0` as a float even
+    // though the value is integral, so the spelling is what is asked.
+    if (/[.eE]/.test(literal)) return new JsonFloat(value);
     if (!Number.isInteger(value)) {
       throw new JsonDisciplineError(
         "non-integer-json-number; expected an integer JSON number",

@@ -1,5 +1,6 @@
 import {
   JsonDisciplineError,
+  JsonFloat,
   type JsonValue,
   parseStrict,
   stringifyDocument,
@@ -230,6 +231,10 @@ function project(value: JsonValue): JsonValue {
   if (value === null) return ["null"];
   if (typeof value === "boolean") return ["bool", value];
   if (typeof value === "number") return ["num", projectNumber(value)];
+  // The oracle projects an int and a float alike, as the bits of the double —
+  // so a float projects the same way here, and the comparison stays about the
+  // value while the type keeps its separate proof in the reason column.
+  if (value instanceof JsonFloat) return ["num", projectNumber(value.value)];
   if (typeof value === "string") return ["str", value];
   if (Array.isArray(value)) return ["arr", value.map(project)];
   const record = value as { [key: string]: JsonValue };
@@ -263,9 +268,17 @@ interface ReadCase {
   // the oracle would emit. Recorded per case rather than inferred, so the
   // asymmetry is stated where someone reading the corpus will see it.
   documentRefuses?: string;
+  // Both readers accept it and neither writer here may put it back: a float is
+  // read so a schema can refuse the document that carried it, and §25.7 has no
+  // float spelling to write. The reason is named so a case cannot claim this
+  // exemption and then be refused for something else entirely.
+  writeRefuses?: string;
   // As `oracleRowDiffers`, for the order-preserving form.
   oracleDocumentDiffers?: Divergence;
 }
+
+/** The one reason canon gives for refusing to write a value it can read. */
+const FLOAT = "non-integer-json-number";
 
 interface Divergence {
   issue: string;
@@ -293,64 +306,22 @@ const READS: ReadCase[] = [
   { text: '{"nested":{"a":[1,{"b":null}]}}', reason: null },
   { text: '"\\u0041\\u00e9\\ud83d\\ude00"', reason: null },
   { text: '  { "a" : 1 }  ', reason: null },
-  // A fraction is refused however it is written (#123): no Atlas schema
-  // declares a non-integer field, and the oracle's int/float split is a
-  // Python distinction JavaScript does not have.
-  {
-    text: '{"a":1.5}',
-    reason: "non-integer-json-number",
-    oracleDiffers: "#123",
-  },
-  {
-    text: "-1.5e-3",
-    reason: "non-integer-json-number",
-    oracleDiffers: "#123",
-  },
-  // Written as a fraction, integral once rounded to a double, so it reads as
-  // that integer on both sides.
-  {
-    text: "1.0000000000000001",
-    reason: null,
-    oracleRowDiffers: { issue: "#123", ours: "1" },
-    oracleDocumentDiffers: { issue: "#123", ours: "1\n" },
-  },
-  // §25.7 has one zero. The oracle keeps a sign on "-0.0" only because it
-  // reads that spelling as a float; ours emits "0" for both, so returning -0
-  // would be a value the writer could not put back on disk.
+  // A float reads as a float on both sides: Python's int/float split decides
+  // whether `{"version": 1.0}` passes an envelope's integer test, so the reader
+  // carries it (#119). What canon does not carry is a way to *write* one —
+  // §25.7 has a single integer domain and no Atlas schema declares a
+  // non-integer field — so each of these reads and then refuses to be written.
+  { text: '{"a":1.5}', reason: null, writeRefuses: FLOAT },
+  { text: "-1.5e-3", reason: null, writeRefuses: FLOAT },
+  { text: "1.0000000000000001", reason: null, writeRefuses: FLOAT },
+  { text: "-0.0", reason: null, writeRefuses: FLOAT },
+  { text: "0.0", reason: null, writeRefuses: FLOAT },
+  { text: "1e2", reason: null, writeRefuses: FLOAT },
+  { text: "1E+2", reason: null, writeRefuses: FLOAT },
+  { text: "1.0", reason: null, writeRefuses: FLOAT },
+  // §25.7 has one integer zero, and the bare spellings are the integer ones.
   { text: "-0", reason: null },
-  {
-    text: "-0.0",
-    reason: null,
-    // +0's bits, where the oracle keeps -0's.
-    oracleValueDiffers: { issue: "#123", ours: '["num","0000000000000000"]' },
-    oracleRowDiffers: { issue: "#123", ours: "0" },
-    oracleDocumentDiffers: { issue: "#123", ours: "0\n" },
-  },
   { text: "0", reason: null },
-  {
-    text: "0.0",
-    reason: null,
-    oracleRowDiffers: { issue: "#123", ours: "0" },
-    oracleDocumentDiffers: { issue: "#123", ours: "0\n" },
-  },
-  {
-    text: "1e2",
-    reason: null,
-    oracleRowDiffers: { issue: "#123", ours: "100" },
-    oracleDocumentDiffers: { issue: "#123", ours: "100\n" },
-  },
-  {
-    text: "1E+2",
-    reason: null,
-    oracleRowDiffers: { issue: "#123", ours: "100" },
-    oracleDocumentDiffers: { issue: "#123", ours: "100\n" },
-  },
-  {
-    text: "1.0",
-    reason: null,
-    oracleRowDiffers: { issue: "#123", ours: "1" },
-    oracleDocumentDiffers: { issue: "#123", ours: "1\n" },
-  },
   { text: "9007199254740991", reason: null },
   { text: '{"":1}', reason: null },
   { text: "true", reason: null },
@@ -422,24 +393,14 @@ const READS: ReadCase[] = [
     reason: "unrepresentable-json-number",
     oracleDiffers: "#123",
   },
-  // The fraction and exponent spellings of the same value. These used to
-  // return before the precision check, so ...993e0 was read as ...992 while
-  // the plain spelling was refused — one contract, one answer.
-  {
-    text: "9007199254740992.0",
-    reason: "unrepresentable-json-number",
-    oracleDiffers: "#123",
-  },
-  {
-    text: "9007199254740993e0",
-    reason: "unrepresentable-json-number",
-    oracleDiffers: "#123",
-  },
-  {
-    text: "-9007199254740993e0",
-    reason: "unrepresentable-json-number",
-    oracleDiffers: "#123",
-  },
+  // The fraction and exponent spellings of the same magnitude, which are a
+  // different matter: Python reads those as floats, and so does the port, so
+  // there is no exact integer to lose and nothing to disagree about. Only the
+  // bare spellings above — the ones Python holds exactly and a double cannot —
+  // are still out of range.
+  { text: "9007199254740992.0", reason: null, writeRefuses: FLOAT },
+  { text: "9007199254740993e0", reason: null, writeRefuses: FLOAT },
+  { text: "-9007199254740993e0", reason: null, writeRefuses: FLOAT },
   { text: '"\\ud800"', reason: "lone-surrogate", oracleDiffers: "#123" },
   { text: '"\\udfff"', reason: "lone-surrogate", oracleDiffers: "#123" },
   { text: '"\\ud800\\ud800"', reason: "lone-surrogate", oracleDiffers: "#123" },
@@ -630,7 +591,20 @@ for (let i = 0; i < READS.length; i += 1) {
   if (expected.ok && expected.row !== null && failure === null) {
     compared += 1;
     const written = write(() => stringifyRow(value));
-    if (typeof written !== "string") {
+    if (read.writeRefuses !== undefined) {
+      if (typeof written === "string") {
+        divergences += 1;
+        console.error(
+          `DIVERGENCE ${label}: recorded as unwritable (${read.writeRefuses}), ` +
+            "but it emitted — retire the note",
+        );
+      } else if (!written.refusal.startsWith(read.writeRefuses)) {
+        divergences += 1;
+        console.error(`DIVERGENCE ${label}: wrong reason for refusing to write`);
+        console.error(`  canon: ${read.writeRefuses}`);
+        console.error(`  ours:  ${written.refusal}`);
+      }
+    } else if (typeof written !== "string") {
       divergences += 1;
       console.error(`DIVERGENCE ${label}: read but the row form refuses it`);
       console.error(`  ours: ${written.refusal}`);
@@ -650,7 +624,10 @@ for (let i = 0; i < READS.length; i += 1) {
     // it had not looked at.
     compared += 1;
     const asDocument = write(() => stringifyDocument(value));
-    if (read.documentRefuses === undefined) {
+    // A value canon will not write is not written in either form, so the
+    // row-form marker answers for both rather than needing a second one.
+    const documentRefuses = read.documentRefuses ?? read.writeRefuses;
+    if (documentRefuses === undefined) {
       if (typeof asDocument !== "string") {
         divergences += 1;
         console.error(
@@ -662,12 +639,12 @@ for (let i = 0; i < READS.length; i += 1) {
       divergences += 1;
       console.error(
         `DIVERGENCE ${label}: recorded as refused by the document form ` +
-          `(${read.documentRefuses}), but it emitted — retire the note`,
+          `(${documentRefuses}), but it emitted — retire the note`,
       );
-    } else if (!asDocument.refusal.startsWith(read.documentRefuses)) {
+    } else if (!asDocument.refusal.startsWith(documentRefuses)) {
       divergences += 1;
       console.error(`DIVERGENCE ${label}: wrong document-form reason`);
-      console.error(`  canon: ${read.documentRefuses}`);
+      console.error(`  canon: ${documentRefuses}`);
       console.error(`  ours:  ${asDocument.refusal}`);
     }
 

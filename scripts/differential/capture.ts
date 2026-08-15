@@ -486,6 +486,28 @@ const cases: Case[] = [
     ],
   },
   {
+    // A float is read, not refused at the parse boundary: the schema is what
+    // says a non-integer field is inadmissible, and it says so as a structured
+    // rejection with the headers and the report around it. Refusing the whole
+    // document as invalid JSON instead would turn a record the owner can see
+    // the verdict on into a bare parse error (#119).
+    name: "a record carrying a fractional number",
+    files: {
+      ...BASE,
+      "rec.json":
+        '{"id":"encounter:first","date":"2026-01-02","target":"part:book/one",' +
+        '"depth":"read","mode":"background","x":1.5}\n',
+    },
+    dirs: ["state"],
+    runs: [
+      {
+        args: ["{root}", "--record-file", "{root}/rec.json", "--key", "b1"],
+        exit: 1,
+        says: ["schema-invalid"],
+      },
+    ],
+  },
+  {
     name: "a record missing a field its journal requires",
     files: { ...BASE, "rec.json": record({ id: "encounter:first", date: "2026-01-02" }) },
     dirs: ["state"],

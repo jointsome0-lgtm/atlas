@@ -352,6 +352,34 @@ const cases: Case[] = [
     ],
   },
   {
+    name: "a version written as a float, which is not the integer 1",
+    // JSON has one number type and Python has two. `1.0` parses to a float,
+    // which is not `1`, and the envelope is refused. A port that lets a JSON
+    // parser fold both to the same number accepts a delivery the oracle turns
+    // away — and then writes it into the instance.
+    files: { ...BASE, "intake/vera/b1.json": '{"format":"atlas-intake","version":1.0,"source":"vera","batch":"b1","records":[]}\n' },
+    dirs: ["state"],
+    runs: [
+      {
+        args: ["{root}", "--batch", "vera/b1"],
+        exit: 1,
+        says: ["missing-format-version"],
+      },
+    ],
+  },
+  {
+    name: "a version written in exponent form is a float too",
+    files: { ...BASE, "intake/vera/b1.json": '{"format":"atlas-intake","version":1e0,"source":"vera","batch":"b1","records":[]}\n' },
+    dirs: ["state"],
+    runs: [
+      {
+        args: ["{root}", "--batch", "vera/b1"],
+        exit: 1,
+        says: ["missing-format-version"],
+      },
+    ],
+  },
+  {
     name: "an envelope carrying a field the schema does not admit",
     files: { ...BASE, "intake/vera/b1.json": batch([ARTIFACT], { note: "hi" }) },
     dirs: ["state"],

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   JsonDisciplineError,
+  JsonFloat,
   MAX_JSON_DEPTH,
   parseStrict,
   stringifyDocument,
@@ -404,39 +405,51 @@ describe("parseStrict", () => {
     }
   });
 
-  test("judges the value, not how it was spelled", () => {
-    // The fraction and exponent forms used to return before the precision
-    // check, so ...993e0 read as ...992 while the plain spelling was refused.
-    for (
-      const text of [
-        "9007199254740992.0",
-        "9007199254740993e0",
-        "-9007199254740993e0",
-      ]
-    ) {
-      expect(() => parseStrict(text)).toThrow(/unrepresentable-json-number/);
+  test("reads a fraction or an exponent as the float the oracle reads", () => {
+    // The spelling decides, because it decides for Python: `json.loads` gives
+    // an int only for a bare digit string, and every check downstream asks
+    // `isinstance(value, int)`. Folding `1.0` to `1` here would let an intake
+    // envelope declaring `"version": 1.0` pass the gate the oracle closes on
+    // it — and then be written into the instance (#119).
+    for (const text of ["1.0", "1e0", "1E+2", "1e2", "1.5", "0.1", "-2.5", "1e-1"]) {
+      expect(parseStrict(text)).toBeInstanceOf(JsonFloat);
     }
-    // The same value three ways, one answer each time.
-    for (const text of ["1", "1.0", "1e0"]) expect(parseStrict(text)).toBe(1);
-    for (const text of ["100", "1e2", "1E+2"]) {
-      expect(parseStrict(text)).toBe(100);
+    // A bare digit string is the one spelling that reads as an integer.
+    expect(parseStrict("1")).toBe(1);
+    expect(parseStrict("100")).toBe(100);
+
+    // The value still rides along, so a schema can say what is wrong with it.
+    expect((parseStrict("1.0") as JsonFloat).value).toBe(1);
+    expect((parseStrict("-2.5") as JsonFloat).value).toBe(-2.5);
+
+    // Beyond 2**53 the exponent form is a float on both sides, so it is read
+    // rather than refused; only the bare integer spelling, which Python holds
+    // exactly and a double cannot, is still out of range.
+    for (const text of ["9007199254740992.0", "9007199254740993e0", "-9007199254740993e0"]) {
+      expect(parseStrict(text)).toBeInstanceOf(JsonFloat);
     }
-    // A fraction is refused: no Atlas schema declares one, and the oracle's
-    // int/float split is not a distinction this port carries.
-    for (const text of ["1.5", "0.1", "-2.5", "1e-1"]) {
-      expect(() => parseStrict(text)).toThrow(/non-integer-json-number/);
-    }
-    // Written as a fraction but integral once rounded to a double, so it is
-    // read as the integer it actually is. The imprecision is the format's.
-    expect(parseStrict("1.0000000000000001")).toBe(1);
   });
 
-  test("has one zero, whichever way it is written", () => {
-    // -0 emits as "0", so returning -0 would hand back a value the writer
-    // cannot put on disk unchanged. The oracle keeps the sign on -0.0 only
-    // because it reads that one as a float; §25.7 has no signed zero.
-    for (const text of ["0", "-0", "-0.0", "0.0", "-0e0"]) {
+  test("keeps a float out of everything that writes", () => {
+    // Reading one is not permission to persist one: no Atlas schema declares a
+    // non-integer field, so a float exists only between a foreign document
+    // arriving and a schema refusing it.
+    for (const text of ["1.0", "-2.5", "1e0"]) {
+      const parsed = parseStrict(text);
+      expect(() => stringifyRow(parsed)).toThrow(/non-integer-json-number/);
+      expect(() => stringifyDocument(parsed)).toThrow(/non-integer-json-number/);
+    }
+  });
+
+  test("has one integer zero, and a float zero that keeps its sign", () => {
+    // -0 emits as "0", so returning -0 as an integer would hand back a value
+    // the writer cannot put on disk unchanged. The oracle keeps the sign on
+    // -0.0 only because it reads that one as a float — and now so does this.
+    for (const text of ["0", "-0"]) {
       expect(Object.is(parseStrict(text), 0)).toBe(true);
+    }
+    for (const text of ["-0.0", "0.0", "-0e0"]) {
+      expect(parseStrict(text)).toBeInstanceOf(JsonFloat);
     }
   });
 
