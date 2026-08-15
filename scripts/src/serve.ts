@@ -290,13 +290,28 @@ type Word =
       readonly short: boolean;
       /** A value attached to the word itself, by `=` or by juxtaposition. */
       readonly explicit: string | null;
+      /**
+       * How that value was attached: `=` or nothing at all.
+       *
+       * The parser keeps these apart, and for an option that takes no value it
+       * is the whole difference between printing help and refusing: `-hx` is
+       * `-h` followed by more short options, `-h=x` is `-h` handed an argument
+       * it has no use for.
+       */
+      readonly sep: "=" | "" | null;
     };
 
-const asOption = (option: string, short: boolean, explicit: string | null): Word => ({
+const asOption = (
+  option: string,
+  short: boolean,
+  explicit: string | null,
+  sep: "=" | "" | null,
+): Word => ({
   kind: "option",
   option: (option === "-h" ? "--help" : option) as "--help" | "--port",
   short,
   explicit,
+  sep,
 });
 
 /**
@@ -315,27 +330,30 @@ function classify(argument: string): Word {
   // A lone dash names a file by convention, so it is never an option.
   if (argument === "-") return positional;
   if ((OPTION_STRINGS as readonly string[]).includes(argument)) {
-    return asOption(argument, !argument.startsWith("--"), null);
+    return asOption(argument, !argument.startsWith("--"), null, null);
   }
   const equals = argument.indexOf("=");
   const beforeEquals = equals < 0 ? argument : argument.slice(0, equals);
   const afterEquals = equals < 0 ? null : argument.slice(equals + 1);
   if (equals >= 0 && (OPTION_STRINGS as readonly string[]).includes(beforeEquals)) {
-    return asOption(beforeEquals, !beforeEquals.startsWith("--"), afterEquals);
+    return asOption(beforeEquals, !beforeEquals.startsWith("--"), afterEquals, "=");
   }
   const matches: Word[] = [];
   if (argument.startsWith("--")) {
     // Two dashes: the word is split at `=` and the rest is a prefix. `--=1`
     // has the empty prefix, which is every option at once.
     for (const option of OPTION_STRINGS) {
-      if (option.startsWith(beforeEquals)) matches.push(asOption(option, false, afterEquals));
+      if (option.startsWith(beforeEquals)) {
+        matches.push(asOption(option, false, afterEquals, afterEquals === null ? null : "="));
+      }
     }
   } else {
     // One dash: a short option carries its value in the same word, so `-hx`
-    // addresses `-h` and hands it an `x` it has no use for.
+    // addresses `-h` and hands it an `x` with nothing between them.
     for (const option of OPTION_STRINGS) {
-      if (option === argument.slice(0, 2)) matches.push(asOption(option, true, argument.slice(2)));
-      else if (option.startsWith(argument)) matches.push(asOption(option, false, null));
+      if (option === argument.slice(0, 2)) {
+        matches.push(asOption(option, true, argument.slice(2), ""));
+      } else if (option.startsWith(argument)) matches.push(asOption(option, false, null, null));
     }
   }
   if (matches.length > 1) return { kind: "ambiguous" };
@@ -390,10 +408,18 @@ export function parseArgs(argv: readonly string[]): Parsed {
       continue;
     }
     if (word.option === "--help") {
-      // A long spelling that carries a value has nowhere to put it; a short
-      // one re-reads the rest as more options, and help fires before they are
-      // looked at.
-      if (word.explicit !== null && !word.short) {
+      // Help takes no value, so a value attached to it is refused — except in
+      // the one shape that is not a value at all: a one-dash spelling whose
+      // tail is more short options, written without an `=` and not starting
+      // with a dash of its own. `-hx` is `-h -x`, and help fires before the
+      // tail is looked at; `-h=x`, `-h-x` and `-h=` are refusals.
+      const tail =
+        word.explicit !== null &&
+        word.explicit !== "" &&
+        word.short &&
+        word.sep === "" &&
+        !word.explicit.startsWith("-");
+      if (word.explicit !== null && !tail) {
         return {
           kind: "error",
           message: `argument -h/--help: ignored explicit argument ${pythonRepr(word.explicit)}`,
@@ -716,11 +742,15 @@ function pythonRepr(value: string): string {
     const escape = short.get(character);
     if (escape !== undefined) text += escape;
     else if (character === quote) text += `\\${character}`;
-    // A space is printable and everything else `str.isprintable` refuses is
-    // written as its code point — two hex digits for everything latin-1 has.
+    // A space is printable; everything else `str.isprintable` refuses is
+    // written as its code point, at whichever of the three widths holds it.
+    // A request line only ever carries latin-1, because that is what it was
+    // decoded with, but an argument carries whatever the caller typed.
     else if (character !== " " && UNPRINTABLE.test(character)) {
       const point = character.codePointAt(0) as number;
-      text += `\\x${point.toString(16).padStart(2, "0")}`;
+      if (point < 0x100) text += `\\x${point.toString(16).padStart(2, "0")}`;
+      else if (point < 0x10000) text += `\\u${point.toString(16).padStart(4, "0")}`;
+      else text += `\\U${point.toString(16).padStart(8, "0")}`;
     } else text += character;
   }
   return text + quote;

@@ -183,6 +183,37 @@ const cases: Case[] = [
     prints: ["usage:"],
   },
   {
+    // The tail is only a tail when nothing stands between it and the option.
+    // An `=` makes the same letter a value, and a value is refused.
+    name: "a short option handed the same letters through an equals sign",
+    args: ["-h=x"],
+    exit: 2,
+    says: ["argument -h/--help: ignored explicit argument 'x'"],
+  },
+  {
+    // And a tail that opens with a dash is not more short options either.
+    name: "a short option whose tail begins with a dash",
+    args: ["-h-x"],
+    exit: 2,
+    says: ["argument -h/--help: ignored explicit argument '-x'"],
+  },
+  {
+    // An empty value is still a value: there is no tail to re-read.
+    name: "a short option handed nothing through an equals sign",
+    args: ["-h="],
+    exit: 2,
+    says: ["argument -h/--help: ignored explicit argument ''"],
+  },
+  {
+    // The refused value is shown back, so it is shown the way CPython shows
+    // one: escaped, at the width the code point needs, and never as itself —
+    // this one would otherwise put a line break in the middle of a diagnostic.
+    name: "a refused value carrying characters that cannot be printed",
+    args: ["--help=\u2028\u0007\u{10ffff}"],
+    exit: 2,
+    says: ["argument -h/--help: ignored explicit argument '\\u2028\\x07\\U0010ffff'"],
+  },
+  {
     // The empty prefix, which is every long option at once. The parser says so
     // before it runs anything, which is why the `--help` after it is not help.
     name: "an option that abbreviates all of them",
