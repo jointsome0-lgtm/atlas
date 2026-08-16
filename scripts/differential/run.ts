@@ -87,18 +87,37 @@ const HARNESSES: readonly Harness[] = [
 
 let failures = 0;
 
-// `--record` is forwarded so the oracle's answers can be written down in one
-// pass over the whole matrix. See scripts/differential/oracle.ts: the
-// recordings are what the harnesses run on once the oracle is gone.
-const passed = process.argv.slice(2).filter((word) => word === "--record");
+// No arguments. `--record` was forwarded here while CPython was installed and
+// there was something to record from; the 2026-08-16 §27.8 decision rejected
+// keeping it — "with no oracle there is nothing left to record from" — and the
+// harnesses have read their frozen answers alone since the cutover. Accepting
+// it silently would let `--record` exit 0 having recorded nothing, which is the
+// worst of the three possible behaviours.
+if (process.argv.length > 2) {
+  for (const line of ["this command takes no arguments", "usage: run.ts"]) {
+    process.stderr.write(`ERROR: ${line}\n`);
+  }
+  process.exit(2);
+}
 
 for (const harness of HARNESSES) {
   for (const zone of harness.zones) {
-    const run = Bun.spawnSync(["bun", harness.file, ...passed], {
+    const run = Bun.spawnSync(["bun", harness.file], {
       env: { ...process.env, TZ: zone },
+      // Progress and comparison counts are this run's result summary, so they
+      // stay on stdout and stay live. A harness's stderr is a diagnostic, and
+      // §25.8 wants those prefixed one line at a time — inherited, a divergence
+      // report or a Bun traceback arrived here as raw unprefixed lines. Control
+      // characters fold so a forwarded line cannot erase the prefix put in
+      // front of it.
       stdout: "inherit",
-      stderr: "inherit",
+      stderr: "pipe",
     });
+    const said = Buffer.from(run.stderr).toString("utf8");
+    for (const line of said.split("\n")) {
+      if (line === "") continue;
+      process.stderr.write(`ERROR: ${line.replace(/[\p{Cc}\p{Cf}]/gu, "?")}\n`);
+    }
     if (run.exitCode !== 0) failures += 1;
   }
 }
