@@ -49,6 +49,12 @@ function fail(lines: readonly string[], status = 1): never {
 function main(argv: readonly string[]): number {
   const checkOnly = argv.includes("--check");
   const rest = argv.filter((word) => word !== "--check");
+  if (argv.length - rest.length > 1) {
+    // `[--check]` is one occurrence, and the builder refuses a repeat in the
+    // same words. Filtering without counting would swallow the second one and
+    // run the build as if the line had been written correctly.
+    fail(["--check may be specified only once", "usage: build_native.ts [--check]"], 2);
+  }
   if (rest.length > 0) {
     // §25.8's CLI contract reaches usage errors too — "every diagnostic line
     // is prefixed ERROR:, usage errors included", which is why the ported

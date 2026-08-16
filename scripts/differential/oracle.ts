@@ -102,9 +102,31 @@ function refuseRoot(): void {
   );
 }
 
+/**
+ * Does `question` name the directory `named`, rather than merely start with it?
+ *
+ * A leaked root appears either as itself or as something under it, so what
+ * follows the match is `/`, or a quote, or nothing — never another character of
+ * the same name. Testing for a bare substring instead makes every root a prefix
+ * trap: a corpus that legitimately says `/nonexistent-instance-root` collides
+ * with a `HOME` of `/nonexistent`, which is what `nobody` and several service
+ * accounts are given, and the whole replay then fails without a divergence to
+ * show for it. The check is not loosened by this — a real leak still has a
+ * component boundary after the root, because that is what makes it a path.
+ */
+function namesDirectory(question: string, named: string): boolean {
+  let at = question.indexOf(named);
+  while (at !== -1) {
+    const next = question[at + named.length];
+    if (next === undefined || !/[A-Za-z0-9._-]/.test(next)) return true;
+    at = question.indexOf(named, at + 1);
+  }
+  return false;
+}
+
 function refuseMachine(harness: string, question: string): void {
   for (const named of MACHINE) {
-    if (named === "" || !question.includes(named)) continue;
+    if (named === "" || !namesDirectory(question, named)) continue;
     throw new Error(
       `${harness}: the question names this machine (${named}), so its ` +
         `fingerprint is different on every computer and the recording can ` +
