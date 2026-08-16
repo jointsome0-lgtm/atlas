@@ -24,6 +24,23 @@ const TARGETS: ReadonlyMap<string, string> = new Map([
 const REPOSITORY = fileURLToPath(new URL("..", import.meta.url));
 const CRATE = path.join(REPOSITORY, "native", "atlas-posix");
 
+/**
+ * Another program's output, made safe to put after a prefix.
+ *
+ * Splitting on LF is not enough to keep one line one line: a carriage return
+ * sends the cursor back over the `ERROR:` just written, and an escape sequence
+ * can erase it outright, so a forwarded line would arrive looking unprefixed
+ * however carefully it was prefixed. Piping already turns cargo's own colour
+ * off; what this catches is control characters carried *through* it, from a
+ * source file with CRLF endings quoted back inside a rustc diagnostic. Spaces
+ * survive — rustc's carets and margins are made of them.
+ */
+const forwarded = (text: string): string[] =>
+  text
+    .split("\n")
+    .map((line) => line.replace(/[\p{Cc}\p{Cf}]/gu, "?"))
+    .filter((line) => line !== "");
+
 function fail(lines: readonly string[], status = 1): never {
   for (const line of lines) process.stderr.write(`ERROR: ${line}\n`);
   process.exit(status);
@@ -78,12 +95,16 @@ function main(argv: readonly string[]): number {
     // where §25.8 allows only ERROR:/WARNING: lines. A failing build is worth
     // every line it printed, so those are re-emitted through the prefixing
     // path; a successful one has nothing to say that the result summary on
-    // stdout does not already say. Piping also turns cargo's colour off, so
-    // the forwarded lines carry no escape sequences.
-    { encoding: "utf8" },
+    // stdout does not already say.
+    //
+    // `maxBuffer` is raised well past anything this crate can print, because
+    // capturing introduces a ceiling that inheriting did not have: at the
+    // default, a build that talked too much would be killed mid-compile and
+    // reported as a failure it never had.
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
   if (built.error !== undefined || built.status !== 0) {
-    const said = (built.stderr ?? "").split("\n").filter((line) => line !== "");
+    const said = forwarded(built.stderr ?? "");
     fail([
       `cargo build failed${built.error === undefined ? "" : `: ${built.error.message}`}`,
       ...said,
