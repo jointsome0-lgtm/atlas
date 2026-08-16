@@ -72,11 +72,21 @@ function main(argv: readonly string[]): number {
       "--manifest-path",
       path.join(CRATE, "Cargo.toml"),
     ],
-    { stdio: "inherit" },
+    // Captured rather than inherited. Cargo and rustup write progress and
+    // errors to stderr in their own shapes — bare `Compiling …`, `info:`,
+    // `error:` — and inheriting the stream makes those this command's stderr,
+    // where §25.8 allows only ERROR:/WARNING: lines. A failing build is worth
+    // every line it printed, so those are re-emitted through the prefixing
+    // path; a successful one has nothing to say that the result summary on
+    // stdout does not already say. Piping also turns cargo's colour off, so
+    // the forwarded lines carry no escape sequences.
+    { encoding: "utf8" },
   );
   if (built.error !== undefined || built.status !== 0) {
+    const said = (built.stderr ?? "").split("\n").filter((line) => line !== "");
     fail([
       `cargo build failed${built.error === undefined ? "" : `: ${built.error.message}`}`,
+      ...said,
       "the toolchain §25.8 pins is in rust-toolchain.toml; rustup honours it",
     ]);
   }
