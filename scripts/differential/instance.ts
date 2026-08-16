@@ -18,10 +18,10 @@ import {
   AtlasInstance,
   enforceCeiling,
   makeReceiptKey,
-} from "../src/instance.ts";
-import { compareCodePoint } from "../src/ordering.ts";
-import { parseStrict } from "../src/canonical-json.ts";
-import { SchemaSubsetError, SchemaValidator } from "../src/schema.ts";
+} from "../src/boundary/instance.ts";
+import { compareCodePoint } from "../src/boundary/ordering.ts";
+import { parseStrict } from "../src/boundary/canonical-json.ts";
+import { SchemaSubsetError, SchemaValidator } from "../src/boundary/schema.ts";
 
 interface SetupEntry {
   readonly kind: "dir" | "file" | "symlink";

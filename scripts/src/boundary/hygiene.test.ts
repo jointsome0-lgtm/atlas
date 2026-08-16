@@ -19,7 +19,7 @@ import { expect, test } from "bun:test";
 
 import { checkHygiene } from "./hygiene.ts";
 
-const REPOSITORY = `${import.meta.dir}/../..`;
+const REPOSITORY = `${import.meta.dir}/../../..`;
 
 test("this repository publishes no denied path and no unmarked fixture", () => {
   let stdout = "";

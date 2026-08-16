@@ -18,7 +18,7 @@
 
 import { oracleAnswer } from "./oracle.ts";
 
-import { DEFAULT_PORT, parseArgs, report } from "../src/demo-cli.ts";
+import { DEFAULT_PORT, parseArgs, report } from "../src/boundary/demo-cli.ts";
 
 const PROGRAM = "view_demo.py";
 

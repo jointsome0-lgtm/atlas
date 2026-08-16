@@ -12,8 +12,8 @@
 // no writing, and no knowledge of where a graph came from — the inputs are
 // arbitrary JSON, because a boundary check runs on input that failed.
 
-import { compareCodePoint, sortedByCodePoint } from "./ordering.ts";
-import { daysBetween, parseDate } from "./calendar.ts";
+import { compareCodePoint, sortedByCodePoint } from "../boundary/ordering.ts";
+import { daysBetween, parseDate } from "../boundary/calendar.ts";
 
 /** §10.1 — closed set; a domain pass extends it in the same commit. */
 export const NODE_TYPES: ReadonlySet<string> = new Set([

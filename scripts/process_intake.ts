@@ -6,6 +6,6 @@
 
 import { basename } from "node:path";
 
-import { main } from "./src/intake-cli.ts";
+import { main } from "./src/boundary/intake-cli.ts";
 
 process.exitCode = main(process.argv.slice(2), basename(process.argv[1] ?? ""));

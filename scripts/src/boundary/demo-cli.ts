@@ -33,7 +33,7 @@ import {
   serveConnection,
 } from "./serve.ts";
 
-const ROOT = `${import.meta.dir}/../..`;
+const ROOT = `${import.meta.dir}/../../..`;
 
 /** The demo's own port, one below the instance server's published origin. */
 export const DEFAULT_PORT = 8137;

@@ -23,7 +23,7 @@ import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 
 import fs from "node:fs";
 
-import { build } from "../src/build.ts";
+import { build } from "../src/core/build.ts";
 import { foldParserProse, foldQuotes } from "./spelling.ts";
 
 const DIFFERENTIAL = import.meta.dir;

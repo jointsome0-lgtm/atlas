@@ -9,7 +9,7 @@ import { validateInstance } from "./validate.ts";
 // join and not string arithmetic that happens to agree on slug-shaped input,
 // and that the two roots stay two roots.
 
-const REPO = `${import.meta.dir}/../..`;
+const REPO = `${import.meta.dir}/../../..`;
 
 let root: string;
 

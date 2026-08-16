@@ -38,9 +38,9 @@ import {
   INTAKE_RECORDS,
   INTAKE_RECORD_BYTES,
   INTAKE_STRING_BYTES,
-} from "./intake.ts";
-import { SchemaValidator } from "./schema.ts";
-import { loadRegistry } from "./schema-registry.ts";
+} from "../boundary/intake.ts";
+import { SchemaValidator } from "../boundary/schema.ts";
+import { loadRegistry } from "../boundary/schema-registry.ts";
 
 /** The one §25.8 line that fixes the intake ceilings. */
 const NFR_SPEC = "spec/25-non-functional-requirements.md";

@@ -16,7 +16,7 @@
 //
 // Ported from scripts/process_intake.py.
 
-import { build } from "./build.ts";
+import { build } from "../core/build.ts";
 import { stringifyRow } from "./canonical-json.ts";
 import {
   AtlasIOError,

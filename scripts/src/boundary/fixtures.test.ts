@@ -11,7 +11,7 @@ import os from "node:os";
 import { parseStrict } from "./canonical-json.ts";
 import { validateInstance } from "./validate.ts";
 
-const ROOT = `${import.meta.dir}/../..`;
+const ROOT = `${import.meta.dir}/../../..`;
 const FIXTURE = `${ROOT}/fixtures/demo-graph/atlas-graph.json`;
 const VIEWER_ACCEPTANCE = `${ROOT}/fixtures/viewer-acceptance`;
 

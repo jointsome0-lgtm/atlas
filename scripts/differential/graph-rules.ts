@@ -18,12 +18,12 @@ import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 
 import fs from "node:fs";
 
-import { snapshotDanglingRefs, snapshotStateKindErrors } from "../src/checks.ts";
-import { stateCitesWithheldId } from "../src/checks.ts";
-import { emittedGraphErrors } from "../src/graph-rules.ts";
-import { readJsonFile } from "../src/json-input.ts";
-import { AtlasReader } from "../src/reader.ts";
-import { loadRegistry, schemaErrors } from "../src/schema-registry.ts";
+import { snapshotDanglingRefs, snapshotStateKindErrors } from "../src/core/checks.ts";
+import { stateCitesWithheldId } from "../src/core/checks.ts";
+import { emittedGraphErrors } from "../src/core/graph-rules.ts";
+import { readJsonFile } from "../src/boundary/json-input.ts";
+import { AtlasReader } from "../src/boundary/reader.ts";
+import { loadRegistry, schemaErrors } from "../src/boundary/schema-registry.ts";
 import { foldQuotes } from "./spelling.ts";
 
 type Dict = Record<string, unknown>;

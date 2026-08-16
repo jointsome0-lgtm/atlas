@@ -26,7 +26,7 @@ import { AtlasReader, ReaderError, type ScannedFile } from "./reader.ts";
 import { PosixError } from "./posix.ts";
 import { type Placed, pythonInt, readWords } from "./argv.ts";
 
-const ROOT = `${import.meta.dir}/../..`;
+const ROOT = `${import.meta.dir}/../../..`;
 
 // An embedding shell allowlists this origin in its CSP frame-src (§16.4,
 // ephemeris#108), so the port is a published default, never incidental.

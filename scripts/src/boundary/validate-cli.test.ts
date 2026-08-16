@@ -16,7 +16,7 @@ import { expect, test } from "bun:test";
 
 import { main } from "./validate-cli.ts";
 
-const REPOSITORY = `${import.meta.dir}/../..`;
+const REPOSITORY = `${import.meta.dir}/../../..`;
 
 interface Result {
   readonly code: number;

@@ -19,7 +19,7 @@ import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 
-import { GENERATORS, generatedCase, runConformance } from "../src/conformance.ts";
+import { GENERATORS, generatedCase, runConformance } from "../src/boundary/conformance.ts";
 import { foldParserProse, foldQuotes } from "./spelling.ts";
 
 const DIFFERENTIAL = import.meta.dir;

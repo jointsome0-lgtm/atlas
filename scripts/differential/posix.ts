@@ -19,7 +19,7 @@ import {
   openat,
   readdir,
   statat,
-} from "../src/posix.ts";
+} from "../src/boundary/posix.ts";
 
 // Compares the POSIX boundary against the calls the reference implementation
 // makes — `os.scandir(fd)`, `os.stat(..., dir_fd=, follow_symlinks=False)`,

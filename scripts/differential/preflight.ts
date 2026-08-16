@@ -14,23 +14,23 @@ import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 
 import fs from "node:fs";
 
-import { JsonInputError, readJsonFile } from "../src/json-input.ts";
+import { JsonInputError, readJsonFile } from "../src/boundary/json-input.ts";
 import {
   CURATED_DIRS,
   JOURNALS,
   journalLines,
   journalPaths,
   readJsonl,
-} from "../src/journal.ts";
+} from "../src/boundary/journal.ts";
 import {
   SCHEMA_NAMES,
   loadRegistry,
   runnerManifestErrors,
   schemaErrors,
-} from "../src/schema-registry.ts";
-import { SUPPORTED_KEYWORDS, isCalendarDate } from "../src/schema.ts";
-import { AtlasReader, ReaderError } from "../src/reader.ts";
-import { compareCodePoint } from "../src/ordering.ts";
+} from "../src/boundary/schema-registry.ts";
+import { SUPPORTED_KEYWORDS, isCalendarDate } from "../src/boundary/schema.ts";
+import { AtlasReader, ReaderError } from "../src/boundary/reader.ts";
+import { compareCodePoint } from "../src/boundary/ordering.ts";
 import { foldParserProse } from "./spelling.ts";
 
 interface SetupEntry {
