@@ -20,6 +20,36 @@ import path from "node:path";
 import { stringifyDocument } from "./canonical-json.ts";
 
 const O_DIRECTORY = (fs.constants as { O_DIRECTORY?: number }).O_DIRECTORY ?? 0;
+const O_NOFOLLOW = (fs.constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+
+/**
+ * Create-or-truncate, refusing a symlink standing where the file should be.
+ *
+ * The temp file has a predictable name beside the graph, which is the one
+ * thing an attacker needs: leave a `graph/atlas-graph.json.tmp` symlink there
+ * and a plain `"w"` open follows it, truncating and writing whatever it points
+ * at — possibly outside the instance — and the rename then publishes the link
+ * itself as the canonical graph. §24.2 says this boundary fails closed, so the
+ * open binds the final component and an `ELOOP` becomes a failed emission.
+ */
+const WRITE_FLAGS = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | O_NOFOLLOW;
+
+/**
+ * Write every byte, or say the write failed.
+ *
+ * `writeSync` is allowed to write fewer bytes than it was given. Ignoring the
+ * count and syncing anyway makes a truncated graph durable and then reports a
+ * successful build — the one outcome this whole module exists to prevent.
+ * `instance.ts` has carried this loop for the same reason.
+ */
+function writeFully(fd: number, data: Uint8Array): void {
+  let offset = 0;
+  while (offset < data.length) {
+    const written = fs.writeSync(fd, data, offset, data.length - offset, null);
+    if (written <= 0) throw new Error("short write: the graph was not written whole");
+    offset += written;
+  }
+}
 
 /** Make a directory entry durable, not just the bytes the entry points at. */
 export function syncDir(directory: string): void {
@@ -33,9 +63,9 @@ export function syncDir(directory: string): void {
 
 /** Write `data` to `target`, on the platter before the call returns. */
 function writeSynced(target: string, data: Uint8Array): void {
-  const fd = fs.openSync(target, "w");
+  const fd = fs.openSync(target, WRITE_FLAGS, 0o666);
   try {
-    fs.writeSync(fd, data);
+    writeFully(fd, data);
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -52,9 +82,9 @@ function writeSynced(target: string, data: Uint8Array): void {
  * its own, not inside a port.
  */
 function writeFlushed(target: string, data: Uint8Array): void {
-  const fd = fs.openSync(target, "w");
+  const fd = fs.openSync(target, WRITE_FLAGS, 0o666);
   try {
-    fs.writeSync(fd, data);
+    writeFully(fd, data);
   } finally {
     fs.closeSync(fd);
   }

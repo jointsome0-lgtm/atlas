@@ -15,6 +15,7 @@
 import { dlopen, FFIType, suffix } from "bun:ffi";
 import os from "node:os";
 import { constants as fsConstants } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // The Linux ABI numbers this module needs and Bun does not name. They are
 // written out rather than looked up because there is nowhere to look them up:
@@ -85,10 +86,17 @@ function errnoName(errno: number): string {
   return ERRNO_NAMES.get(-errno) ?? `errno ${-errno}`;
 }
 
-const LIBRARY_PATH = new URL(
-  `../../native/atlas-posix/target/release/libatlas_posix.${suffix}`,
-  import.meta.url,
-).pathname;
+// `fileURLToPath`, not `.pathname`: the URL keeps a checkout at
+// `/home/a/Atlas Project` in its escaped form, `Atlas%20Project`, which names
+// nothing on disk. `dlopen` would then fail on a machine whose only sin is a
+// space in a directory name, and every caller would be told the boundary was
+// never built.
+const LIBRARY_PATH = fileURLToPath(
+  new URL(
+    `../../native/atlas-posix/target/release/libatlas_posix.${suffix}`,
+    import.meta.url,
+  ),
+);
 
 const SIGNATURES = {
   atlas_openat: {

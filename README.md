@@ -6,6 +6,16 @@ Atlas is a specification-led knowledge-state graph under a **partial freeze**. T
 
 [`SDD.md`](SDD.md) is the map and stable-numbered § index; each section lives in its own file under [`spec/`](spec/). Start with the index, then open only the section files needed for the question at hand.
 
+## Building
+
+The engine runs on [Bun](https://bun.sh). The CLIs need nothing installed; `bun install` restores the dev tooling (typechecker and viewer tests) from the committed lockfile. One piece is not TypeScript: the narrow POSIX boundary in [`native/atlas-posix`](native/atlas-posix), a small Rust library giving the CLIs the no-follow directory operations the platform will not expose to a script. Nothing compiled is tracked — a fresh clone has the source and builds it once:
+
+```
+bun run build:native
+```
+
+That needs a Rust toolchain (`cargo`) and runs `--offline`; the crate has no dependencies to fetch. A command that needs the boundary and cannot find it says so by name and repeats this line, so a missing build is never a mysterious failure. `bun run verify` builds it first for the same reason.
+
 ## Viewing a graph
 
 The viewer is static and fetches `graph/atlas-graph.json` relative to itself, so it needs an HTTP origin where `viewer/` and `graph/` are siblings — `file://` will not do. Two commands provide one:

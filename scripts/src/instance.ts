@@ -12,6 +12,7 @@
 
 import fs from "node:fs";
 import { constants as C } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   AT_SYMLINK_NOFOLLOW,
@@ -350,17 +351,38 @@ function safeDisplayPath(relativePath: string): string {
 
 const DIR_FLAGS = C.O_RDONLY | C.O_DIRECTORY | C.O_NOFOLLOW | O_CLOEXEC;
 
-/** Open the instance root itself, no-follow. */
+/** Open the instance root itself, binding every component no-follow. */
 function openRoot(root: string, onFailure: ReasonCode): number {
   // The root is the one path that cannot be reached through a descriptor:
   // something has to name it. It was lstat-walked component by component when
   // the instance was constructed, and it is reopened here rather than held so
   // that a root replaced between calls is caught rather than cached.
+  //
+  // Reopened the same way it was checked — component by component from `/`,
+  // each bound no-follow. Naming the whole path in one open would bind only
+  // its last component: an ancestor renamed and replaced by a symlink between
+  // construction and this call would then redirect the open, and every
+  // `openUnderRoot` after it would be walking somewhere else while believing
+  // itself contained. `validateInstanceRoot` already refuses a symlink at any
+  // depth of the root, so this binds the contract that is already written
+  // down rather than adding one.
+  let dirFd: number;
   try {
-    return fs.openSync(root, DIR_FLAGS);
+    dirFd = fs.openSync("/", DIR_FLAGS);
   } catch {
     fail(onFailure);
   }
+  try {
+    for (const component of absoluteParts(root)) {
+      const next = openat(dirFd, component, DIR_FLAGS);
+      fs.closeSync(dirFd);
+      dirFd = next;
+    }
+  } catch {
+    closeQuietly(dirFd);
+    fail(onFailure);
+  }
+  return dirFd;
 }
 
 /**
@@ -500,7 +522,11 @@ export function schemaRegistry(
   directory?: string,
 ): ReadonlyMap<string, Record<string, unknown>> {
   if (directory === undefined && cachedRegistry !== null) return cachedRegistry;
-  const repository = directory ?? new URL("../..", import.meta.url).pathname;
+  // `.pathname` is the URL's escaped form: a checkout at `/home/a/Atlas Project`
+  // comes back as `/home/a/Atlas%20Project`, which names nothing on disk, and
+  // every schema lookup then fails on a machine whose only sin is a space in a
+  // directory name. `fileURLToPath` is the decoding this needs.
+  const repository = directory ?? fileURLToPath(new URL("../..", import.meta.url));
   const registry = new Map<string, Record<string, unknown>>();
   let files: ReturnType<AtlasReader["scan"]>;
   try {
