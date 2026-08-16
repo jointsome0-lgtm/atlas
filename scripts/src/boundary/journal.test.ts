@@ -247,7 +247,7 @@ describe("a schema registry", () => {
 
   test("loads the registry this repository actually ships", () => {
     // The one case no synthetic tree covers: canon as authored.
-    const { schemas, errors } = loadRegistry(`${import.meta.dir}/../..`);
+    const { schemas, errors } = loadRegistry(`${import.meta.dir}/../../..`);
     expect(errors).toEqual([]);
     expect(new Set(schemas.keys())).toEqual(SCHEMA_NAMES as Set<string>);
   });

@@ -14,7 +14,7 @@ import {
   graphFieldExpectations,
   idType,
 } from "./domain.ts";
-import { CalendarError } from "./calendar.ts";
+import { CalendarError } from "../boundary/calendar.ts";
 
 // The differential harness proves this module answers what the Python answers,
 // constant for constant. What is pinned here is the rest: the one predicate

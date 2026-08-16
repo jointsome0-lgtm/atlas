@@ -71,16 +71,16 @@ import {
   freshnessOf,
   idType,
 } from "./domain.ts";
-import { JsonDisciplineError, parseStrict } from "./canonical-json.ts";
-import { JOURNAL_ROW_BYTES } from "./instance.ts";
-import { ReaderError, ReasonCode, AtlasReader } from "./reader.ts";
-import type { ScannedFile } from "./reader.ts";
-import { frontmatterBody, parseFrontmatter } from "./frontmatter.ts";
-import { builderJournalLines } from "./journal.ts";
-import { compareCodePoint, sortedByCodePoint } from "./ordering.ts";
-import { splitPath } from "./paths.ts";
+import { JsonDisciplineError, parseStrict } from "../boundary/canonical-json.ts";
+import { JOURNAL_ROW_BYTES } from "../boundary/instance.ts";
+import { ReaderError, ReasonCode, AtlasReader } from "../boundary/reader.ts";
+import type { ScannedFile } from "../boundary/reader.ts";
+import { frontmatterBody, parseFrontmatter } from "../boundary/frontmatter.ts";
+import { builderJournalLines } from "../boundary/journal.ts";
+import { compareCodePoint, sortedByCodePoint } from "../boundary/ordering.ts";
+import { splitPath } from "../boundary/paths.ts";
 import { show } from "./checks.ts";
-import { CalendarError, parseDate } from "./calendar.ts";
+import { CalendarError, parseDate } from "../boundary/calendar.ts";
 import { realpathSync } from "node:fs";
 
 /**
@@ -128,7 +128,7 @@ interface DocumentPath {
  * instance through a symlink does not match, and is spelled in full instead —
  * on both sides, for the same reason.
  */
-const REPO_ROOT = realpathSync(`${import.meta.dir}/../..`);
+const REPO_ROOT = realpathSync(`${import.meta.dir}/../../..`);
 
 /** `PurePosixPath.anchor` for an absolute path: `//` only when exactly two. */
 const anchorOf = (path: string): string =>

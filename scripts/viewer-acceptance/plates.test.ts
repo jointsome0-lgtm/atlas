@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import fs from "node:fs";
 
-import { FRESHNESS_DAYS, freshnessOf } from "../src/domain.ts";
+import { FRESHNESS_DAYS, freshnessOf } from "../src/core/domain.ts";
 import {
   DEMO_GRAPH,
   UNSUPPORTED_VERSION_FIXTURE,

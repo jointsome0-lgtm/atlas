@@ -11,12 +11,12 @@
 //
 // Ported from main and _emit_diagnostics in scripts/validate_atlas.py.
 
-import { checkConstants } from "./constants.ts";
+import { checkConstants } from "../core/constants.ts";
 import { runConformance } from "./conformance.ts";
 import { validateInstance } from "./validate.ts";
 
 /** Where the two canons live: the repository, not the instance under test. */
-const REPOSITORY = `${import.meta.dir}/../..`;
+const REPOSITORY = `${import.meta.dir}/../../..`;
 
 export interface Sinks {
   readonly out: { write(text: string): void };

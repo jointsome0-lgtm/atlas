@@ -28,8 +28,8 @@ import {
   stateStatusEvidenceErrors,
   statusEvidenceErrors,
   userSelfProposalErrors,
-} from "../src/checks.ts";
-import { jsonLoads } from "../src/json-input.ts";
+} from "../src/core/checks.ts";
+import { jsonLoads } from "../src/boundary/json-input.ts";
 import { foldQuotes } from "./spelling.ts";
 
 interface Case {

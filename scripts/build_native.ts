@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Kept beside `REGISTERED_TARGETS` in scripts/src/posix.ts on purpose: a new
+// Kept beside `REGISTERED_TARGETS` in scripts/src/boundary/posix.ts on purpose: a new
 // triple lands in both, in the change that first builds it.
 const TARGETS: ReadonlyMap<string, string> = new Map([
   ["linux:x64", "x86_64-unknown-linux-gnu"],

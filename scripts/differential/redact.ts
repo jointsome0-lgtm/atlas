@@ -10,7 +10,7 @@
 // field on a node that survived, and that node has to leave too — one round
 // of taint would keep it and disclose exactly the thing the class was for.
 
-import { redactGraph } from "../src/redact.ts";
+import { redactGraph } from "../src/core/redact.ts";
 import { oracleAnswer } from "./oracle.ts";
 
 const DIFFERENTIAL = import.meta.dir;

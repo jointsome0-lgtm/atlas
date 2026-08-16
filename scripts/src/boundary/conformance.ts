@@ -12,7 +12,7 @@
 //
 // Ported from run_conformance in scripts/validate_atlas.py.
 
-import { sameJson, show } from "./checks.ts";
+import { sameJson, show } from "../core/checks.ts";
 import {
   FrontmatterError,
   MAX_DOCUMENT_BYTES,

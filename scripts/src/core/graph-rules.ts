@@ -21,8 +21,8 @@ import {
   stateCitesWithheldId,
   stateEntryHasDatedInput,
 } from "./checks.ts";
-import { isCalendarDate } from "./schema.ts";
-import { compareCodePoint, sortedByCodePoint } from "./ordering.ts";
+import { isCalendarDate } from "../boundary/schema.ts";
+import { compareCodePoint, sortedByCodePoint } from "../boundary/ordering.ts";
 
 type Dict = Record<string, unknown>;
 

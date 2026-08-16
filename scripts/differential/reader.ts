@@ -2,7 +2,7 @@ import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 import fs from "node:fs";
 import { constants as C } from "node:fs";
 
-import { AtlasReader, ReaderError, safeDisplay } from "../src/reader.ts";
+import { AtlasReader, ReaderError, safeDisplay } from "../src/boundary/reader.ts";
 
 // Compares the ported §24.2 reader against the reference one on the same tree.
 // A fail-closed reader is defined by what it refuses and by the exact reason it

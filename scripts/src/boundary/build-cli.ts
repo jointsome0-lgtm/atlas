@@ -12,14 +12,14 @@
 
 import fs from "node:fs";
 
-import { build, relativeToRoot } from "./build.ts";
+import { build, relativeToRoot } from "../core/build.ts";
 import { CalendarError, parseDate } from "./calendar.ts";
-import { CURATED_SUBDIRECTORIES } from "./domain.ts";
+import { CURATED_SUBDIRECTORIES } from "../core/domain.ts";
 import { emitGraph, syncDir } from "./emit.ts";
 import { FrontmatterError } from "./frontmatter.ts";
 import { AtlasReader, ReaderError, ReasonCode } from "./reader.ts";
 import { abspath, posixJoin, posixSplit, splitPath } from "./paths.ts";
-import { redactGraph } from "./redact.ts";
+import { redactGraph } from "../core/redact.ts";
 
 type Dict = Record<string, unknown>;
 

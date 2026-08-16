@@ -20,14 +20,14 @@ import {
   snapshotStateKindErrors,
   statusEvidenceErrors,
   userSelfProposalErrors,
-} from "./checks.ts";
-import { foldOrderKey } from "./domain.ts";
+} from "../core/checks.ts";
+import { foldOrderKey } from "../core/domain.ts";
 import {
   FrontmatterError,
   parseDocument,
   parseFrontmatter,
 } from "./frontmatter.ts";
-import { emittedGraphErrors } from "./graph-rules.ts";
+import { emittedGraphErrors } from "../core/graph-rules.ts";
 import { JsonInputError, readJsonFile } from "./json-input.ts";
 import { CURATED_DIRS, JOURNALS, journalPaths, readJsonl } from "./journal.ts";
 import { compareCodePoint } from "./ordering.ts";

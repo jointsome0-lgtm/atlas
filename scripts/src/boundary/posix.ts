@@ -113,7 +113,7 @@ const LIBRARY_PATH =
     ? null
     : fileURLToPath(
         new URL(
-          `../../native/atlas-posix/lib/${TARGET}/libatlas_posix.${suffix}`,
+          `../../../native/atlas-posix/lib/${TARGET}/libatlas_posix.${suffix}`,
           import.meta.url,
         ),
       );

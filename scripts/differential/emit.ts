@@ -14,7 +14,7 @@ import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 
 import fs from "node:fs";
 
-import { emitGraph } from "../src/emit.ts";
+import { emitGraph } from "../src/boundary/emit.ts";
 
 const DIFFERENTIAL = import.meta.dir;
 

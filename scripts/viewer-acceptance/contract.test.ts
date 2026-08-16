@@ -7,7 +7,7 @@
 
 import { expect, test } from "bun:test";
 
-import { FRESHNESS_DAYS as FOLD_FRESHNESS_DAYS } from "../src/domain.ts";
+import { FRESHNESS_DAYS as FOLD_FRESHNESS_DAYS } from "../src/core/domain.ts";
 
 const ROOT = `${import.meta.dir}/../..`;
 const VIEWER = `${ROOT}/viewer`;

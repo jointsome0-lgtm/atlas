@@ -28,8 +28,8 @@ import {
   graphFieldExpectations,
   idType,
 } from "./domain.ts";
-import { isCalendarDate } from "./schema.ts";
-import { compareCodePoint } from "./ordering.ts";
+import { isCalendarDate } from "../boundary/schema.ts";
+import { compareCodePoint } from "../boundary/ordering.ts";
 
 const SLUG = "[a-z0-9]+(?:-[a-z0-9]+)*";
 export const REGION_ID_RE = new RegExp(`^(?:concept|pattern|zone):${SLUG}$`);

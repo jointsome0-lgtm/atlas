@@ -14,7 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 
 const SCRIPTS = `${import.meta.dir}/..`;
-const PORT = `${SCRIPTS}/src/hygiene.ts`;
+const PORT = `${SCRIPTS}/src/boundary/hygiene.ts`;
 
 /** The patterns a clean .gitignore carries, as the checker requires them. */
 const REQUIRED = [

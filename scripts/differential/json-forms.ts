@@ -5,10 +5,10 @@ import {
   parseStrict,
   stringifyDocument,
   stringifyRow,
-} from "../src/canonical-json.ts";
+} from "../src/boundary/canonical-json.ts";
 import { oracleAnswer } from "./oracle.ts";
 
-import { sortedByCodePoint } from "../src/ordering.ts";
+import { sortedByCodePoint } from "../src/boundary/ordering.ts";
 
 // Reading is half the contract, so the oracle both emits and reads. Checking
 // only "did it throw" would pass any input whose value we get wrong: a key

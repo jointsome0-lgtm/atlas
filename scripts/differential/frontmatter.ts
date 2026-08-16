@@ -3,7 +3,7 @@ import { oracleAnswer } from "./oracle.ts";
 
 import { join } from "node:path";
 
-import { stringifyRow } from "../src/canonical-json.ts";
+import { stringifyRow } from "../src/boundary/canonical-json.ts";
 import {
   FrontmatterError,
   frontmatterBody,
@@ -17,7 +17,7 @@ import {
   MAX_SEQUENCE_ENTRIES,
   parseDocument,
   parseFrontmatter,
-} from "../src/frontmatter.ts";
+} from "../src/boundary/frontmatter.ts";
 
 // Compares the ported §20.4 grammar against the reference parser on three
 // axes at once: whether a document is accepted, the exact diagnostic when it

@@ -19,8 +19,8 @@ import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 
 import fs from "node:fs";
 
-import { sortedByCodePoint } from "../src/ordering.ts";
-import { main } from "../src/validate-cli.ts";
+import { sortedByCodePoint } from "../src/boundary/ordering.ts";
+import { main } from "../src/boundary/validate-cli.ts";
 import { foldParserProse } from "./spelling.ts";
 
 const DIFFERENTIAL = import.meta.dir;

@@ -23,7 +23,7 @@ import { expect, test } from "bun:test";
 import { DEFAULT_PORT, parseArgs, report } from "./demo-cli.ts";
 
 const PROGRAM = "view_demo.ts";
-const ROOT = `${import.meta.dir}/../..`;
+const ROOT = `${import.meta.dir}/../../..`;
 
 interface Result {
   /** Null when the line named a port and the command would go on to serve. */

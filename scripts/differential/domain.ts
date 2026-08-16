@@ -62,8 +62,8 @@ import {
   freshnessOf,
   graphFieldExpectations,
   idType,
-} from "../src/domain.ts";
-import { sortedByCodePoint } from "../src/ordering.ts";
+} from "../src/core/domain.ts";
+import { sortedByCodePoint } from "../src/boundary/ordering.ts";
 
 const setOf = (values: ReadonlySet<string>): string[] => sortedByCodePoint([...values]);
 

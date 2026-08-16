@@ -526,7 +526,7 @@ export function schemaRegistry(
   // comes back as `/home/a/Atlas%20Project`, which names nothing on disk, and
   // every schema lookup then fails on a machine whose only sin is a space in a
   // directory name. `fileURLToPath` is the decoding this needs.
-  const repository = directory ?? fileURLToPath(new URL("../..", import.meta.url));
+  const repository = directory ?? fileURLToPath(new URL("../../..", import.meta.url));
   const registry = new Map<string, Record<string, unknown>>();
   let files: ReturnType<AtlasReader["scan"]>;
   try {

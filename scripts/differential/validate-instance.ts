@@ -18,7 +18,7 @@ import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 
 import fs from "node:fs";
 
-import { type InstanceReport, validateInstance } from "../src/validate.ts";
+import { type InstanceReport, validateInstance } from "../src/boundary/validate.ts";
 import { foldParserProse, foldQuotes } from "./spelling.ts";
 
 const DIFFERENTIAL = import.meta.dir;

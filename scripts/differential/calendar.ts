@@ -8,7 +8,7 @@ import {
   midnightInstant,
   parseDate,
   toOrdinal,
-} from "../src/calendar.ts";
+} from "../src/boundary/calendar.ts";
 
 // The oracle is CPython's `datetime.date`, which is what the Python
 // implementation folds with. Every quantity below is timezone-free by
