@@ -13,6 +13,8 @@
 // preflight harness there is no root to fold — only the messages, whose prose
 // is compared and whose §-tags carry the identity of the rule.
 
+import { oracleAnswer } from "./oracle.ts";
+
 import {
   graphFieldErrors,
   newRejectedProposals,
@@ -723,6 +725,28 @@ for (const [label, entry, nodeType, asOf] of [
     "concept",
     "2026-03-10",
   ],
+  // The gate is a join, and a join can lose a limb without any of its own
+  // cases noticing. These two carry a fault that belongs to the status and
+  // evidence rule above, so a port that forgot to include that rule here —
+  // and passed every case that calls it directly — fails on these.
+  [
+    "a status decision cited outside the outcome restriction",
+    GATE({
+      status: "resolved",
+      decisions: [{ dimension: "status", date: "2026-03-02", evidence: ["concept:a"] }],
+    }),
+    "concept",
+    "2026-03-10",
+  ],
+  [
+    "a stale status with nothing but a reading behind it",
+    GATE({
+      status: "stale",
+      decisions: [{ dimension: "status", date: "2026-03-02", evidence: ["artifact:read"] }],
+    }),
+    "concept",
+    "2026-03-10",
+  ],
 ] as ReadonlyArray<readonly [string, Dict, string, string | null]>) {
   add(`review gate: ${label}`, "review_gate", {
     entry,
@@ -1204,15 +1228,17 @@ const payloadText = JSON.stringify(
 );
 const payload = JSON.parse(payloadText) as Case[];
 
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(payloadText),
-});
-if (run.exitCode !== 0) {
-  console.error("checks: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
-const theirs = JSON.parse(run.stdout.toString()) as Array<{
+const theirs = oracleAnswer("checks", payloadText, () => {
+  const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+    stdin: Buffer.from(payloadText),
+  });
+  if (run.exitCode !== 0) {
+    console.error("checks: the oracle failed");
+    console.error(run.stderr.toString());
+    process.exit(1);
+  }
+  return JSON.parse(run.stdout.toString()) as unknown;
+}) as Array<{
   ok?: unknown;
   raised?: string;
 }>;
@@ -1250,12 +1276,32 @@ cases.forEach((item, index) => {
   console.error(`  oracle: ${theirsText}`);
 });
 
+// A rule whose every case draws the same answer is reachable, not tested: it
+// would pass against a port that returned that answer and nothing else. So
+// each rule must be seen both firing and staying quiet. This is the floor the
+// review gate went under — every one of its own cases had it answering, while
+// the limb it borrows from the status and evidence rule could be cut without
+// a single case changing.
+const answers = new Map<string, Set<string>>();
+cases.forEach((item, index) => {
+  const oracle = theirs[index] as { ok?: unknown };
+  const seen = answers.get(item.check) ?? new Set<string>();
+  seen.add(JSON.stringify(normalise(oracle?.ok ?? null)));
+  answers.set(item.check, seen);
+});
+let vacuous = 0;
+for (const [check, seen] of [...answers].sort()) {
+  if (seen.size >= 2) continue;
+  vacuous += 1;
+  console.error(`checks: ${check}: every case draws the same answer, so none of them discriminate`);
+}
+
 // Named, because this harness runs the zone matrix: a line that did not say
 // which zone it ran in would leave six identical lines and no way to tell
 // which one failed.
 const zone = process.env["TZ"] ?? "<unset>";
 console.log(
   `checks [TZ=${zone}]: ${cases.length} cases compared, ` +
-    `${diverged} unexplained, ${recorded} recorded`,
+    `${diverged} unexplained, ${recorded} recorded, ${vacuous} vacuous`,
 );
-process.exit(diverged === 0 ? 0 : 1);
+process.exit(diverged === 0 && vacuous === 0 ? 0 : 1);

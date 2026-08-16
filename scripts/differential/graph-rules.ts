@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 // Differential harness: the emitted-graph joins against the CPython oracle.
 //
 // Unlike the §-rule harness next door, these rules are not small pure
@@ -1323,15 +1324,25 @@ function mine(root: string): string[] {
 }
 
 const payload = JSON.stringify(roots.map((root) => ({ root })));
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(payload),
-});
-if (run.exitCode !== 0) {
-  console.error("graph-rules: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
-const theirs = JSON.parse(run.stdout.toString()) as Array<{
+// The roots are this run's temporary directories, so they are folded out
+// of both the question and the answer before either is written down, and
+// folded back in for the comparison below.
+const theirs = JSON.parse(
+  unfoldRoots(
+    oracleAnswer("graph-rules", foldRoots(payload, roots), () => {
+      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+        stdin: Buffer.from(payload),
+      });
+      if (run.exitCode !== 0) {
+        console.error("graph-rules: the oracle failed");
+        console.error(run.stderr.toString());
+        process.exit(1);
+      }
+      return foldRoots(run.stdout.toString(), roots);
+    }) as string,
+    roots,
+  ),
+) as Array<{
   ok?: string[];
   warnings?: string[];
   raised?: string;

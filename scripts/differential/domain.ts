@@ -8,6 +8,8 @@
 // ever notice. So every set, map and ladder is dumped from both sides and
 // compared whole, before any function is called at all.
 
+import { oracleAnswer } from "./oracle.ts";
+
 import { spawnSync } from "node:child_process";
 
 import {
@@ -503,16 +505,19 @@ const payload = {
   matches: MATCHES,
 };
 
-const run = spawnSync("python3", ["-c", ORACLE], {
-  input: JSON.stringify(payload),
-  encoding: "utf8",
-  maxBuffer: 64 * 1024 * 1024,
-});
-if (run.status !== 0) {
-  console.error(run.stderr);
-  throw new Error("domain oracle failed");
-}
-const oracle = JSON.parse(run.stdout) as {
+const payloadText = JSON.stringify(payload);
+const oracle = oracleAnswer("domain", payloadText, () => {
+  const run = spawnSync("python3", ["-c", ORACLE], {
+    input: payloadText,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (run.status !== 0) {
+    console.error(run.stderr);
+    throw new Error("domain oracle failed");
+  }
+  return JSON.parse(run.stdout) as unknown;
+}) as {
   constants: Record<string, unknown>;
   fields: Array<Array<[string, string[]]>>;
   exposure: number[];

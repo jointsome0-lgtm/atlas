@@ -1,3 +1,4 @@
+import { oracleAnswer } from "./oracle.ts";
 // Differential harness: the intake command line against the oracle.
 //
 // Like the builder's, this one runs the two programs rather than calling a
@@ -1296,7 +1297,12 @@ function journalRows(tree: Array<[string, string]>): number {
 }
 
 cases.forEach((item, index) => {
-  const theirs = once("oracle", index, item, ["python3", `${ROOT}/process_intake.py`]);
+  // `once` has already folded this run's root out of everything it
+  // returns, so the answer is recorded as it stands; the question is the
+  // case itself, which is what a corpus change has to invalidate.
+  const theirs = oracleAnswer("intake", JSON.stringify([index, item]), () =>
+    once("oracle", index, item, ["python3", `${ROOT}/process_intake.py`]),
+  ) as Outcome;
   const mine = once("mine", index, item, ["bun", `${ROOT}/process_intake.ts`]);
 
   if (JSON.stringify(mine) !== JSON.stringify(theirs)) {

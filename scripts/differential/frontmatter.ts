@@ -1,4 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { oracleAnswer } from "./oracle.ts";
+
 import { join } from "node:path";
 
 import { stringifyRow } from "../src/canonical-json.ts";
@@ -297,14 +299,16 @@ const payload = JSON.stringify({
   constants: Object.keys(CONSTANTS),
 });
 
-const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(payload, "utf-8"),
-});
-if (proc.exitCode !== 0) {
-  console.error(`oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`);
-  process.exit(2);
-}
-const parsed = JSON.parse(proc.stdout.toString()) as {
+const parsed = oracleAnswer("frontmatter", payload, () => {
+  const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
+    stdin: Buffer.from(payload, "utf-8"),
+  });
+  if (proc.exitCode !== 0) {
+    console.error(`oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`);
+    process.exit(2);
+  }
+  return JSON.parse(proc.stdout.toString()) as unknown;
+}) as {
   cases: OracleEntry[];
   constants: Record<string, number>;
 };

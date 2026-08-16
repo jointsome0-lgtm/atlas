@@ -16,6 +16,8 @@
 // two runtimes carry different editions of the Unicode table that decides
 // which scripts write digits (#139).
 
+import { oracleAnswer } from "./oracle.ts";
+
 import { DEFAULT_PORT, parseArgs, report } from "../src/demo-cli.ts";
 
 const SCRIPTS = `${import.meta.dir}/..`;
@@ -253,14 +255,7 @@ const shapes = [...cases.map((item) => item.argv), ...swept];
 // Comparison
 // ---------------------------------------------------------------------------
 
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(JSON.stringify({ shapes })),
-});
-if (run.exitCode !== 0) {
-  console.error("demo-cli: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
+const payload = JSON.stringify({ shapes });
 interface Oracle {
   readonly code: number | null;
   readonly port: number | null;
@@ -270,7 +265,19 @@ interface Oracle {
   readonly extras: number;
 }
 
-const theirs = (JSON.parse(run.stdout.toString()) as { cases: Oracle[] }).cases;
+const theirs = (
+  oracleAnswer("demo-cli", payload, () => {
+    const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+      stdin: Buffer.from(payload),
+    });
+    if (run.exitCode !== 0) {
+      console.error("demo-cli: the oracle failed");
+      console.error(run.stderr.toString());
+      process.exit(1);
+    }
+    return JSON.parse(run.stdout.toString()) as unknown;
+  }) as { cases: Oracle[] }
+).cases;
 
 interface Ours {
   readonly code: number | null;

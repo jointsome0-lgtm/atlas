@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 // Differential harness: the instance driver against the CPython oracle.
 //
 // The rules this driver dispatches to are proved next door, one harness per
@@ -1143,15 +1144,25 @@ const roots = cases.map((item, index) => {
 });
 
 const payload = JSON.stringify(roots.map((root) => ({ root })));
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(payload),
-});
-if (run.exitCode !== 0) {
-  console.error("validate-instance: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
-const theirs = JSON.parse(run.stdout.toString()) as Array<{
+// The roots are this run's temporary directories, so they are folded out
+// of both the question and the answer before either is written down, and
+// folded back in for the comparison below.
+const theirs = JSON.parse(
+  unfoldRoots(
+    oracleAnswer("validate-instance", foldRoots(payload, roots), () => {
+      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+        stdin: Buffer.from(payload),
+      });
+      if (run.exitCode !== 0) {
+        console.error("validate-instance: the oracle failed");
+        console.error(run.stderr.toString());
+        process.exit(1);
+      }
+      return foldRoots(run.stdout.toString(), roots);
+    }) as string,
+    roots,
+  ),
+) as Array<{
   errors?: string[];
   warnings?: string[];
   counts?: Record<string, number>;

@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 // Differential harness: the validator's input layer against the CPython oracle.
 //
 // Three things are compared, all of them diagnostics rather than values,
@@ -1058,16 +1059,30 @@ for (const scenario of SCENARIOS) {
     continue;
   }
 
-  const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(JSON.stringify({ ...scenario, root: oracleRoot })),
-  });
-  if (run.exitCode !== 0) {
+  // One recorded answer per scenario, with this run's root folded out of both
+  // the question and the answer so neither carries a directory that is gone by
+  // the next run.
+  const question = JSON.stringify({ ...scenario, root: oracleRoot });
+  let theirs: Result[];
+  try {
+    theirs = JSON.parse(
+      unfoldRoots(
+        oracleAnswer("preflight", foldRoots(question, [oracleRoot]), () => {
+          const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+            stdin: Buffer.from(question),
+          });
+          if (run.exitCode !== 0) throw new Error(run.stderr.toString());
+          return foldRoots(run.stdout.toString(), [oracleRoot]);
+        }) as string,
+        [oracleRoot],
+      ),
+    ) as Result[];
+  } catch (error) {
     console.error(`preflight: ${scenario.name}: the oracle failed`);
-    console.error(run.stderr.toString());
+    console.error(String(error));
     diverged += 1;
     continue;
   }
-  const theirs = JSON.parse(run.stdout.toString()) as Result[];
 
   compared += scenario.ops.length;
   const mineText = normalise(mine, mineRoot);

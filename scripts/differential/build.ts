@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 // Differential harness: the graph builder against the CPython oracle.
 //
 // This is the whole of §20 in one comparison. The builder reads a curated
@@ -1188,14 +1189,6 @@ const curated = cases.map((item, index) =>
 const payload = JSON.stringify(
   curated.map((root, index) => ({ root, as_of: cases[index]?.asOf ?? null })),
 );
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(payload),
-});
-if (run.exitCode !== 0) {
-  console.error("build: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
 interface OracleReport {
   graph?: Record<string, unknown>;
   errors?: string[];
@@ -1203,7 +1196,27 @@ interface OracleReport {
   raised?: string;
   said?: string;
 }
-const theirs = JSON.parse(run.stdout.toString()) as OracleReport[];
+// This run's temporary roots are folded out of the question and the answer
+// before either is written down, and folded back in for the comparison. The
+// checkout itself joins them: the fixture cases name it through `..`, and the
+// oracle answers with the path it resolved to, which is this machine's.
+const folded = [...roots, fs.realpathSync(ROOT)];
+const theirs = JSON.parse(
+  unfoldRoots(
+    oracleAnswer("build", foldRoots(payload, folded), () => {
+      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+        stdin: Buffer.from(payload),
+      });
+      if (run.exitCode !== 0) {
+        console.error("build: the oracle failed");
+        console.error(run.stderr.toString());
+        process.exit(1);
+      }
+      return foldRoots(run.stdout.toString(), folded);
+    }) as string,
+    folded,
+  ),
+) as OracleReport[];
 
 /** Divergences that are understood, each pinned by the issue that holds it. */
 const KNOWN: ReadonlyMap<string, string> = new Map([

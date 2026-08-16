@@ -6,6 +6,8 @@ import {
   stringifyDocument,
   stringifyRow,
 } from "../src/canonical-json.ts";
+import { oracleAnswer } from "./oracle.ts";
+
 import { sortedByCodePoint } from "../src/ordering.ts";
 
 // Reading is half the contract, so the oracle both emits and reads. Checking
@@ -199,15 +201,18 @@ interface OracleResult {
 }
 
 function runOracle(emit: unknown[], read: string[]): OracleResult {
-  const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(JSON.stringify({ emit, read }), "utf-8"),
-  });
-  if (proc.exitCode !== 0) {
-    throw new Error(
-      `oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`,
-    );
-  }
-  return JSON.parse(proc.stdout.toString()) as OracleResult;
+  const payload = JSON.stringify({ emit, read });
+  return oracleAnswer("json-forms", payload, () => {
+    const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
+      stdin: Buffer.from(payload, "utf-8"),
+    });
+    if (proc.exitCode !== 0) {
+      throw new Error(
+        `oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`,
+      );
+    }
+    return JSON.parse(proc.stdout.toString()) as unknown;
+  }) as OracleResult;
 }
 
 function show(value: string): string {

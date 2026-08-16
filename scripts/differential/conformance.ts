@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 // Differential harness: the grammar conformance suite against the oracle.
 //
 // The first case is the repository itself. That is the only case that runs the
@@ -347,20 +348,29 @@ const roots = cases.map((item, index) => {
   return root;
 });
 
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(
-    JSON.stringify({
-      roots: roots.map((root) => ({ root })),
-      generators: GENERATORS,
-    }),
-  ),
+const payload = JSON.stringify({
+  roots: roots.map((root) => ({ root })),
+  generators: GENERATORS,
 });
-if (run.exitCode !== 0) {
-  console.error("conformance: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
-const oracleOut = JSON.parse(run.stdout.toString()) as {
+// The roots are this run's temporary directories, so they are folded out
+// of both the question and the answer before either is written down, and
+// folded back in for the comparison below.
+const oracleOut = JSON.parse(
+  unfoldRoots(
+    oracleAnswer("conformance", foldRoots(payload, roots), () => {
+      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+        stdin: Buffer.from(payload),
+      });
+      if (run.exitCode !== 0) {
+        console.error("conformance: the oracle failed");
+        console.error(run.stderr.toString());
+        process.exit(1);
+      }
+      return foldRoots(run.stdout.toString(), roots);
+    }) as string,
+    roots,
+  ),
+) as {
   cases: Array<{ errors?: string[]; count?: number; raised?: boolean }>;
   fixtures: Record<
     string,

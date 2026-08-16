@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 // Differential harness: the durable graph emit against the oracle.
 //
 // What is compared is not a return value but what the directory looks like
@@ -165,23 +166,31 @@ function build(side: string, index: number, item: Case): string {
 }
 
 const theirRoots = cases.map((item, index) => build("oracle", index, item));
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(
-    JSON.stringify(
-      cases.map((item, index) => ({
-        root: theirRoots[index],
-        graph: item.graph,
-        mode: item.readonly === true ? 0o555 : item.unreadable === true ? 0o300 : null,
-      })),
-    ),
+const payload = JSON.stringify(
+  cases.map((item, index) => ({
+    root: theirRoots[index],
+    graph: item.graph,
+    mode: item.readonly === true ? 0o555 : item.unreadable === true ? 0o300 : null,
+  })),
+);
+// This run's temporary roots are folded out of the question and the answer
+// before either is written down, and folded back in for the comparison.
+const theirs = JSON.parse(
+  unfoldRoots(
+    oracleAnswer("emit", foldRoots(payload, theirRoots), () => {
+      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+        stdin: Buffer.from(payload),
+      });
+      if (run.exitCode !== 0) {
+        console.error("emit: the oracle failed");
+        console.error(run.stderr.toString());
+        process.exit(1);
+      }
+      return foldRoots(run.stdout.toString(), theirRoots);
+    }) as string,
+    theirRoots,
   ),
-});
-if (run.exitCode !== 0) {
-  console.error("emit: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
-const theirs = JSON.parse(run.stdout.toString()) as Array<{
+) as Array<{
   ok: boolean;
   exists: boolean;
   bytes: string | null;

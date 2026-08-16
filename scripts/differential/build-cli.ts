@@ -1,3 +1,4 @@
+import { oracleAnswer } from "./oracle.ts";
 // Differential harness: the builder's command line against the oracle.
 //
 // Every other harness in this directory calls a function. This one runs the
@@ -631,10 +632,12 @@ let vacuous = 0;
 const stillDiverging = new Set<string>();
 
 cases.forEach((item, index) => {
-  const theirs = once("oracle", index, item, [
-    "python3",
-    `${ROOT}/build_atlas_graph.py`,
-  ]);
+  // `once` has already folded this run's root out of everything it
+  // returns, so the answer is recorded as it stands; the question is the
+  // case itself, which is what a corpus change has to invalidate.
+  const theirs = oracleAnswer("build-cli", JSON.stringify([index, item]), () =>
+    once("oracle", index, item, ["python3", `${ROOT}/build_atlas_graph.py`]),
+  ) as Outcome;
   const mine = once("mine", index, item, ["bun", `${ROOT}/build_atlas_graph.ts`]);
 
   if (JSON.stringify(mine) !== JSON.stringify(theirs)) {

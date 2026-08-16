@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 // Differential harness: the `validate_atlas` command line against the oracle.
 //
 // Three commands and no argument parser, which makes the dispatch itself worth
@@ -559,23 +560,46 @@ const roots = cases.map((item, index) => {
 const argvOf = (item: Case, index: number): string[] =>
   item.argv.map((word) => word.replaceAll("«root»", roots[index] as string));
 
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(
-    JSON.stringify({
-      cases: cases.map((item, index) => ({
-        root: roots[index],
-        argv: argvOf(item, index),
-      })),
-    }),
-  ),
+const payload = JSON.stringify({
+  cases: cases.map((item, index) => ({
+    root: roots[index],
+    argv: argvOf(item, index),
+  })),
 });
-if (run.exitCode !== 0) {
-  console.error("validate-cli: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
+// The roots are this run's temporary directories, so they are folded out
+// of both the question and the answer before either is written down, and
+// folded back in for the comparison below.
 const theirs = (
-  JSON.parse(run.stdout.toString()) as {
+  JSON.parse(
+    unfoldRoots(
+      oracleAnswer("validate-cli", foldRoots(payload, roots), () => {
+        const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+          stdin: Buffer.from(payload),
+        });
+        if (run.exitCode !== 0) {
+          console.error("validate-cli: the oracle failed");
+          console.error(run.stderr.toString());
+          process.exit(1);
+        }
+        // A CPython `set` renders in hash order, and that order is drawn
+        // fresh for every process. The comparison below already folds it
+        // away; the recording folds it first, so what is written down is
+        // the answer and not one process's arrangement of it.
+        const said = JSON.parse(run.stdout.toString()) as {
+          cases: Array<{ code?: number; stdout?: string; stderr?: string; raised?: boolean }>;
+        };
+        const folded = {
+          cases: said.cases.map((one) => ({
+            ...one,
+            ...(one.stdout === undefined ? {} : { stdout: foldSets(one.stdout) }),
+            ...(one.stderr === undefined ? {} : { stderr: foldSets(one.stderr) }),
+          })),
+        };
+        return foldRoots(JSON.stringify(folded), roots);
+      }) as string,
+      roots,
+    ),
+  ) as {
     cases: Array<{ code?: number; stdout: string; stderr: string; raised?: boolean }>;
   }
 ).cases;

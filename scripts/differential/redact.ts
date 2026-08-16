@@ -11,6 +11,7 @@
 // of taint would keep it and disclose exactly the thing the class was for.
 
 import { redactGraph } from "../src/redact.ts";
+import { oracleAnswer } from "./oracle.ts";
 
 const DIFFERENTIAL = import.meta.dir;
 
@@ -311,15 +312,20 @@ add(
 // Comparison
 // ---------------------------------------------------------------------------
 
-const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-  stdin: Buffer.from(JSON.stringify(cases.map((item) => item.graph))),
-});
-if (run.exitCode !== 0) {
-  console.error("redact: the oracle failed");
-  console.error(run.stderr.toString());
-  process.exit(1);
-}
-const theirs = JSON.parse(run.stdout.toString()) as Array<{
+// The graphs are the whole question here — no path or clock reaches this
+// pass — so the answer is recorded as it stands.
+const question = JSON.stringify(cases.map((item) => item.graph));
+const theirs = oracleAnswer("redact", question, () => {
+  const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+    stdin: Buffer.from(question),
+  });
+  if (run.exitCode !== 0) {
+    console.error("redact: the oracle failed");
+    console.error(run.stderr.toString());
+    process.exit(1);
+  }
+  return JSON.parse(run.stdout.toString()) as unknown;
+}) as Array<{
   graph?: Dict;
   raised?: boolean;
 }>;

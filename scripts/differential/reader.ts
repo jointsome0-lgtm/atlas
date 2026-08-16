@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 import fs from "node:fs";
 import { constants as C } from "node:fs";
 
@@ -260,24 +261,29 @@ try {
     testCase.build?.(root);
   }
 
-  const oracleRun = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(
-      JSON.stringify(
-        CASES.map((testCase, index) => ({
-          root: roots[index],
-          call: testCase.call,
-        })),
-      ),
+  // Each run builds its trees somewhere new, so the roots are folded out of
+  // the question and the answer and folded back in for the comparison.
+  const question = JSON.stringify(
+    CASES.map((testCase, index) => ({
+      root: roots[index],
+      call: testCase.call,
+    })),
+  );
+  const oracle = JSON.parse(
+    unfoldRoots(
+      oracleAnswer("reader", foldRoots(question, roots), () => {
+        const oracleRun = Bun.spawnSync(["python3", "-c", ORACLE], {
+          stdin: Buffer.from(question),
+        });
+        if (oracleRun.exitCode !== 0) {
+          console.error(oracleRun.stderr.toString());
+          throw new Error("the oracle refused to answer");
+        }
+        return foldRoots(oracleRun.stdout.toString(), roots);
+      }) as string,
+      roots,
     ),
-  });
-  if (oracleRun.exitCode !== 0) {
-    console.error(oracleRun.stderr.toString());
-    throw new Error("the oracle refused to answer");
-  }
-  const oracle = JSON.parse(oracleRun.stdout.toString()) as Record<
-    string,
-    unknown
-  >[];
+  ) as Record<string, unknown>[];
 
   CASES.forEach((testCase, index) => {
     comparisons += 1;
@@ -320,14 +326,16 @@ try {
     "éclair",
     "line sep",
   ];
-  const sanitiseRun = Bun.spawnSync(["python3", "-c", `
+  const theirSafe = oracleAnswer("reader-sanitise", JSON.stringify(SANITISE), () => {
+    const sanitiseRun = Bun.spawnSync(["python3", "-c", `
 import json, sys
 values = json.loads(sys.stdin.read())
 def safe(v):
     return "".join(c if c.isprintable() else "?" for c in v)
 json.dump([safe(v) for v in values], sys.stdout)
 `], { stdin: Buffer.from(JSON.stringify(SANITISE)) });
-  const theirSafe = JSON.parse(sanitiseRun.stdout.toString()) as string[];
+    return JSON.parse(sanitiseRun.stdout.toString()) as unknown;
+  }) as string[];
   SANITISE.forEach((value, index) => {
     comparisons += 1;
     if (safeDisplay(value) !== theirSafe[index]) {

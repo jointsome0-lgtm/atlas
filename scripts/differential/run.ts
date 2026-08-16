@@ -94,9 +94,14 @@ console.log(`oracle: python3 ${probe.stdout.toString().trim()}`);
 
 let failures = 0;
 
+// `--record` is forwarded so the oracle's answers can be written down in one
+// pass over the whole matrix. See scripts/differential/oracle.ts: the
+// recordings are what the harnesses run on once the oracle is gone.
+const passed = process.argv.slice(2).filter((word) => word === "--record");
+
 for (const harness of HARNESSES) {
   for (const zone of harness.zones) {
-    const run = Bun.spawnSync(["bun", harness.file], {
+    const run = Bun.spawnSync(["bun", harness.file, ...passed], {
       env: { ...process.env, TZ: zone },
       stdout: "inherit",
       stderr: "inherit",

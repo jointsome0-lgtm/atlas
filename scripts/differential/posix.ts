@@ -1,4 +1,15 @@
-import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { constants as C } from "node:fs";
 
 import {
@@ -17,6 +28,21 @@ import {
 // name, mode for mode, errno for errno. A boundary that agreed about the happy
 // path and disagreed about ELOOP would be worse than none, because the reader
 // above it decides containment from exactly that difference.
+//
+// Alone among the harnesses this one cannot have its oracle written down: a
+// mode carries the umask of the machine that ran it and a directory's size is
+// the filesystem's business, so a recording would freeze this laptop rather
+// than the answer. What it gets instead is a second partner that is here at
+// runtime — `node:fs`, reaching the same files by path instead of by
+// descriptor. Both are asked while CPython is still installed, which is what
+// earns the right to keep only the second one afterwards.
+//
+// What the surviving partner cannot check is the `*at`-ness itself: nothing
+// else in the runtime can spell a directory-relative call, so after the
+// cutover the descriptor-relative form is proven equal to the path form over
+// this tree, not proven to be resolving relative to the descriptor. That is
+// the reader's containment tests' job (scripts/differential/reader.ts), which
+// build trees where the two answers must differ.
 
 const DIR_FLAGS = C.O_RDONLY | C.O_DIRECTORY | O_CLOEXEC;
 
@@ -31,6 +57,10 @@ const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 function byBytes(names: Uint8Array[]): Uint8Array[] {
   return [...names].sort((left, right) => Buffer.compare(left, right));
 }
+
+/** The oracle joins a directory and a name with a NUL, which no name holds. */
+const keyFor = (relative: string, encoded: string): string =>
+  `${relative}${String.fromCharCode(0)}${encoded}`;
 
 /** A tree with the shapes a reader actually meets, plus the awkward ones. */
 function buildTree(root: string): string[] {
@@ -129,41 +159,99 @@ for relative in directories:
 json.dump(out, sys.stdout)
 `;
 
+/**
+ * The same questions asked of `node:fs`, which reaches a name by path because
+ * it has no way to reach one by descriptor.
+ *
+ * Its errno arrives negative and CPython's arrives positive; the sign is a
+ * calling convention, not an answer, so it is normalised here rather than
+ * being allowed to look like a divergence.
+ */
+function askNodeFs(root: string, directories: readonly string[]): Record<string, Answer> {
+  const out: Record<string, Answer> = {};
+  const describe = (fn: () => { mode: number; size: number }) => {
+    try {
+      return fn();
+    } catch (error) {
+      return { errno: -(error as NodeJS.ErrnoException & { errno: number }).errno };
+    }
+  };
+
+  for (const relative of directories) {
+    const path = relative === "." ? root : `${root}/${relative}`;
+    const names = byBytes(readdirSync(path, { encoding: "buffer" }));
+    out[relative] = { listing: names.map(b64) };
+
+    for (const name of names) {
+      const full = Buffer.concat([Buffer.from(`${path}/`), name]);
+      const entry: { stat?: Answer["stat"]; follow?: Answer["follow"]; open?: Answer["open"] } = {};
+      entry.stat = describe(() => {
+        const info = lstatSync(full);
+        return { mode: info.mode, size: info.size };
+      });
+      entry.follow = describe(() => {
+        const info = statSync(full);
+        return { mode: info.mode, size: info.size };
+      });
+      try {
+        const opened = openSync(full, C.O_RDONLY | C.O_NOFOLLOW);
+        closeSync(opened);
+        entry.open = { ok: true };
+      } catch (error) {
+        entry.open = { errno: -(error as NodeJS.ErrnoException & { errno: number }).errno };
+      }
+      out[keyFor(relative, b64(name))] = entry;
+    }
+  }
+  return out;
+}
+
 const root = mkdtempSync("/tmp/atlas-posix-differential-");
 let comparisons = 0;
 let divergences = 0;
 
-function compare(what: string, ours: unknown, theirs: unknown): void {
+function compare(partner: string, what: string, ours: unknown, theirs: unknown): void {
   comparisons += 1;
   const a = JSON.stringify(ours);
   const b = JSON.stringify(theirs);
   if (a !== b) {
     divergences += 1;
-    console.error(`  ${what}\n    ours:   ${a}\n    oracle: ${b}`);
+    console.error(`  ${what}\n    ours:   ${a}\n    ${partner}: ${b}`);
   }
+}
+
+function askCPython(root: string, directories: readonly string[]): Record<string, Answer> {
+  const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+    stdin: Buffer.from(`${root}\n${JSON.stringify(directories)}`),
+  });
+  if (run.exitCode !== 0) {
+    console.error(run.stderr.toString());
+    throw new Error("the oracle refused to answer");
+  }
+  return JSON.parse(run.stdout.toString()) as Record<string, Answer>;
 }
 
 try {
   const directories = buildTree(root);
 
-  const oracleRun = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(`${root}\n${JSON.stringify(directories)}`),
-  });
-  if (oracleRun.exitCode !== 0) {
-    console.error(oracleRun.stderr.toString());
-    throw new Error("the oracle refused to answer");
-  }
-  const oracle = JSON.parse(oracleRun.stdout.toString()) as Record<string, Answer>;
+  // Both partners answer the same tree in the same run, so a mode and a
+  // directory size mean the same thing to all three. The CPython arm is what
+  // goes at the cutover; the `node:fs` arm is what is left holding this.
+  const partners: ReadonlyArray<{ name: string; answers: Record<string, Answer> }> = [
+    { name: "cpython", answers: askCPython(root, directories) },
+    { name: "node:fs", answers: askNodeFs(root, directories) },
+  ];
 
   for (const relative of directories) {
     const path = relative === "." ? root : `${root}/${relative}`;
     const fd = openSync(path, DIR_FLAGS);
     try {
       const listed = byBytes(readdir(fd)).map(b64);
-      compare(`${relative}: listing`, listed, oracle[relative]?.listing);
+      for (const partner of partners) {
+        compare(partner.name, `${relative}: listing`, listed, partner.answers[relative]?.listing);
+      }
 
       for (const encoded of listed) {
-        const theirs = oracle[`${relative}\u0000${encoded}`];
         const decoded = Buffer.from(encoded, "base64").toString("utf8");
 
         // A name that is not UTF-8 cannot be spelled as a JS string without
@@ -180,8 +268,8 @@ try {
             return { errno: -(error as PosixError).errno };
           }
         };
-        compare(`${relative}/${decoded}: stat`, attempt(AT_SYMLINK_NOFOLLOW), theirs?.stat);
-        compare(`${relative}/${decoded}: follow`, attempt(0), theirs?.follow);
+        const ourStat = attempt(AT_SYMLINK_NOFOLLOW);
+        const ourFollow = attempt(0);
 
         let opened: { ok: true } | { errno: number };
         try {
@@ -191,7 +279,13 @@ try {
         } catch (error) {
           opened = { errno: -(error as PosixError).errno };
         }
-        compare(`${relative}/${decoded}: open`, opened, theirs?.open);
+
+        for (const partner of partners) {
+          const theirs = partner.answers[keyFor(relative, encoded)];
+          compare(partner.name, `${relative}/${decoded}: stat`, ourStat, theirs?.stat);
+          compare(partner.name, `${relative}/${decoded}: follow`, ourFollow, theirs?.follow);
+          compare(partner.name, `${relative}/${decoded}: open`, opened, theirs?.open);
+        }
       }
     } finally {
       closeSync(fd);
@@ -203,7 +297,7 @@ try {
 
 console.log(
   divergences === 0
-    ? `posix: ${comparisons} comparisons agree with the oracle`
+    ? `posix: ${comparisons} comparisons agree across ours, cpython and node:fs`
     : `posix: ${divergences} of ${comparisons} comparisons diverged`,
 );
 process.exit(divergences === 0 ? 0 : 1);

@@ -1,3 +1,4 @@
+import { oracleAnswer } from "./oracle.ts";
 // Differential harness: the public Git-layer check against the oracle.
 //
 // A checker whose only input is a repository has to be asked about
@@ -411,7 +412,11 @@ let vacuous = 0;
 for (const scenario of scenarios) {
   const root = build(scenario);
   try {
-    const theirs = ask(root, ["python3", `${root}/scripts/check_public_hygiene.py`]);
+    // `ask` has already folded this repository's path out of the answer, so
+    // what is recorded is the check's own words; the question is the scenario.
+    const theirs = oracleAnswer("hygiene", JSON.stringify(scenario), () =>
+      ask(root, ["python3", `${root}/scripts/check_public_hygiene.py`]),
+    ) as Answer;
     const mine = ask(root, ["bun", "-e", driver(root)]);
 
     const show = (why: string): void => {

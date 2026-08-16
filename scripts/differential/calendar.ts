@@ -1,3 +1,4 @@
+import { oracleAnswer } from "./oracle.ts";
 import {
   addDays,
   CalendarError,
@@ -181,15 +182,17 @@ function runOracle(): OracleResult {
     invalid: INVALID,
     shifts: SHIFTS,
   });
-  const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(payload, "utf-8"),
-  });
-  if (proc.exitCode !== 0) {
-    throw new Error(
-      `oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`,
-    );
-  }
-  return JSON.parse(proc.stdout.toString()) as OracleResult;
+  return oracleAnswer("calendar", payload, () => {
+    const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
+      stdin: Buffer.from(payload, "utf-8"),
+    });
+    if (proc.exitCode !== 0) {
+      throw new Error(
+        `oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`,
+      );
+    }
+    return JSON.parse(proc.stdout.toString()) as unknown;
+  }) as OracleResult;
 }
 
 let divergences = 0;

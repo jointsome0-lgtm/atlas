@@ -1,3 +1,4 @@
+import { foldRoots, oracleAnswer, unfoldRoots } from "./oracle.ts";
 // Differential harness: the durable-I/O port against the CPython oracle.
 //
 // Both sides run the same scenario — a starting tree, then a sequence of
@@ -1103,16 +1104,30 @@ for (const scenario of SCENARIOS) {
     continue;
   }
 
-  const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(JSON.stringify({ ...oracleScenario, root: oracleRoot })),
-  });
-  if (run.exitCode !== 0) {
+  // One recorded answer per scenario, with this run's root folded out of both
+  // the question and the answer so neither carries a directory that is gone by
+  // the next run.
+  const question = JSON.stringify({ ...oracleScenario, root: oracleRoot });
+  let theirs: Observed;
+  try {
+    theirs = JSON.parse(
+      unfoldRoots(
+        oracleAnswer("instance", foldRoots(question, [oracleRoot, delivery]), () => {
+          const run = Bun.spawnSync(["python3", "-c", ORACLE], {
+            stdin: Buffer.from(question),
+          });
+          if (run.exitCode !== 0) throw new Error(run.stderr.toString());
+          return foldRoots(run.stdout.toString(), [oracleRoot, delivery]);
+        }) as string,
+        [oracleRoot, delivery],
+      ),
+    ) as Observed;
+  } catch (error) {
     console.error(`instance: ${scenario.name}: the oracle failed`);
-    console.error(run.stderr.toString());
+    console.error(String(error));
     diverged += 1;
     continue;
   }
-  const theirs = JSON.parse(run.stdout.toString()) as Observed;
 
   compared += 1;
   const mineText = JSON.stringify(mine, null, 2);
