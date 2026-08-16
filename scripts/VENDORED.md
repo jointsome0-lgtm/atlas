@@ -4,19 +4,17 @@
 | --- | --- | --- | --- |
 | `scripts/check_sdd_conventions.ts` | `skills/sdd-conventions/scripts/sync_conventions.ts` | 1.0.1 | `5feaf8dbb0b80b417b3d966847e06f3ce321df08` |
 | `scripts/check_decision_log.ts` | `skills/sdd-conventions/scripts/check_decision_log.ts` | 2.0.0 | `5feaf8dbb0b80b417b3d966847e06f3ce321df08` |
-| `scripts/check_sdd_conventions.py` | `skills/sdd-conventions/scripts/sync_conventions.py` | 1.0.1 | `8e29c4120dfee90ff7869dcc9aa903ac42f7bfd3` |
-| `scripts/check_decision_log.py` | `skills/sdd-conventions/scripts/check_decision_log.py` | 2.0.0 | `6c725855dd18c9fd73169481cdca7ec2719f7a28` |
 | `AGENTS.md` conventions block | `skills/sdd-conventions/conventions/SDD-CONVENTIONS.md` | template v1.1.0 | `eb03fb69a657bce3f4305f2edc9d9ea35e87c0bd` |
 | `conventions/SDD-CONVENTIONS.md` | `skills/sdd-conventions/conventions/SDD-CONVENTIONS.md` | template v1.1.0 | `eb03fb69a657bce3f4305f2edc9d9ea35e87c0bd` |
 
-Each checker is vendored twice for the length of the TypeScript migration
-(#119). The `.ts` copies are what CI runs; the `.py` copies stay until the
-cutover tranche removes every Python file at once, so the migration keeps an
-oracle to compare against and never has a moment where a checker exists only in
-its unproven form. Upstream holds the two forms to identical arguments, output,
-exit status and written bytes with a differential harness; here they were
-compared on this repository's own `AGENTS.md` and `DECISION-LOG.md`, including
-the 202-diagnostic unbaselined run, and agreed byte for byte.
+Each checker was vendored twice for the length of the TypeScript migration
+(#119) — a `.ts` copy and the `.py` copy it was proved against. The cutover
+tranche removed the Python side along with every other Python file, so what is
+listed above is now the whole of it. Upstream holds the two forms to identical
+arguments, output, exit status and written bytes with a differential harness;
+here they were compared on this repository's own `AGENTS.md` and
+`DECISION-LOG.md`, including the 202-diagnostic unbaselined run, and agreed
+byte for byte before the Python copies went.
 
 Upstream records two divergences it does not fix (`selfos-skills#116`), both the
 runtime's Unicode table rather than a checker's rules: CPython 3.12 answers from
