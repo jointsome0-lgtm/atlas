@@ -147,10 +147,31 @@ function main(argv: readonly string[]): number {
     return 0;
   }
 
-  fs.mkdirSync(path.dirname(shipped), { recursive: true });
+  // Staging is filesystem work and fails the way filesystem work fails — a
+  // read-only tree, a directory sitting on the temporary name, a full disk. An
+  // uncaught one of those leaves Bun to print the exception, which is a stack
+  // trace across several unprefixed lines, and §25.8 asks for one prefixed line
+  // instead. The temporary is removed on the way out so a failed run does not
+  // leave a partial artifact beside the real one.
   const temporary = `${shipped}.tmp`;
-  fs.writeFileSync(temporary, bytes, { mode: 0o644 });
-  fs.renameSync(temporary, shipped);
+  try {
+    fs.mkdirSync(path.dirname(shipped), { recursive: true });
+    fs.writeFileSync(temporary, bytes, { mode: 0o644 });
+    fs.renameSync(temporary, shipped);
+  } catch (error) {
+    try {
+      fs.rmSync(temporary, { force: true });
+    } catch {
+      // Best effort, and deliberately not recursive: if something that is not
+      // our file is sitting on that name, removing it is not this command's
+      // business, and a throw in here would replace the diagnostic below with
+      // the stack trace it exists to prevent.
+    }
+    fail([
+      `cannot stage ${path.relative(REPOSITORY, shipped)}`,
+      ...forwarded((error as Error).message),
+    ]);
+  }
   process.stdout.write(
     `${path.relative(REPOSITORY, shipped)}: ${bytes.length} bytes\n`,
   );
