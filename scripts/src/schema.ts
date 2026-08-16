@@ -319,8 +319,13 @@ export class SchemaValidator {
           ok = typeof instance === "string";
           break;
         case "integer":
-          // Every number that reaches here is already an integer: the JSON
-          // reader refuses a fractional one outright (canonical-json.ts).
+          // A fraction read from a document arrives as a `JsonFloat`, which is
+          // an object, so `typeof` refuses it — and here is the boundary §24.2
+          // asks for. No schema declares a non-integer field, and `isJsonObject`
+          // wants a plain prototype, so a float fails every type this subset
+          // has: it is refused by a schema, never by whatever would have
+          // written it later. `Number.isInteger` covers a value built in
+          // memory, which has no spelling to have been read from.
           ok = typeof instance === "number" && Number.isInteger(instance);
           break;
         default:

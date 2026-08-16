@@ -8,6 +8,7 @@ import {
   stringifyDocument,
   stringifyRow,
 } from "./canonical-json.ts";
+import { SchemaValidator } from "./schema.ts";
 
 // The differential harness proves these two forms byte-match CPython over a
 // corpus. What is pinned here is the behaviour the oracle does *not* have:
@@ -439,6 +440,27 @@ describe("parseStrict", () => {
       expect(() => stringifyRow(parsed)).toThrow(/non-integer-json-number/);
       expect(() => stringifyDocument(parsed)).toThrow(/non-integer-json-number/);
     }
+  });
+
+  test("hands a float to a schema, which refuses it before any writer runs", () => {
+    // The refusals above are the backstop; this is the gate that fires, and it
+    // is the one §24.2 asks for — at the boundary, not mid-write. A `JsonFloat`
+    // is an object, so it fails every type this subset has: `integer` by the
+    // `typeof`, `object` by the plain-prototype test. Every property of every
+    // foreign-input schema is typed, so there is no position a float can sit in
+    // and be validated past.
+    const envelope = new SchemaValidator({
+      type: "object",
+      properties: { version: { type: "integer" } },
+    });
+    expect(envelope.validate(parseStrict('{"version":1.0}')).map((error) => error.keyword))
+      .toEqual(["type"]);
+    expect(envelope.validate(parseStrict('{"version":1}'))).toEqual([]);
+
+    // And it is not the `integer` case alone that catches it.
+    expect(new SchemaValidator({ type: "object" }).validate(parseStrict("1.0")).map(
+      (error) => error.keyword,
+    )).toEqual(["type"]);
   });
 
   test("has one integer zero, and a float zero that keeps its sign", () => {
