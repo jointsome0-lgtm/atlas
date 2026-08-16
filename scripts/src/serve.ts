@@ -24,6 +24,7 @@ import fs from "node:fs";
 
 import { AtlasReader, ReaderError, type ScannedFile } from "./reader.ts";
 import { PosixError } from "./posix.ts";
+import { type Placed, pythonInt, readWords } from "./argv.ts";
 
 const ROOT = `${import.meta.dir}/../..`;
 
@@ -206,51 +207,9 @@ function helpText(program: string): string {
   );
 }
 
-/**
- * The characters `int()` skips around a number.
- *
- * Neither `String.trim()` nor `str.strip()`: `int()` rewrites the string
- * before it parses it, and that pass only asks Unicode about characters past
- * ASCII. So the next-line character is skipped and the file separator — which
- * `str.strip()` does remove — is not, and the byte-order mark `trim()` removes
- * is not skipped either.
- */
-const INT_SPACE =
-  "[\\t\\n\\v\\f\\r \\x85\\xa0\\u1680\\u2000-\\u200a"
-  + "\\u2028\\u2029\\u202f\\u205f\\u3000]";
-const INT_STRIP = new RegExp(`^${INT_SPACE}+|${INT_SPACE}+$`, "gu");
-
-/**
- * The value of one decimal digit, in any script that writes them.
- *
- * `int()` reads every character Unicode gives a decimal value, not the ten
- * ASCII ones, so `--port ٨١٣٨` is port 8138 to the oracle. Unicode encodes
- * each set of ten contiguously and in ascending order, so a digit's value is
- * its distance from the start of the run of digits it sits in, and the runs
- * that abut (the mathematical alphanumerics) are whole sets end to end — hence
- * the remainder. The runtime's Unicode table can be newer than the oracle's,
- * which is a difference about which scripts have digits at all.
- */
-function decimalValue(digit: string): number {
-  const isDigit = (code: number): boolean => /^\p{Nd}$/u.test(String.fromCodePoint(code));
-  const code = digit.codePointAt(0) as number;
-  let start = code;
-  while (start > 0 && isDigit(start - 1)) start -= 1;
-  return (code - start) % 10;
-}
-
 function portNumber(value: string): number | string {
-  // CPython's `int()` takes surrounding whitespace, a sign, and underscores
-  // between digits; anything else is the same refusal as a word.
-  const text = value.replace(INT_STRIP, "");
-  const digits = /^[+-]?(\p{Nd}(?:_?\p{Nd})*)$/u.exec(text);
-  if (digits === null) return "port must be an integer";
-  const sign = text.startsWith("-") ? -1 : 1;
-  const written = [...(digits[1] as string)]
-    .filter((character) => character !== "_")
-    .map((character) => decimalValue(character))
-    .join("");
-  const port = sign * Number(written);
+  const port = pythonInt(value);
+  if (port === null) return "port must be an integer";
   if (port === 0) {
     // Port 0 asks the kernel for whatever is free; a shell that has to
     // allowlist the origin cannot allowlist a surprise (§16.4).
@@ -277,130 +236,36 @@ const OPTION_NAMES: ReadonlyMap<string, string> = new Map([
   ["--port", "--port"],
 ]);
 
-/** One argument, classified the way `_parse_optional` classifies it. */
-type Word =
-  | { readonly kind: "positional"; readonly value: string }
-  | { readonly kind: "unknown" }
-  | { readonly kind: "ambiguous" }
-  | {
-      readonly kind: "option";
-      /** The action addressed, named by its long spelling. */
-      readonly option: "--help" | "--port";
-      /** Whether the caller spelled it with one dash, which changes a refusal. */
-      readonly short: boolean;
-      /** A value attached to the word itself, by `=` or by juxtaposition. */
-      readonly explicit: string | null;
-      /**
-       * How that value was attached: `=` or nothing at all.
-       *
-       * The parser keeps these apart, and for an option that takes no value it
-       * is the whole difference between printing help and refusing: `-hx` is
-       * `-h` followed by more short options, `-h=x` is `-h` handed an argument
-       * it has no use for.
-       */
-      readonly sep: "=" | "" | null;
-    };
-
-const asOption = (
-  option: string,
-  short: boolean,
-  explicit: string | null,
-  sep: "=" | "" | null,
-): Word => ({
-  kind: "option",
-  option: (option === "-h" ? "--help" : option) as "--help" | "--port",
-  short,
-  explicit,
-  sep,
-});
-
-/**
- * Read one argument as the oracle's parser reads it, before anything is used.
- *
- * The order is argparse's and it is load-bearing: an exact spelling wins, then
- * an exact spelling with `=value`, then an unambiguous *prefix* — `--po` is
- * `--port` because `allow_abbrev` is on by default — and only what is left
- * over is measured against the two rules that hand a word back to the
- * positionals: a negative number (there are no options here that look like
- * one) and an argument with a space in it, which was meant to be a path.
- */
-function classify(argument: string): Word {
-  const positional = { kind: "positional", value: argument } as const;
-  if (argument === "" || !argument.startsWith("-")) return positional;
-  // A lone dash names a file by convention, so it is never an option.
-  if (argument === "-") return positional;
-  if ((OPTION_STRINGS as readonly string[]).includes(argument)) {
-    return asOption(argument, !argument.startsWith("--"), null, null);
-  }
-  const equals = argument.indexOf("=");
-  const beforeEquals = equals < 0 ? argument : argument.slice(0, equals);
-  const afterEquals = equals < 0 ? null : argument.slice(equals + 1);
-  if (equals >= 0 && (OPTION_STRINGS as readonly string[]).includes(beforeEquals)) {
-    return asOption(beforeEquals, !beforeEquals.startsWith("--"), afterEquals, "=");
-  }
-  const matches: Word[] = [];
-  if (argument.startsWith("--")) {
-    // Two dashes: the word is split at `=` and the rest is a prefix. `--=1`
-    // has the empty prefix, which is every option at once.
-    for (const option of OPTION_STRINGS) {
-      if (option.startsWith(beforeEquals)) {
-        matches.push(asOption(option, false, afterEquals, afterEquals === null ? null : "="));
-      }
-    }
-  } else {
-    // One dash: a short option carries its value in the same word, so `-hx`
-    // addresses `-h` and hands it an `x` with nothing between them.
-    for (const option of OPTION_STRINGS) {
-      if (option === argument.slice(0, 2)) {
-        matches.push(asOption(option, true, argument.slice(2), ""));
-      } else if (option.startsWith(argument)) matches.push(asOption(option, false, null, null));
-    }
-  }
-  if (matches.length > 1) return { kind: "ambiguous" };
-  if (matches.length === 1) return matches[0] as Word;
-  if (/^-\d+$|^-\d*\.\d+$/.test(argument)) return positional;
-  if (argument.includes(" ")) return positional;
-  return { kind: "unknown" };
-}
-
-/** A word the parser kept: an ambiguous one never becomes anything. */
-type Placed = Exclude<Word, { readonly kind: "ambiguous" }>;
-
 export function parseArgs(argv: readonly string[]): Parsed {
-  // Every argument is classified before any of them is used: argparse builds
-  // its whole pattern first, which is why an ambiguous option later in the
-  // line is refused even though `-h` came earlier and would have printed help.
-  const words: Placed[] = [];
-  let separated = false;
-  for (const argument of argv) {
-    if (separated) {
-      words.push({ kind: "positional", value: argument });
-      continue;
-    }
-    // The first bare `--` is the separator itself and is not a word.
-    if (argument === "--") {
-      separated = true;
-      continue;
-    }
-    const word = classify(argument);
-    if (word.kind === "ambiguous") {
-      return {
-        kind: "error",
-        message: `ambiguous option: ${argument} could match --help, --port`,
-      };
-    }
-    words.push(word);
-  }
+  const reading = readWords(argv, OPTION_STRINGS);
+  if (reading.kind === "error") return reading;
+  const { words } = reading;
 
   const positional: string[] = [];
+  // Where INSTANCE_DIR was found, so the separator beside it can be told from
+  // one standing on its own. See the separator arm below.
+  let takenAt = -1;
+  let separatorAt = -1;
   let unrecognized = 0;
   let port: number = DEFAULT_PORT;
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] as Placed;
     if (word.kind === "positional") {
       // A bare word past the first is a positional this parser does not have.
-      if (positional.length === 0) positional.push(word.value);
-      else unrecognized += 1;
+      if (positional.length === 0) {
+        positional.push(word.value);
+        takenAt = index;
+      } else unrecognized += 1;
+      continue;
+    }
+    if (word.kind === "separator") {
+      // The one place a separator disappears. INSTANCE_DIR matches a pattern
+      // that reaches through separators on either side of the word it takes
+      // — `-*A-*` — and the value it hands on has the first `--` removed. So a
+      // separator directly beside INSTANCE_DIR is swallowed by it, and one
+      // anywhere else is an argument nobody placed. There is never more than
+      // one: only the first `--` is a separator, the rest are plain words.
+      separatorAt = index;
       continue;
     }
     if (word.kind === "unknown") {
@@ -444,6 +309,9 @@ export function parseArgs(argv: readonly string[]): Parsed {
       return { kind: "error", message: `argument ${name}: ${answer}` };
     }
     port = answer;
+  }
+  if (separatorAt >= 0 && (takenAt < 0 || Math.abs(separatorAt - takenAt) !== 1)) {
+    unrecognized += 1;
   }
   // A missing INSTANCE_DIR is refused inside the parse, and the arguments it
   // could not place are only counted after the parse returns.
@@ -719,7 +587,7 @@ function hostsIn(block: string): string[] {
 }
 
 /**
- * `repr()` of a str, over the characters a latin-1 decode can produce.
+ * `repr()` of a str, as CPython spells one.
  *
  * Not cosmetic: this is what keeps a request's own bytes from reaching the
  * wire as themselves. The status line carries this message raw — the HTML
@@ -727,8 +595,13 @@ function hostsIn(block: string): string[] {
  * itself would end the status line early and hand the client a header of the
  * client's own choosing. Python escapes it to `\r` and the line stays a line
  * (§24.4, §25.8).
+ *
+ * The other caller is the one diagnostic argparse quotes a value back in, in
+ * both commands that have one. A request line only ever carries latin-1,
+ * because that is what it was decoded with; an argument carries whatever the
+ * caller typed, which is why the three escape widths are all here.
  */
-function pythonRepr(value: string): string {
+export function pythonRepr(value: string): string {
   // Python reaches for double quotes only to avoid escaping a single one.
   const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
   const short: ReadonlyMap<string, string> = new Map([
@@ -756,7 +629,7 @@ function pythonRepr(value: string): string {
   return text + quote;
 }
 
-interface Serving {
+export interface Serving {
   readonly routes: ReadonlyMap<string, Route>;
   readonly origins: ReadonlySet<string>;
 }
@@ -908,7 +781,7 @@ function scanHeaders(buffer: Buffer, from: number, headless: boolean): Scan {
   }
 }
 
-function serveConnection(socket: net.Socket, serving: Serving): void {
+export function serveConnection(socket: net.Socket, serving: Serving): void {
   socket.setTimeout(CONNECTION_TIMEOUT_MS, () => socket.destroy());
   // A client that disconnects mid-write is not an error at all.
   socket.on("error", () => socket.destroy());

@@ -230,6 +230,46 @@ const cases: Case[] = [
     says: ["invalid-root"],
   },
   {
+    // The separator is a word, not a nothing, and INSTANCE_DIR reaches through
+    // it on either side: here it stands behind the name and disappears into
+    // it, so the run gets as far as looking at the root.
+    name: "the separator behind the instance name",
+    args: ["/definitely-absent", "--"],
+    exit: 1,
+    says: ["invalid-root"],
+  },
+  {
+    // Beside no name it is an argument nobody placed. --port took its value
+    // from in front of it, so INSTANCE_DIR is the word before that, and the
+    // separator is left over two words away.
+    name: "a separator that no name reaches",
+    args: ["/definitely-absent", "--port", "9000", "--"],
+    exit: 2,
+    says: ["unrecognized argument(s)"],
+  },
+  {
+    // The value of an option is never the separator: the pattern an option
+    // matches its value against has the separator taken out of it, so --port
+    // is left with nothing even though a number follows.
+    name: "an option whose value is hidden behind the separator",
+    args: ["--port", "--", "/definitely-absent"],
+    exit: 2,
+    says: ["argument --port: expected one argument"],
+  },
+  {
+    // Past the separator nothing is an option any more — so the name of the
+    // instance is allowed to be the spelling of one. This is the one shape
+    // where the two runs answer differently, and neither parser is why: `bun
+    // file.ts -- …` never delivers that first `--`, the launcher takes it as
+    // the end of its own flags. So the oracle reads an instance named
+    // `--port`, and the port reads the option and asks where the instance is.
+    // Recorded, not folded, and pinned by #137.
+    name: "an instance named like an option",
+    args: ["--", "--port", "9000"],
+    exit: 2,
+    says: ["unrecognized argument(s)"],
+  },
+  {
     // A lone dash is a name, not an option: there is no one-character option
     // for it to be.
     name: "an instance named with a single dash",
@@ -242,6 +282,15 @@ const cases: Case[] = [
     // that does is a path.
     name: "an instance whose name reads as a negative number",
     args: ["-5"],
+    exit: 1,
+    says: ["invalid-root"],
+  },
+  {
+    // And "looks like a number" is asked of Unicode, not of ASCII: the
+    // oracle's matcher uses `\d`, which in Python is every decimal digit
+    // there is, so a name written in another script's digits is a name too.
+    name: "an instance named with a negative number in another script",
+    args: ["-\u0665"],
     exit: 1,
     says: ["invalid-root"],
   },
@@ -1382,9 +1431,64 @@ async function once(side: string, index: number, item: Case, argv: string[]): Pr
 // The comparison
 // ---------------------------------------------------------------------------
 
-/** Divergences with an issue behind them, counted apart rather than hidden. */
-const KNOWN: ReadonlyMap<string, string> = new Map([
-  ["the help text at a terminal width that is not the default", "#135"],
+interface Answer {
+  readonly exit: number | "still running" | null;
+  readonly out: string;
+  readonly err: string;
+  readonly replies: readonly string[];
+}
+
+/**
+ * The same characters in the same order, however they were laid out.
+ *
+ * Whitespace goes rather than collapsing to one space: argparse breaks a long
+ * line at a hyphen already in the text, so `graph/atlas-graph.json` wrapped is
+ * two words where unwrapped it is one. Nothing but whitespace is ever added or
+ * removed by laying text out, so what is left is the text itself.
+ */
+const squeezed = (text: string): string => text.replace(/\s+/gu, "");
+
+/**
+ * Divergences with an issue behind them, counted apart rather than hidden.
+ *
+ * Each says what the difference *is*: what must still agree, and what this
+ * side says where the oracle says something else. A recording that accepted
+ * any difference under a case's name would go on accepting a crash, an exit
+ * code that moved, or a diagnostic that regressed for another reason.
+ */
+interface Recorded {
+  readonly issue: string;
+  readonly shaped: (mine: Answer, theirs: Answer) => boolean;
+}
+
+const KNOWN: ReadonlyMap<string, Recorded> = new Map([
+  [
+    "the help text at a terminal width that is not the default",
+    {
+      issue: "#135",
+      // One layout, not one text: the same words in the same order, laid out
+      // at 80 columns rather than at the width the caller asked for. Nothing
+      // reaches stderr on either side and both leave with the same status.
+      shaped: (mine, theirs) =>
+        mine.exit === theirs.exit &&
+        mine.err === theirs.err &&
+        mine.out !== theirs.out &&
+        squeezed(mine.out) === squeezed(theirs.out),
+    },
+  ],
+  [
+    "an instance named like an option",
+    {
+      issue: "#137",
+      // The launcher ate the separator, so this side read an option where the
+      // oracle read a name. Both refuse; they refuse different things.
+      shaped: (mine, theirs) =>
+        mine.exit === theirs.exit &&
+        mine.out === theirs.out &&
+        mine.err.includes("ERROR: the following arguments are required: INSTANCE_DIR") &&
+        theirs.err.includes("ERROR: 1 unrecognized argument(s); values withheld"),
+    },
+  ],
 ]);
 
 let diverged = 0;
@@ -1405,14 +1509,8 @@ for (const [index, item] of cases.entries()) {
   const theirs = await once("oracle", index, item, ["python3", `${ROOT}/serve_instance.py`]);
   const mine = await once("ported", index, item, ["bun", `${ROOT}/serve_instance.ts`]);
 
-  if (JSON.stringify(mine) !== JSON.stringify(theirs)) {
-    if (KNOWN.has(item.name)) {
-      recorded += 1;
-      stillDiverging.add(item.name);
-      continue;
-    }
-    diverged += 1;
-    console.error(`serve: ${item.name}`);
+  const show = (why: string): void => {
+    console.error(`serve: ${item.name}${why}`);
     if (mine.exit !== theirs.exit) {
       console.error(`  exit mine: ${mine.exit} oracle: ${theirs.exit}`);
     }
@@ -1430,10 +1528,28 @@ for (const [index, item] of cases.entries()) {
         console.error(`  reply ${at} oracle: ${JSON.stringify(reply)}`);
       }
     }
-    continue;
+  };
+
+  const same = JSON.stringify(mine) === JSON.stringify(theirs);
+  const known = KNOWN.get(item.name);
+  if (known !== undefined) {
+    stillDiverging.add(item.name);
+    if (!same && known.shaped(mine, theirs)) recorded += 1;
+    else {
+      diverged += 1;
+      if (same) {
+        stillDiverging.delete(item.name);
+        console.error(`serve: ${item.name}: ${known.issue} records a divergence that is gone`);
+      } else show(`: not the divergence ${known.issue} records`);
+    }
+  } else if (!same) {
+    diverged += 1;
+    show("");
   }
 
-  // And what the case claims, read off the oracle's own answer.
+  // What the case claims, read off the oracle's own answer — asked of every
+  // case, recorded ones included: a recording explains a difference between
+  // the two answers, never what the oracle answered.
   const complaints: string[] = [];
   if (item.exit !== undefined && theirs.exit !== item.exit) {
     complaints.push(`exited ${theirs.exit} against the claimed ${item.exit}`);

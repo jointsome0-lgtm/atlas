@@ -50,6 +50,15 @@ const HARNESSES: readonly Harness[] = [
   // a quarter of a megabyte several times over. Running it six times would
   // buy a repeat of an answer that cannot depend on the clock.
   { file: "scripts/differential/conformance.ts", zones: ["UTC"] },
+  // The command line over the preflight, the constants gate and the grammar
+  // suite. The passes underneath it meet the matrix on their own lines; what
+  // is compared here is dispatch, diagnostics and the summary each prints.
+  { file: "scripts/differential/validate-cli.ts", zones: ["UTC"] },
+  // Argument reading has no clock in it, and the demo's own server is the
+  // instance server's route table, compared over a socket further down.
+  { file: "scripts/differential/demo-cli.ts", zones: ["UTC"] },
+  // What git reports about a repository does not turn with the clock either.
+  { file: "scripts/differential/hygiene.ts", zones: ["UTC"] },
   // The §32.6 closure is a fixpoint over ids and fields, with no date in it.
   { file: "scripts/differential/redact.ts", zones: ["UTC"] },
   // Durability is about descriptors and renames; the clock has no part in it.

@@ -38,17 +38,17 @@ jobs:
         run: bun run test
       - name: Compare the ported modules against the Python oracle
         run: bun run differential
-      - run: python scripts/check_public_hygiene.py
+      - run: bun scripts/check_public_hygiene.ts
       - run: bun scripts/check_sdd_conventions.ts check AGENTS.md --template conventions/SDD-CONVENTIONS.md
       - run: bun scripts/check_decision_log.ts --baseline 2026-08-11 DECISION-LOG.md
       - name: Check schema and implementation constants
-        run: python scripts/validate_atlas.py check-constants
+        run: bun scripts/validate_atlas.ts check-constants
       - name: Validate public golden fixtures
         env:
           PYTHONPATH: scripts
         run: |
-          python scripts/validate_atlas.py conformance
-          python scripts/validate_atlas.py validate fixtures/demo-instance
+          bun scripts/validate_atlas.ts conformance
+          bun scripts/validate_atlas.ts validate fixtures/demo-instance
           python -m unittest -v scripts.test_demo_graph_fixture
       - name: Verify deterministic fixture builds
         env:
