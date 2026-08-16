@@ -100,7 +100,15 @@ export function lab(): Lab {
         }
         // Served from the copy, so a test that rewrites the graph cannot reach
         // the checkout. A path is resolved and then required to stay inside.
-        const target = `${held.root}${decodeURIComponent(path)}`;
+        // A malformed escape — `/viewer/%` — makes `decodeURIComponent` throw,
+        // and an unrouted request is a 404 here, not a 500.
+        let decoded: string;
+        try {
+          decoded = decodeURIComponent(path);
+        } catch {
+          return new Response("not found", { status: 404 });
+        }
+        const target = `${held.root}${decoded}`;
         const real = fs.realpathSync.native(held.root);
         let resolved: string;
         try {

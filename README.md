@@ -8,13 +8,17 @@ Atlas is a specification-led knowledge-state graph under a **partial freeze**. T
 
 ## Building
 
-The engine runs on [Bun](https://bun.sh). The CLIs need nothing installed; `bun install` restores the dev tooling (typechecker and viewer tests) from the committed lockfile. One piece is not TypeScript: the narrow POSIX boundary in [`native/atlas-posix`](native/atlas-posix), a small Rust library giving the CLIs the no-follow directory operations the platform will not expose to a script. Nothing compiled is tracked — a fresh clone has the source and builds it once:
+The engine runs on [Bun](https://bun.sh). The CLIs need nothing installed; `bun install` restores the dev tooling (typechecker and viewer tests) from the committed lockfile.
+
+One piece is not TypeScript: the narrow POSIX boundary in [`native/atlas-posix`](native/atlas-posix), a small Rust library giving the CLIs the no-follow directory operations the platform will not expose to a script. Per §25.8 its artifact ships committed, one directory per supported target, under `native/atlas-posix/lib/<triple>/` — so a plain checkout runs everything and no Rust toolchain is needed to use Atlas. The supported platforms are exactly the targets built there; today that is `x86_64-unknown-linux-gnu`, and a host without one refuses at startup rather than falling back.
+
+Rebuild it after changing the crate:
 
 ```
 bun run build:native
 ```
 
-That needs a Rust toolchain (`cargo`) and runs `--offline`; the crate has no dependencies to fetch. A command that needs the boundary and cannot find it says so by name and repeats this line, so a missing build is never a mysterious failure. `bun run verify` builds it first for the same reason.
+That needs `cargo` at the version [`rust-toolchain.toml`](rust-toolchain.toml) pins, runs `--offline` (the crate has no dependencies to fetch), and writes the committed artifact in place. CI runs `bun scripts/build_native.ts --check`, which rebuilds and compares instead of writing: the bytes in the tree have to be the bytes the pinned toolchain produces.
 
 ## Viewing a graph
 

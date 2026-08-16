@@ -33,7 +33,16 @@ export const MAX_FIELDS = 64;
 export const MAX_SEQUENCE_ENTRIES = 1_024;
 export const MAX_NODES = 16_384;
 
-const KEY_VALUE = /^([A-Za-z_][A-Za-z0-9_-]*):(?: (.*))?$/;
+// The `s` flag is not a widening: it makes `.` mean what the oracle's `re`
+// meant. CPython excludes only LF from `.`; JavaScript also excludes CR,
+// U+2028 and U+2029. CR never reaches here — validateFileBytes refuses it —
+// so the live difference is the two Unicode separators, which §20.4 admits as
+// ordinary content ("no Unicode normalization: code points pass through") and
+// which are not C0 controls. Without the flag a scalar holding one reparses:
+// `items:\n  - key: a b` yields a mapping entry under the oracle and the bare
+// string "key: a b" here, silently. Lines are split on 0x0A before the regex
+// sees them, so `s` cannot let a newline through, and `$` is unaffected by it.
+const KEY_VALUE = /^([A-Za-z_][A-Za-z0-9_-]*):(?: (.*))?$/s;
 const UNSUPPORTED_PREFIXES = ["&", "*", "!", "%"];
 
 // The set `str.strip()` removes, which is neither JavaScript's nor a guess:

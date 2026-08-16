@@ -28,6 +28,7 @@ secrets/
 __pycache__/
 node_modules/
 
-# Rust build products for the POSIX boundary (native/). The library is built
-# from source by 'bun run build:native'; nothing compiled is tracked.
+# Cargo's scratch for the POSIX boundary. The shipped artifact is NOT here —
+# §25.8 commits it per target under native/*/lib/<triple>/, so a plain checkout
+# runs everything without a Rust toolchain, and CI rebuilds and compares it.
 native/*/target/

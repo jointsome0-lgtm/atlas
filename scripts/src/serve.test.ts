@@ -9,7 +9,9 @@ import {
   originsFor,
   parseArgs,
   printable,
+  serveConnection,
 } from "./serve.ts";
+import type { Serving } from "./serve.ts";
 
 // The differential harness proves this server answers, byte for byte, what
 // CPython's answers. What is pinned here is what a comparison of two running
@@ -30,7 +32,7 @@ afterEach(() => {
 });
 
 /** A viewer directory holding exactly these names, and an instance beside it. */
-function mount(...names: readonly string[]): Map<string, unknown> {
+function mount(...names: readonly string[]): ReturnType<typeof buildRoutes> {
   fs.rmSync(`${root}/viewer`, { recursive: true, force: true });
   fs.mkdirSync(`${root}/viewer`);
   for (const name of names) fs.writeFileSync(`${root}/viewer/${name}`, "");
@@ -228,5 +230,178 @@ describe("reading the arguments the way the oracle's parser reads them", () => {
     // One dash carries its value in the same word, so `-hx` is `-h` and an `x`
     // that help never gets to look at.
     expect(read("-hx")).toBe("help");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The connection reader
+// ---------------------------------------------------------------------------
+
+/**
+ * Enough of a socket for `serveConnection`, and nothing more.
+ *
+ * A real half-close cannot be staged from here: Bun's own client `end()` tears
+ * the connection down rather than shutting one direction of it, so a TCP test
+ * would prove the client's manners and not this server's. The events are what
+ * the server actually reacts to, so they are what gets delivered — `end` after
+ * `data` is exactly what the kernel reports for `shutdown(SHUT_WR)`.
+ */
+class FakeSocket {
+  readonly written: string[] = [];
+  ended = false;
+  destroyed = false;
+  private readonly handlers = new Map<string, (arg?: unknown) => void>();
+
+  on(event: string, handler: (arg?: unknown) => void): this {
+    this.handlers.set(event, handler);
+    return this;
+  }
+  setTimeout(): this {
+    return this;
+  }
+  write(data: string): boolean {
+    this.written.push(data);
+    return true;
+  }
+  end(data?: string): this {
+    if (data !== undefined) this.written.push(data);
+    this.ended = true;
+    return this;
+  }
+  destroy(): this {
+    this.destroyed = true;
+    return this;
+  }
+  /** Deliver bytes, then optionally the peer's FIN. */
+  deliver(payload: string, half: boolean): string {
+    if (payload.length > 0) {
+      (this.handlers.get("data") as (chunk: Buffer) => void)(
+        Buffer.from(payload, "latin1"),
+      );
+    }
+    if (half) (this.handlers.get("end") as () => void)();
+    return this.written.join("");
+  }
+}
+
+function answered(payload: string, half: boolean): string {
+  const serving: Serving = {
+    routes: mount("index.html"),
+    origins: originsFor(DEFAULT_PORT),
+  };
+  const socket = new FakeSocket();
+  serveConnection(socket as unknown as Parameters<typeof serveConnection>[0], serving);
+  return socket.deliver(payload, half);
+}
+
+const HOST = `Host: 127.0.0.1:${DEFAULT_PORT}\r\n`;
+
+describe("a request the client ends with FIN instead of a blank line", () => {
+  // The differential harness cannot reach this: all 92 of its requests are
+  // written complete and its client never half-closes. CPython's header reader
+  // stops on a blank line *or* on end of stream, so a request closed by FIN is
+  // a request — `nc -N` and `socat ...,shut-wr` send exactly that, and they are
+  // what an operator reaches for to check a port is alive. Before the `end`
+  // handler this server answered them with silence. Proved on the wire against
+  // the recovered oracle as well; what is pinned here is the branch.
+
+  test("answers a half-closed request whose head has no blank line", () => {
+    expect(answered(`GET /nope HTTP/1.1\r\n${HOST}`, true)).toMatch(/^HTTP\/1\.0 404 /);
+  });
+
+  test("answers a half-closed request line with no headers at all", () => {
+    // 400 rather than 404 because a head with no headers carries no Host, and
+    // §16.5 refuses a request that does not address this server. What matters
+    // here is that something is said at all: before the `end` handler this
+    // connection was held open in silence waiting for a blank line that the
+    // client had already promised never to send.
+    expect(answered("GET /nope HTTP/1.1", true)).toMatch(/^HTTP\/1\.0 400 /);
+  });
+
+  test("reads the last header even though no newline closed it", () => {
+    // `readline` at end of stream returns the partial line, and CPython keeps
+    // it, so the Host on it still addresses this server.
+    expect(answered(`GET /nope HTTP/1.1\r\nHost: 127.0.0.1:${DEFAULT_PORT}`, true))
+      .toMatch(/^HTTP\/1\.0 404 /);
+  });
+
+  test("a half-closed request naming another host is still refused", () => {
+    expect(answered("GET /nope HTTP/1.1\r\nHost: evil.example\r\n", true))
+      .toMatch(/^HTTP\/1\.0 400 /);
+  });
+
+  test("says nothing to a client that connects and leaves", () => {
+    expect(answered("", true)).toBe("");
+  });
+
+  test("still waits when the client has not finished", () => {
+    // No FIN: the head is incomplete, so there is nothing to answer yet and the
+    // connection is held rather than guessed at.
+    expect(answered(`GET /nope HTTP/1.1\r\n${HOST}`, false)).toBe("");
+  });
+
+  // The header limit counts what `readline` returned, not what looks like a
+  // header, so end of stream spends a slot and so does a line with no newline
+  // on it. Verified against CPython's own `http.client.parse_headers`: 99 whole
+  // lines then EOF is accepted, 100 then EOF is refused, and 99 whole lines
+  // plus an unterminated one is refused. Without this a half-closing client
+  // would be allowed a header a blank-line client is refused.
+  const pads = (count: number): string =>
+    Array.from({ length: count }, (_, i) => `X-Pad-${i}: 1\r\n`).join("");
+
+  test("99 headers and end of stream is under the limit", () => {
+    expect(answered(`GET /nope HTTP/1.1\r\n${HOST}${pads(98)}`, true)).toMatch(
+      /^HTTP\/1\.0 404 /,
+    );
+  });
+
+  test("100 headers and end of stream is over it", () => {
+    // The 101st slot is the end of stream itself.
+    expect(answered(`GET /nope HTTP/1.1\r\n${HOST}${pads(99)}`, true)).toMatch(
+      /^HTTP\/1\.0 431 /,
+    );
+  });
+
+  test("an unterminated last header spends a slot of its own", () => {
+    expect(answered(`GET /nope HTTP/1.1\r\n${HOST}${pads(98)}X-Cut: 1`, true)).toMatch(
+      /^HTTP\/1\.0 431 /,
+    );
+  });
+
+  test("a complete head is answered without waiting for FIN", () => {
+    expect(answered(`GET /nope HTTP/1.1\r\n${HOST}\r\n`, false)).toMatch(
+      /^HTTP\/1\.0 404 /,
+    );
+  });
+});
+
+describe("a refusal raised after the method is known", () => {
+  // CPython assigns `self.command` before it reads headers, and `send_error`
+  // withholds the body on HEAD — so the header-scan refusals are the ones that
+  // honour it. A 414 clears the command first and a bad request line never sets
+  // it, which is why those keep their bodies on both sides.
+  const padding = Array.from({ length: 101 }, (_, i) => `X-Pad-${i}: 1\r\n`).join("");
+  const flood = (method: string): string =>
+    answered(`${method} /nope HTTP/1.1\r\n${HOST}${padding}\r\n`, false);
+
+  test("431 on HEAD sends the head and no body", () => {
+    const reply = flood("HEAD");
+    expect(reply).toMatch(/^HTTP\/1\.0 431 /);
+    expect(reply).toContain("Content-Length:");
+    expect(reply).not.toContain("<!DOCTYPE HTML>");
+  });
+
+  test("431 on GET still sends the body", () => {
+    expect(flood("GET")).toContain("<!DOCTYPE HTML>");
+  });
+
+  test("the method is compared exactly, so lowercase head keeps its body", () => {
+    expect(flood("head")).toContain("<!DOCTYPE HTML>");
+  });
+
+  test("a 414 keeps its body even on HEAD", () => {
+    const reply = answered(`HEAD /${"a".repeat(70000)} HTTP/1.1\r\n${HOST}\r\n`, false);
+    expect(reply).toMatch(/^HTTP\/1\.0 414 /);
+    expect(reply).toContain("<!DOCTYPE HTML>");
   });
 });

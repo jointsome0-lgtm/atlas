@@ -357,9 +357,25 @@ export function main(args: readonly string[], program: string): number {
   const lock = posixJoin(instanceRoot, ".atlas-lock");
   if (!checkOnly) {
     try {
+      // The oracle's two lock sites disagreed with each other: its writer took
+      // this lock `O_NOFOLLOW` at 0o600 and its builder took it with neither.
+      // Both are copied here from the stricter one, deliberately — it is one
+      // file at one path, taken by whichever of the two processes arrives
+      // first, so a mode that depends on which one that was is an accident and
+      // not a contract. Restoring the builder's own default would not restore
+      // parity either: an omitted mode is 0o777 in Python and 0o666 in Node, so
+      // this line has never produced what the oracle's builder produced.
+      // `O_NOFOLLOW` changes nothing observable — `O_CREAT|O_EXCL` already
+      // answers EEXIST for a symlinked final component, which is the branch
+      // below — and the mode stops a file naming this process from being
+      // world-readable.
       lockFd = fs.openSync(
         lock,
-        fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY,
+        fs.constants.O_CREAT |
+          fs.constants.O_EXCL |
+          fs.constants.O_WRONLY |
+          fs.constants.O_NOFOLLOW,
+        0o600,
       );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {

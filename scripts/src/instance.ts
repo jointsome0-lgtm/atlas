@@ -987,8 +987,14 @@ export class AtlasInstance {
       size = info.size;
       if (size > 0) {
         const tail = Buffer.alloc(1);
-        fs.readSync(fd, tail, 0, 1, size - 1);
-        if (tail[0] !== 0x0a) fail(ReasonCode.InvalidJsonl, display);
+        // The count is checked so the answer does not rest on the zero-fill.
+        // A foreign writer truncating the journal between the fstat and this
+        // read makes the read return nothing; `alloc` zeroed the byte, so the
+        // comparison alone would refuse for the right reason by accident. The
+        // refusal itself is the oracle's — `lseek(-1, SEEK_END)` then a
+        // one-byte read that is not `\n` — and stays exactly as loud.
+        const read = fs.readSync(fd, tail, 0, 1, size - 1);
+        if (read !== 1 || tail[0] !== 0x0a) fail(ReasonCode.InvalidJsonl, display);
       }
 
       const line = new Uint8Array(payload.length + 1);

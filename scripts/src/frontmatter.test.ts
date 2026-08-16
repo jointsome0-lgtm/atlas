@@ -191,3 +191,45 @@ describe("keys that mean something to a JavaScript object", () => {
     );
   });
 });
+
+describe("the Unicode separators CPython's `.` admits", () => {
+  // U+2028 and U+2029 are ordinary content under §20.4 — not C0 controls, and
+  // "code points pass through" — but JavaScript's `.` treats them as line
+  // terminators where CPython's does not. Without the `s` flag on KEY_VALUE a
+  // scalar holding one stops looking like `key: value`, and the reference
+  // parser and this one part company over bytes both call legal.
+  const LS = "\u2028";
+  const PS = "\u2029";
+
+  test("a scalar holding U+2028 is still a scalar", () => {
+    expect(parseDocument(bytes(`key: a${LS}b\n`))).toEqual({ key: `a${LS}b` });
+  });
+
+  test("a sequence entry holding U+2028 is still a mapping, not a string", () => {
+    // The silent one: before the flag this yielded the bare string
+    // "key: a\u2028b", so a document the reference parser reads as an object
+    // reached the builder as text, with no diagnostic on either side.
+    expect(parseDocument(bytes(`items:\n  - key: a${LS}b\n`))).toEqual({
+      items: [{ key: `a${LS}b` }],
+    });
+  });
+
+  test("U+2029 is admitted the same way", () => {
+    expect(parseDocument(bytes(`items:\n  - key: a${PS}b\n`))).toEqual({
+      items: [{ key: `a${PS}b` }],
+    });
+  });
+
+  test("a multi-key entry holding U+2028 keeps both keys", () => {
+    // The loud one: before the flag the second key was orphaned and the file
+    // was refused for "ambiguous indentation", naming a line whose indentation
+    // was correct.
+    expect(
+      parseDocument(bytes(`edges:\n  - to: zone:sho${LS}ulder\n    role: loads\n`)),
+    ).toEqual({ edges: [{ to: `zone:sho${LS}ulder`, role: "loads" }] });
+  });
+
+  test("a real newline is still a line break, flag or no flag", () => {
+    expect(parseDocument(bytes("a: one\nb: two\n"))).toEqual({ a: "one", b: "two" });
+  });
+});

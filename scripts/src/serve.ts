@@ -755,26 +755,56 @@ type Scan =
   | { readonly state: "refused"; readonly reply: Reply }
   | { readonly state: "read"; readonly end: number };
 
-function scanHeaders(buffer: Buffer, from: number, headless: boolean): Scan {
+/**
+ * Read the header block, or say the head is not all here yet.
+ *
+ * `atEof` is the client having half-closed. CPython's header reader stops on a
+ * blank line *or* on `readline` returning nothing, so end of stream terminates
+ * the block exactly as a blank line does — and a final line with no newline on
+ * it is still a header. A reader without that branch answers such a request
+ * with silence, which is not one of the answers this server has.
+ */
+function scanHeaders(
+  buffer: Buffer,
+  from: number,
+  headless: boolean,
+  atEof: boolean,
+): Scan {
   const tooLarge = (message: string, explain: string): Scan => ({
     state: "refused",
     reply: errorReply(431, message, headless, explain),
   });
   const overlong = (): Scan =>
     tooLarge("Line too long", `got more than ${HEADER_LINE_BYTES} bytes when reading header line`);
+  const tooMany = (): Scan =>
+    tooLarge("Too many headers", `got more than ${MAX_HEADERS} headers`);
 
   let start = from;
   let lines = 0;
   for (;;) {
     const newline = buffer.indexOf(0x0a, start);
     if (newline < 0) {
-      return buffer.length - start > HEADER_LINE_BYTES ? overlong() : { state: "waiting" };
+      if (buffer.length - start > HEADER_LINE_BYTES) return overlong();
+      if (!atEof) return { state: "waiting" };
+      // Whatever is left is the last header, newline or not, and the block
+      // ends after it. Both it and the end of stream itself count against the
+      // limit: CPython's reader appends every result `readline` hands back —
+      // including the final partial line and the empty string that ends the
+      // loop — and refuses once the list is past the limit, so a head closed
+      // by FIN reaches 431 one and two lines earlier than one closed by a
+      // blank line. Counting only whole lines here would let a half-closing
+      // client past a boundary a blank-line client cannot cross.
+      if (buffer.length > start) {
+        lines += 1;
+        if (lines > MAX_HEADERS) return tooMany();
+      }
+      lines += 1;
+      if (lines > MAX_HEADERS) return tooMany();
+      return { state: "read", end: buffer.length };
     }
     if (newline + 1 - start > HEADER_LINE_BYTES) return overlong();
     lines += 1;
-    if (lines > MAX_HEADERS) {
-      return tooLarge("Too many headers", `got more than ${MAX_HEADERS} headers`);
-    }
+    if (lines > MAX_HEADERS) return tooMany();
     const line = buffer.subarray(start, newline + 1).toString("latin1");
     if (line === "\n" || line === "\r\n") return { state: "read", end: start };
     start = newline + 1;
@@ -787,14 +817,17 @@ export function serveConnection(socket: net.Socket, serving: Serving): void {
   socket.on("error", () => socket.destroy());
   const chunks: Buffer[] = [];
   let done = false;
-  socket.on("data", (chunk: Buffer) => {
+  const advance = (atEof: boolean): void => {
     if (done) return;
-    chunks.push(chunk);
     const head = Buffer.concat(chunks);
-    const stop = (reply: Reply | null): void => {
+    // `withBody` is the caller's, because only some of these refusals know the
+    // method yet. CPython suppresses an error body on HEAD, but it has only
+    // assigned `self.command` by the time the *headers* are read: a 414 clears
+    // it first, and a bad request line never sets it. Those keep the body.
+    const stop = (reply: Reply | null, withBody = true): void => {
       done = true;
       if (reply === null) socket.end();
-      else socket.end(serialize(reply, true));
+      else socket.end(serialize(reply, withBody));
     };
 
     // The request line is read and answered before a single header is, so a
@@ -803,14 +836,26 @@ export function serveConnection(socket: net.Socket, serving: Serving): void {
     if (first < 0) {
       // Measured before it is parsed, so an enormous URI is refused rather
       // than walked — and never quoted back (§24.4).
-      if (head.length > REQUEST_LINE_BYTES) stop(errorReply(414));
-      return;
-    }
-    if (first + 1 > REQUEST_LINE_BYTES) {
+      if (head.length > REQUEST_LINE_BYTES) {
+        stop(errorReply(414));
+        return;
+      }
+      if (!atEof) return;
+      // At end of stream `readline` returns what it has, so a request line
+      // closed by FIN is still one. Nothing at all is a client that connected
+      // and left; the oracle closes without a word, so this does too.
+      if (head.length === 0) {
+        done = true;
+        socket.end();
+        return;
+      }
+    } else if (first + 1 > REQUEST_LINE_BYTES) {
       stop(errorReply(414));
       return;
     }
-    const line = parseRequestLine(head.subarray(0, first).toString("latin1"));
+    const lineEnd = first < 0 ? head.length : first;
+    const headersFrom = first < 0 ? head.length : first + 1;
+    const line = parseRequestLine(head.subarray(0, lineEnd).toString("latin1"));
     if (line === null) {
       stop(null);
       return;
@@ -819,10 +864,13 @@ export function serveConnection(socket: net.Socket, serving: Serving): void {
       stop(line);
       return;
     }
-    const scan = scanHeaders(head, first + 1, line.headless);
+    const scan = scanHeaders(head, headersFrom, line.headless, atEof);
     if (scan.state === "waiting") return;
     if (scan.state === "refused") {
-      stop(scan.reply);
+      // The method is known here and nowhere above it, so this is the one
+      // refusal that honours HEAD. Compared exactly, as CPython compares it:
+      // a lowercase `head` gets the body on both sides.
+      stop(scan.reply, line.method !== "HEAD");
       return;
     }
     done = true;
@@ -830,7 +878,7 @@ export function serveConnection(socket: net.Socket, serving: Serving): void {
     const parsed: Request = {
       method: line.method,
       target: line.target,
-      hosts: hostsIn(head.subarray(first + 1, scan.end).toString("latin1")),
+      hosts: hostsIn(head.subarray(headersFrom, scan.end).toString("latin1")),
       headless: line.headless,
     };
     const [reply, fd] = answer(parsed, serving);
@@ -855,7 +903,18 @@ export function serveConnection(socket: net.Socket, serving: Serving): void {
         fs.closeSync(fd);
       }
     })();
+  };
+  socket.on("data", (chunk: Buffer) => {
+    if (done) return;
+    chunks.push(chunk);
+    advance(false);
   });
+  // The half-close. A client that signals "that is the whole request" with FIN
+  // rather than with a blank line — `nc -N`, `socat ...,shut-wr`, the reflex an
+  // operator reaches for to check the port is alive — is answered, not left in
+  // silence until the timeout. The server keeps the writable side open past the
+  // client's FIN so the answer still has somewhere to go.
+  socket.on("end", () => advance(true));
 }
 
 // ---------------------------------------------------------------------------

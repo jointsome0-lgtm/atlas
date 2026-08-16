@@ -86,17 +86,37 @@ function errnoName(errno: number): string {
   return ERRNO_NAMES.get(-errno) ?? `errno ${-errno}`;
 }
 
+// §25.8: "the supported platform list is exactly the boundary's registered
+// targets". This map is that list in executable form — a triple appears here
+// in the same change that first builds and commits it, and a platform absent
+// from it has no artifact, so the run refuses at startup rather than reaching
+// for a path-based fallback that does not exist.
+const REGISTERED_TARGETS: ReadonlyMap<string, string> = new Map([
+  ["linux:x64", "x86_64-unknown-linux-gnu"],
+]);
+
+const HOST = `${process.platform}:${process.arch}`;
+const TARGET = REGISTERED_TARGETS.get(HOST);
+
 // `fileURLToPath`, not `.pathname`: the URL keeps a checkout at
 // `/home/a/Atlas Project` in its escaped form, `Atlas%20Project`, which names
 // nothing on disk. `dlopen` would then fail on a machine whose only sin is a
 // space in a directory name, and every caller would be told the boundary was
 // never built.
-const LIBRARY_PATH = fileURLToPath(
-  new URL(
-    `../../native/atlas-posix/target/release/libatlas_posix.${suffix}`,
-    import.meta.url,
-  ),
-);
+//
+// The artifact ships committed, one directory per target, beside its source —
+// so a plain checkout runs everything without a Rust toolchain, and §17.5's
+// `deterministic` marking names the very bytes that ran. `target/` is build
+// scratch and stays untracked; `lib/` is the shipped thing.
+const LIBRARY_PATH =
+  TARGET === undefined
+    ? null
+    : fileURLToPath(
+        new URL(
+          `../../native/atlas-posix/lib/${TARGET}/libatlas_posix.${suffix}`,
+          import.meta.url,
+        ),
+      );
 
 const SIGNATURES = {
   atlas_openat: {
@@ -133,6 +153,15 @@ let loaded: Library | undefined;
 
 function library(): Library {
   if (loaded !== undefined) return loaded;
+  if (LIBRARY_PATH === null) {
+    // Naming a platform nobody can start on names nothing (§25.8): this is a
+    // host with no registered target, so there is no artifact and no fallback.
+    throw new Error(
+      `the POSIX boundary has no registered target for ${HOST}: supported ` +
+        `hosts are ${[...REGISTERED_TARGETS.keys()].join(", ")}. A target ` +
+        "registers in §25.8 in the change that first builds it.",
+    );
+  }
   try {
     loaded = dlopen(LIBRARY_PATH, SIGNATURES).symbols;
   } catch (cause) {

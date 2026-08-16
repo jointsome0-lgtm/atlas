@@ -5,7 +5,7 @@
   "scripts": {
     "build": "bun scripts/build_viewer.ts",
     "build:check": "bun scripts/build_viewer.ts --check",
-    "build:native": "cargo build --release --offline --manifest-path native/atlas-posix/Cargo.toml",
+    "build:native": "bun scripts/build_native.ts",
     "typecheck": "bunx --bun tsc --noEmit && bunx --bun tsc --noEmit -p tsconfig.scripts.json",
     "test": "bun test scripts/src",
     "test:viewer": "bun test --timeout 60000 scripts/viewer-acceptance",
