@@ -1236,7 +1236,28 @@ const cases: Case[] = [
 // Running one case on one side
 // ---------------------------------------------------------------------------
 
-const workspace = fs.realpathSync(fs.mkdtempSync("/tmp/atlas-serve-"));
+/**
+ * The workspace, at a path whose length is part of the recording.
+ *
+ * One case feeds the server an instance path longer than a diagnostic line and
+ * records where the line was cut. The cut lands at a fixed number of code
+ * points, so what got recorded is partly the length of this prefix — and
+ * `/tmp` is a symlink on macOS, where the same call yields `/private/tmp` and
+ * moves the cut by eight characters. Refused rather than folded: the recording
+ * cannot be made length-independent without re-recording it, and a platform
+ * §25.8 does not list should hear that plainly instead of seeing a diagnostic
+ * diff it will read as a truncation bug.
+ */
+const TMP = "/tmp";
+if (fs.realpathSync(TMP) !== TMP) {
+  throw new Error(
+    `serve: ${TMP} resolves to ${fs.realpathSync(TMP)}, and the recorded ` +
+      `diagnostics encode the length of the workspace path, so a longer ` +
+      `prefix moves where a truncated line is cut. This corpus was recorded ` +
+      `on a platform where ${TMP} is a real directory.`,
+  );
+}
+const workspace = fs.realpathSync(fs.mkdtempSync(`${TMP}/atlas-serve-`));
 
 function materialize(root: string, item: Case): void {
   fs.mkdirSync(root, { recursive: true });
@@ -1303,7 +1324,16 @@ const OTHER_ADDRESS: string | null = (() => {
  */
 function reachable(port: number): Promise<string> {
   if (OTHER_ADDRESS === null) {
-    return Promise.resolve("<this machine has no other address>");
+    // Not an answer — an admission that the question could not be asked. Put
+    // into the comparison it would read as a recorded property of the server,
+    // when all it says is that this host has one address. A machine with no
+    // route off loopback cannot prove the binding either way, and should say
+    // so instead of quietly returning something that will not match.
+    throw new Error(
+      "serve: this host has no address that is not loopback, so the case " +
+        "that proves the server refuses connections from elsewhere cannot " +
+        "be asked here. Run the corpus on a host with a network interface.",
+    );
   }
   return new Promise((resolve) => {
     const refused = (): void => {
@@ -1368,11 +1398,20 @@ function settled(child: ReturnType<typeof Bun.spawn>): Promise<number | "still r
 }
 
 // The clock and the port are the two things that cannot be the same twice.
+//
+// The port is folded as `:NNNNN`, never as the bare digits. A port is five
+// digits the kernel picks from a range, and those same five digits turn up in
+// a Content-Length often enough to matter: fold them loose and one run in
+// thousands rewrites a header into `Content-Length: «port»`, which reads as a
+// port bug, is not reproducible, and would hide a real length change if one
+// ever landed. Every port in this corpus is written `host:port`, so the colon
+// is a complete anchor — checked against the recording, which has no «port»
+// that is not preceded by `127.0.0.1:`.
 function fold(text: string, root: string, port: number): string {
   return text
     .replaceAll(root, "«root»")
     .replaceAll(workspace, "«workspace»")
-    .replaceAll(String(port), "«port»")
+    .replaceAll(`:${String(port)}`, ":«port»")
     .replaceAll(/^Date: .*$/gm, "Date: «now»")
     .replaceAll(/serve_instance\.(py|ts)/g, "«program»")
     .replaceAll(/build_atlas_graph\.(py|ts)/g, "«builder»");

@@ -295,12 +295,68 @@ const scenarios: Scenario[] = [
 // Building one repository, and asking both sides about it
 // ---------------------------------------------------------------------------
 
-/** git with nothing of the caller's own configuration in it. */
+/**
+ * Refuse a temporary directory that sits inside somebody's working tree.
+ *
+ * One scenario builds a directory that is deliberately not a repository and
+ * records git failing to find one. Git looks upward, so if `TMPDIR` points
+ * inside a checkout it finds *that* repository instead, and the scenario stops
+ * asking what it means to ask — exit code, stdout and stderr all change at
+ * once. Refused rather than fenced with `GIT_CEILING_DIRECTORIES`, whose reach
+ * is easy to get subtly wrong and impossible to notice when it is.
+ */
+{
+  const enclosing = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], {
+    cwd: os.tmpdir(),
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (enclosing.exitCode === 0) {
+    throw new Error(
+      `hygiene: the temporary directory (${os.tmpdir()}) is inside a git ` +
+        `working tree, so the scenario that proves git finds no repository ` +
+        `would find that one. Point TMPDIR somewhere outside a checkout.`,
+    );
+  }
+}
+
+/**
+ * Somewhere with no git configuration in it, and no way to grow any.
+ *
+ * Pointed at by `HOME`, `XDG_CONFIG_HOME` and `GIT_TEMPLATE_DIR` below. It
+ * stays empty for the life of the run; nothing writes here.
+ */
+const NOWHERE = fs.mkdtempSync(`${os.tmpdir()}/atlas-hygiene-nowhere-`);
+
+/**
+ * git with nothing of the caller's own configuration in it.
+ *
+ * The two config files were never the whole of it. `git ls-files --others
+ * --exclude-standard` also reads the global ignore file — `~/.config/git/ignore`
+ * — which is not configuration git looks up through `GIT_CONFIG_GLOBAL` but a
+ * path it derives from `HOME`. A developer who globally ignores `*.jsonl` would
+ * watch a scenario lose the very line it exists to prove, on a question whose
+ * hash still matches, so it lands as a divergence rather than a missing answer
+ * (atlas#141). `GIT_TEMPLATE_DIR` is the same hole one step further back: an
+ * unpinned template seeds `.git/info/exclude` from whatever the machine has.
+ *
+ * `LC_ALL`/`LANGUAGE` pin the other half. Two scenarios record git's own stderr
+ * verbatim, and `fold` covers the checker's prose but not git's — so on a
+ * machine with translation catalogues and a non-English locale, git says the
+ * same thing in another language and the recording no longer matches.
+ */
 const GIT_ENV: Readonly<Record<string, string>> = {
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_SYSTEM: "/dev/null",
   GIT_TERMINAL_PROMPT: "0",
+  HOME: NOWHERE,
+  XDG_CONFIG_HOME: NOWHERE,
+  GIT_TEMPLATE_DIR: NOWHERE,
+  LC_ALL: "C",
+  LANGUAGE: "",
 };
+
 
 function git(root: string, ...args: string[]): void {
   const run = Bun.spawnSync(["git", ...args], {

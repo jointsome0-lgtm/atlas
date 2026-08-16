@@ -77,6 +77,31 @@ const MACHINE: readonly string[] = [
     : []),
 ];
 
+/**
+ * Refuse to answer at all when the process can ignore permissions.
+ *
+ * Several harnesses prove a refusal the only way a refusal can be proved: they
+ * take away a permission and record that the operation stopped. Root has no
+ * such permission to lose — `openat` on a mode-000 directory succeeds, a write
+ * into a read-only tree succeeds — so those recordings describe an outcome the
+ * process can no longer produce, and every one of them reports a divergence
+ * that is not a behavioural difference (atlas#141).
+ *
+ * There is no fold for this and there should not be: the cases are correct and
+ * the recordings are correct, and it is the process that is wrong. Refusing
+ * once here beats teaching each chmod case to check its own uid, and it covers
+ * the ones nobody has written yet.
+ */
+function refuseRoot(): void {
+  if (process.getuid?.() !== 0) return;
+  throw new Error(
+    "the corpus is running as root, and root cannot be refused: the cases " +
+      "that prove a refusal do it by taking a permission away, which root " +
+      "does not have to lose. Run it as an ordinary user — not under sudo, " +
+      "and not in a container that defaults to root.",
+  );
+}
+
 function refuseMachine(harness: string, question: string): void {
   for (const named of MACHINE) {
     if (named === "" || !question.includes(named)) continue;
@@ -90,6 +115,7 @@ function refuseMachine(harness: string, question: string): void {
 
 /** The oracle's frozen answer to one question. */
 export function oracleAnswer(harness: string, question: string): unknown {
+  refuseRoot();
   refuseMachine(harness, question);
   const key = fingerprint(question);
   const current = book(harness);
