@@ -113,52 +113,6 @@ interface Answer {
   readonly open?: { ok: true } | { errno: number };
 }
 
-const ORACLE = `
-import base64, json, os, sys
-
-root = sys.stdin.readline().strip()
-directories = json.loads(sys.stdin.read())
-
-DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
-
-def describe(fn):
-    try:
-        info = fn()
-    except OSError as exc:
-        return {"errno": exc.errno}
-    return {"mode": info.st_mode, "size": info.st_size}
-
-out = {}
-for relative in directories:
-    path = root if relative == "." else os.path.join(root, relative)
-    fd = os.open(path, DIR_FLAGS)
-    try:
-        with os.scandir(fd) as entries:
-            names = sorted(os.fsencode(entry.name) for entry in entries)
-        out[relative] = {"listing": [base64.b64encode(n).decode() for n in names]}
-        for name in names:
-            key = relative + "\\x00" + base64.b64encode(name).decode()
-            entry = {}
-            entry["stat"] = describe(
-                lambda: os.stat(name, dir_fd=fd, follow_symlinks=False)
-            )
-            entry["follow"] = describe(
-                lambda: os.stat(name, dir_fd=fd, follow_symlinks=True)
-            )
-            try:
-                opened = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
-            except OSError as exc:
-                entry["open"] = {"errno": exc.errno}
-            else:
-                os.close(opened)
-                entry["open"] = {"ok": True}
-            out[key] = entry
-    finally:
-        os.close(fd)
-
-json.dump(out, sys.stdout)
-`;
-
 /**
  * The same questions asked of `node:fs`, which reaches a name by path because
  * it has no way to reach one by descriptor.
@@ -220,25 +174,12 @@ function compare(partner: string, what: string, ours: unknown, theirs: unknown):
   }
 }
 
-function askCPython(root: string, directories: readonly string[]): Record<string, Answer> {
-  const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(`${root}\n${JSON.stringify(directories)}`),
-  });
-  if (run.exitCode !== 0) {
-    console.error(run.stderr.toString());
-    throw new Error("the oracle refused to answer");
-  }
-  return JSON.parse(run.stdout.toString()) as Record<string, Answer>;
-}
-
 try {
   const directories = buildTree(root);
 
-  // Both partners answer the same tree in the same run, so a mode and a
-  // directory size mean the same thing to all three. The CPython arm is what
-  // goes at the cutover; the `node:fs` arm is what is left holding this.
+  // The surviving partner answers the same tree in the same run, so a mode and
+  // a directory size mean the same thing to both implementations.
   const partners: ReadonlyArray<{ name: string; answers: Record<string, Answer> }> = [
-    { name: "cpython", answers: askCPython(root, directories) },
     { name: "node:fs", answers: askNodeFs(root, directories) },
   ];
 
@@ -297,7 +238,7 @@ try {
 
 console.log(
   divergences === 0
-    ? `posix: ${comparisons} comparisons agree across ours, cpython and node:fs`
+    ? `posix: ${comparisons} comparisons agree across ours and node:fs`
     : `posix: ${divergences} of ${comparisons} comparisons diverged`,
 );
 process.exit(divergences === 0 ? 0 : 1);

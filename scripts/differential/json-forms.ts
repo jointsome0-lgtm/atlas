@@ -21,91 +21,6 @@ import { sortedByCodePoint } from "../src/ordering.ts";
 // which still separates 0 from -0. Integers beyond 2**53 would be flattened by
 // float() on the oracle side, so the corpus stays inside the safe range; one
 // out there is a real divergence and should be reported, not normalised away.
-const ORACLE = `
-import json, struct, sys
-sys.path.insert(0, "scripts")
-from atlas_reader import strict_json_loads
-
-def project(value):
-    if value is None:
-        return ["null"]
-    if isinstance(value, bool):
-        return ["bool", value]
-    if isinstance(value, (int, float)):
-        return ["num", struct.pack(">d", float(value)).hex()]
-    if isinstance(value, str):
-        return ["str", value]
-    if isinstance(value, list):
-        return ["arr", [project(item) for item in value]]
-    if isinstance(value, dict):
-        return ["obj", [[k, project(value[k])] for k in sorted(value)]]
-    raise TypeError("unprojectable value")
-
-payload = json.loads(sys.stdin.read())
-
-emitted = []
-for case in payload["emit"]:
-    emitted.append({
-        "document": json.dumps(case, ensure_ascii=False, indent=2) + "\\n",
-        "row": json.dumps(
-            case,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ),
-    })
-
-read = []
-for text in payload["read"]:
-    try:
-        value = strict_json_loads(text)
-    except Exception:
-        read.append({"ok": False})
-        continue
-    projection = json.dumps(
-        project(value), ensure_ascii=False, separators=(",", ":")
-    )
-    try:
-        row = json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-        document = json.dumps(value, ensure_ascii=False, indent=2) + "\\n"
-    except ValueError:
-        # The oracle read it but cannot write it back either: 1e999 becomes
-        # inf, which allow_nan=False refuses (#122). Nothing to compare.
-        read.append(
-            {"ok": True, "projection": projection, "row": None, "document": None}
-        )
-        continue
-    try:
-        projection.encode("utf-8")
-        row.encode("utf-8")
-        document.encode("utf-8")
-    except UnicodeEncodeError:
-        # A lone surrogate the oracle accepted (#123). It cannot cross this
-        # pipe at all, which is most of the point. The accept/reject
-        # comparison still runs; only the value comparisons are skipped.
-        read.append(
-            {"ok": True, "projection": None, "row": None, "document": None}
-        )
-        continue
-    read.append({
-        "ok": True,
-        "projection": projection,
-        "row": row,
-        "document": document,
-    })
-
-sys.stdout.write(
-    json.dumps({"emit": emitted, "read": read}, ensure_ascii=False)
-)
-`;
-
 const CASES: unknown[] = [
   {},
   [],
@@ -202,17 +117,7 @@ interface OracleResult {
 
 function runOracle(emit: unknown[], read: string[]): OracleResult {
   const payload = JSON.stringify({ emit, read });
-  return oracleAnswer("json-forms", payload, () => {
-    const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
-      stdin: Buffer.from(payload, "utf-8"),
-    });
-    if (proc.exitCode !== 0) {
-      throw new Error(
-        `oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`,
-      );
-    }
-    return JSON.parse(proc.stdout.toString()) as unknown;
-  }) as OracleResult;
+  return oracleAnswer("json-forms", payload) as OracleResult;
 }
 
 function show(value: string): string {

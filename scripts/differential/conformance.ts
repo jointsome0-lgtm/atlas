@@ -23,40 +23,7 @@ import { GENERATORS, generatedCase, runConformance } from "../src/conformance.ts
 import { foldParserProse, foldQuotes } from "./spelling.ts";
 
 const DIFFERENTIAL = import.meta.dir;
-const SCRIPTS = `${DIFFERENTIAL}/..`;
 const REPOSITORY = `${DIFFERENTIAL}/../..`;
-
-const ORACLE = `
-import hashlib, json, sys
-from pathlib import Path
-
-sys.path.insert(0, ${JSON.stringify(SCRIPTS)})
-import validate_atlas as V
-
-payload = json.load(sys.stdin)
-
-out = []
-for case in payload["roots"]:
-    V.ROOT = Path(case["root"])
-    try:
-        errors, count = V.run_conformance()
-        out.append({"errors": errors, "count": count})
-    except Exception:
-        # Which exception it is says nothing a port could match: the finding
-        # is that the suite could not be run at all.
-        out.append({"raised": True})
-
-fixtures = {}
-for name in payload["generators"]:
-    data, expected = V._generated_case(name)
-    fixtures[name] = {
-        "bytes": len(data),
-        "digest": hashlib.sha256(data).hexdigest(),
-        "expected": expected,
-    }
-
-json.dump({"cases": out, "fixtures": fixtures}, sys.stdout)
-`;
 
 // ---------------------------------------------------------------------------
 // The corpus
@@ -357,17 +324,7 @@ const payload = JSON.stringify({
 // folded back in for the comparison below.
 const oracleOut = JSON.parse(
   unfoldRoots(
-    oracleAnswer("conformance", foldRoots(payload, roots), () => {
-      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-        stdin: Buffer.from(payload),
-      });
-      if (run.exitCode !== 0) {
-        console.error("conformance: the oracle failed");
-        console.error(run.stderr.toString());
-        process.exit(1);
-      }
-      return foldRoots(run.stdout.toString(), roots);
-    }) as string,
+    oracleAnswer("conformance", foldRoots(payload, roots)) as string,
     roots,
   ),
 ) as {

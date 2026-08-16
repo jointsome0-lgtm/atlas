@@ -15,37 +15,6 @@ import {
 // construction on the oracle side; this harness exists to prove the
 // TypeScript side is too, so it is run under several hostile TZ values
 // (see package.json) rather than only under the developer's own.
-const ORACLE = `
-import datetime, json, sys
-payload = json.loads(sys.stdin.read())
-out = {"dates": [], "spans": [], "invalid": []}
-for text in payload["dates"]:
-    d = datetime.date.fromisoformat(text)
-    out["dates"].append({
-        "iso": d.isoformat(),
-        "ordinal": d.toordinal(),
-        "midnight": d.isoformat() + "T00:00:00Z",
-    })
-for a, b in payload["spans"]:
-    left = datetime.date.fromisoformat(a)
-    right = datetime.date.fromisoformat(b)
-    out["spans"].append((right - left).days)
-out["shifts"] = []
-for text, days in payload["shifts"]:
-    d = datetime.date.fromisoformat(text)
-    try:
-        out["shifts"].append((d + datetime.timedelta(days=days)).isoformat())
-    except (OverflowError, ValueError):
-        out["shifts"].append(None)
-for text in payload["invalid"]:
-    try:
-        datetime.date.fromisoformat(text)
-        out["invalid"].append(True)
-    except ValueError:
-        out["invalid"].append(False)
-sys.stdout.write(json.dumps(out))
-`;
-
 // Dates chosen to break implementations that route through a wall-clock
 // type: DST transitions (including Santiago's, which deletes midnight
 // itself), leap days, the Gregorian century rules, and year ends.
@@ -182,17 +151,7 @@ function runOracle(): OracleResult {
     invalid: INVALID,
     shifts: SHIFTS,
   });
-  return oracleAnswer("calendar", payload, () => {
-    const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
-      stdin: Buffer.from(payload, "utf-8"),
-    });
-    if (proc.exitCode !== 0) {
-      throw new Error(
-        `oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`,
-      );
-    }
-    return JSON.parse(proc.stdout.toString()) as unknown;
-  }) as OracleResult;
+  return oracleAnswer("calendar", payload) as OracleResult;
 }
 
 let divergences = 0;

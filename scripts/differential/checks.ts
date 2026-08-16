@@ -32,78 +32,6 @@ import {
 import { jsonLoads } from "../src/json-input.ts";
 import { foldQuotes } from "./spelling.ts";
 
-const SCRIPTS = `${import.meta.dir}/..`;
-
-const ORACLE = `
-import json, sys
-from pathlib import Path
-
-sys.path.insert(0, ${JSON.stringify(SCRIPTS)})
-import validate_atlas as V
-
-
-def nodes_of(case):
-    return case.get("nodes", {})
-
-
-def run(case):
-    name = case["check"]
-    path = Path(case.get("path", "atlas/graph.json"))
-    if name == "state_entry_has_dated_input":
-        return V._state_entry_has_dated_input(case["entry"])
-    if name == "state_status_evidence":
-        return V._state_status_evidence_errors(
-            case["entry"], path, case["position"], nodes_of(case))
-    if name == "state_provenance":
-        return V._state_provenance_errors(
-            case["entry"], path, case["position"], case["state_id"],
-            case.get("node_type"), nodes_of(case))
-    if name == "review_gate":
-        return V._review_gate_errors(
-            case["entry"], path, case["position"], case.get("as_of"),
-            nodes_of(case), case["state_id"], case.get("node_type"))
-    if name == "graph_field":
-        return V._graph_field_errors(case["instance"], path)
-    if name == "state_cites_withheld":
-        return V._state_cites_withheld_id(case["entry"], set(case["withheld"]))
-    if name == "user_self_proposal":
-        return V._user_self_proposal_errors(
-            case["row"], path, case["artifact_kinds"])
-    if name == "status_evidence":
-        return V._status_evidence_errors(
-            case["row"], path, case["artifact_kinds"])
-    if name == "reproposal":
-        # A sequence, not one row: the whole point of the rule is memory of
-        # what came before, so a single call could never exercise it.
-        rejected = {}
-        retired = {k: tuple(v) for k, v in case.get("retired", {}).items()}
-        known = set(case["known_targets"])
-        out = []
-        for row in case["rows"]:
-            out.append(V._reproposal_errors(row, path, rejected, known, retired))
-        return out
-    if name == "snapshot_dangling":
-        return V._snapshot_dangling_refs(case["snapshot"], path)
-    if name == "snapshot_state_kind":
-        # A "text" case hands each side the same bytes to parse with its own
-        # reader, which is the only way a difference in key order can survive:
-        # a value sent as JSON has been through the sender's ordering already.
-        snapshot = (V._json_loads(case["text"]) if "text" in case
-                    else case["snapshot"])
-        return V._snapshot_state_kind_errors(snapshot, path)
-    raise SystemExit("unknown check " + name)
-
-
-cases = json.load(sys.stdin)
-out = []
-for case in cases:
-    try:
-        out.append({"ok": run(case)})
-    except Exception as exc:
-        out.append({"raised": type(exc).__name__})
-json.dump(out, sys.stdout)
-`;
-
 interface Case {
   readonly name: string;
   readonly check: string;
@@ -1228,17 +1156,7 @@ const payloadText = JSON.stringify(
 );
 const payload = JSON.parse(payloadText) as Case[];
 
-const theirs = oracleAnswer("checks", payloadText, () => {
-  const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(payloadText),
-  });
-  if (run.exitCode !== 0) {
-    console.error("checks: the oracle failed");
-    console.error(run.stderr.toString());
-    process.exit(1);
-  }
-  return JSON.parse(run.stdout.toString()) as unknown;
-}) as Array<{
+const theirs = oracleAnswer("checks", payloadText) as Array<{
   ok?: unknown;
   raised?: string;
 }>;

@@ -53,103 +53,7 @@ interface Scenario {
   readonly oracleDiffers?: string;
 }
 
-const SCRIPTS = `${import.meta.dir}/..`;
 const REPO = `${import.meta.dir}/../..`;
-
-const ORACLE = `
-import base64, json, os, sys
-from pathlib import Path
-
-sys.path.insert(0, ${JSON.stringify(SCRIPTS)})
-import validate_atlas
-from atlas_reader import AtlasReader, ReaderError
-
-
-def build(root, entries):
-    for entry in entries:
-        target = root / entry["path"]
-        if entry["kind"] == "dir":
-            target.mkdir(parents=True, exist_ok=True)
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(base64.b64decode(entry["data"]))
-
-
-def b64(data):
-    return base64.b64encode(data).decode("ascii")
-
-
-def run_op(root, op):
-    name = op["op"]
-    reader = AtlasReader(root)
-    if name == "read_json":
-        found = reader.optional_file(op["path"])
-        if found is None:
-            return {"missing": True}
-        return {"ok": validate_atlas._read_json(found, op.get("delivered", False))}
-    if name == "journal_lines":
-        found = reader.optional_file(op["path"])
-        if found is None:
-            return {"missing": True}
-        return {"ok": [[n, b64(raw), over]
-                       for n, raw, over in validate_atlas._journal_lines(found)]}
-    if name == "read_jsonl":
-        found = reader.optional_file(op["path"])
-        if found is None:
-            return {"missing": True}
-        return {"ok": [[n, row] for n, row in validate_atlas._read_jsonl(found)]}
-    if name == "read_jsonl_raw":
-        found = reader.optional_file(op["path"])
-        if found is None:
-            return {"missing": True}
-        return {"ok": [[n, row, b64(raw)]
-                       for n, row, raw in
-                       validate_atlas._read_jsonl(found, include_raw=True)]}
-    if name == "journal_paths":
-        return {"ok": [str(p.relative_path)
-                       for p in validate_atlas._journal_paths(reader, op["stem"])]}
-    if name == "load_registry":
-        # The oracle reads its own module-global root; the port takes it as an
-        # argument, so a test needs no monkeypatch to say which tree it means.
-        previous = validate_atlas.ROOT
-        validate_atlas.ROOT = Path(op.get("root", root))
-        try:
-            schemas, errors = validate_atlas._load_registry()
-        finally:
-            validate_atlas.ROOT = previous
-        return {"ok": [sorted(schemas), errors]}
-    if name == "runner_manifest":
-        return {"ok": validate_atlas._runner_manifest_errors(op["value"], op["source"])}
-    if name == "schema_errors":
-        return {"ok": [message.split(": ", 1)[0]
-                       for message in validate_atlas._schema_errors(
-                           op["value"], op["schema"], op["source"])]}
-    if name == "calendar_date":
-        return {"ok": [validate_atlas._is_calendar_date(value)
-                       for value in op["values"]]}
-    if name == "vocabulary":
-        return {"ok": [sorted(validate_atlas.SCHEMA_NAMES),
-                       validate_atlas.CURATED_DIRS,
-                       validate_atlas.JOURNALS,
-                       sorted(validate_atlas.SUPPORTED_KEYWORDS)]}
-    raise SystemExit("unknown op " + name)
-
-
-scenario = json.load(sys.stdin)
-root = Path(scenario["root"])
-build(root, scenario.get("setup", []))
-
-observed = []
-for op in scenario["ops"]:
-    try:
-        observed.append(run_op(root, op))
-    except validate_atlas.JsonInputError as exc:
-        observed.append({"error": str(exc)})
-    except ReaderError as exc:
-        observed.append({"reader": str(exc)})
-
-json.dump(observed, sys.stdout)
-`;
 
 type Result =
   | { ok: unknown }
@@ -1067,13 +971,7 @@ for (const scenario of SCENARIOS) {
   try {
     theirs = JSON.parse(
       unfoldRoots(
-        oracleAnswer("preflight", foldRoots(question, [oracleRoot]), () => {
-          const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-            stdin: Buffer.from(question),
-          });
-          if (run.exitCode !== 0) throw new Error(run.stderr.toString());
-          return foldRoots(run.stdout.toString(), [oracleRoot]);
-        }) as string,
+        oracleAnswer("preflight", foldRoots(question, [oracleRoot])) as string,
         [oracleRoot],
       ),
     ) as Result[];

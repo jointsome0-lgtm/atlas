@@ -1,17 +1,13 @@
-// The oracle's answers, written down so they outlive the oracle.
+// The oracle's frozen answers, read after the oracle is gone.
 //
-// Every harness here asks CPython the same question it asks the port, and the
-// two answers are compared. At the cutover CPython is deleted — and a harness
-// that asked it directly would go with it, taking its corpus along. The corpus
-// is the proof, so it stays.
+// Every harness here once asked CPython the same question it asks the port, and
+// the two answers were compared. At the cutover CPython is deleted — and a
+// harness that asked it directly would go with it, taking its corpus along.
+// The corpus is the proof, so it stays.
 //
-// A harness therefore asks through this module. While the oracle exists the
-// answer is recorded (`--record`), and every run afterwards checks the
-// recording against the live oracle, so a recording cannot drift from the
-// thing it records. At the cutover the asking half is deleted — the third
-// argument below, and the Python each harness carried to ask with — and the
-// recording is what remains: the oracle's answer, frozen on the day it was
-// still there.
+// The answers were recorded while the oracle existed and checked against it
+// on every run. This module now reads what remains: the oracle's answer,
+// frozen on the day it was still there.
 //
 // A recording is keyed by a fingerprint of the question, so a corpus that
 // grows a case does not silently keep an old answer. It fails, naming the
@@ -25,9 +21,6 @@ const HERE = import.meta.dir;
 /** The zone the runner set for this run; a recording's default is UTC. */
 const ZONE = process.env.TZ ?? "UTC";
 
-/** `--record` rewrites the recordings instead of checking against them. */
-const RECORDING = process.argv.includes("--record");
-
 interface Entry {
   /** Fingerprint of the question, so a changed corpus cannot reuse an answer. */
   readonly ask: string;
@@ -37,10 +30,7 @@ interface Entry {
 }
 
 interface Book {
-  readonly harness: string;
-  readonly source: string;
-  readonly recorded: string;
-  answers: Entry[];
+  readonly answers: readonly Entry[];
 }
 
 const fingerprint = (question: string): string =>
@@ -57,114 +47,18 @@ function book(harness: string): Book {
   try {
     loaded = JSON.parse(fs.readFileSync(pathFor(harness), "utf8")) as Book;
   } catch {
-    if (!RECORDING) {
-      throw new Error(
-        `${harness}: no recorded oracle answers; this harness cannot run without them`,
-      );
-    }
-    loaded = {
-      harness,
-      source: "CPython, the implementation this port replaces",
-      recorded: new Date().toISOString().slice(0, 10),
-      answers: [],
-    };
+    throw new Error(
+      `${harness}: no recorded oracle answers; this harness cannot run without them`,
+    );
   }
   books.set(harness, loaded);
   return loaded;
 }
 
-/**
- * Fold the zoned entries back down.
- *
- * A zone earns an entry of its own only by answering differently: the point of
- * the hostile-timezone matrix is that almost no zone does, and six copies of
- * one answer would bury the one that matters. Recording runs the zones as
- * separate processes, so this runs at every write rather than at the end.
- */
-function normalize(answers: Entry[]): Entry[] {
-  const kept: Entry[] = [];
-  for (const entry of answers) {
-    if (entry.zone === undefined) {
-      kept.push(entry);
-      continue;
-    }
-    const base = answers.find((other) => other.ask === entry.ask && other.zone === undefined);
-    if (base === undefined) {
-      // No default answer yet — this zone's becomes it, and a later zone that
-      // agrees will fold into it here.
-      kept.push({ ask: entry.ask, answer: entry.answer });
-      continue;
-    }
-    if (JSON.stringify(base.answer) !== JSON.stringify(entry.answer)) kept.push(entry);
-  }
-  return kept;
-}
-
-/**
- * Write a book so a diff of it reads case by case.
- *
- * One line per recorded answer: these files are large, and a single-line JSON
- * document would make a change to any one case look like a change to all.
- */
-/**
- * A recording is a committed file, so it is held to §24.4: nothing about the
- * machine that made it goes in. A path the oracle resolved is the way that
- * happens — a fixture named through `..` comes back absolute — and it is a
- * fold that was missed, never something to write down and clean up later.
- */
-function refuseMachine(harness: string, text: string): void {
-  const home = process.env["HOME"];
-  if (home === undefined || home === "" || home === "/") return;
-  if (!text.includes(home)) return;
-  throw new Error(
-    `${harness}: an oracle answer names this machine's home directory, so a ` +
-      `root is unfolded. The recording is committed; it cannot carry a path ` +
-      `that exists on one computer.`,
-  );
-}
-
-function write(harness: string): void {
-  const current = book(harness);
-  current.answers = normalize(current.answers);
-  const head = `{\n  "harness": ${JSON.stringify(current.harness)},\n` +
-    `  "source": ${JSON.stringify(current.source)},\n` +
-    `  "recorded": ${JSON.stringify(current.recorded)},\n  "answers": [\n`;
-  const lines = current.answers.map((entry) => `    ${JSON.stringify(entry)}`);
-  const body = `${head}${lines.join(",\n")}\n  ]\n}\n`;
-  refuseMachine(harness, body);
-  fs.mkdirSync(`${HERE}/oracle`, { recursive: true });
-  fs.writeFileSync(pathFor(harness), body);
-}
-
-/**
- * The oracle's answer to one question, recorded or replayed.
- *
- * `ask` is only called while the oracle exists, and its result must survive a
- * JSON round trip — every harness here parses the oracle's stdout, so it
- * already does. Once the oracle is gone the argument is gone with it, and the
- * recording answers on its own.
- */
-export function oracleAnswer(harness: string, question: string, ask?: () => unknown): unknown {
+/** The oracle's frozen answer to one question. */
+export function oracleAnswer(harness: string, question: string): unknown {
   const key = fingerprint(question);
   const current = book(harness);
-
-  if (RECORDING) {
-    if (ask === undefined) {
-      throw new Error(`${harness}: --record needs an oracle to ask, and there is none`);
-    }
-    const answer = ask();
-    // A default entry is the UTC answer with its zone folded away, so
-    // re-recording UTC replaces it rather than sitting beside it.
-    const at = current.answers.findIndex(
-      (entry) =>
-        entry.ask === key &&
-        (entry.zone === ZONE || (entry.zone === undefined && ZONE === "UTC")),
-    );
-    if (at >= 0) current.answers.splice(at, 1);
-    current.answers.push({ ask: key, zone: ZONE, answer });
-    write(harness);
-    return answer;
-  }
 
   const found =
     current.answers.find((entry) => entry.ask === key && entry.zone === ZONE) ??
@@ -175,17 +69,6 @@ export function oracleAnswer(harness: string, question: string, ask?: () => unkn
         `(${key}, TZ=${ZONE}). A case was added or changed, and the answer it ` +
         `expects has to come from somewhere that gets said out loud.`,
     );
-  }
-  if (ask !== undefined) {
-    // Checked against the oracle on every run while the oracle is still here,
-    // so a recording cannot quietly become a snapshot of the port instead.
-    const live = JSON.stringify(ask());
-    if (JSON.stringify(found.answer) !== live) {
-      throw new Error(
-        `${harness}: the live oracle no longer answers what was recorded ` +
-          `(${key}, TZ=${ZONE})`,
-      );
-    }
   }
   return found.answer;
 }
@@ -220,13 +103,3 @@ export function unfoldRoots(text: string, roots: readonly string[]): string {
   return plain;
 }
 
-/** The same, for a harness whose oracle side has to be awaited. */
-export async function oracleAnswerAsync(
-  harness: string,
-  question: string,
-  ask?: () => Promise<unknown>,
-): Promise<unknown> {
-  if (ask === undefined) return oracleAnswer(harness, question);
-  const answer = await ask();
-  return oracleAnswer(harness, question, () => answer);
-}

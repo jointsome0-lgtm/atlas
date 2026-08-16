@@ -18,33 +18,6 @@ import { emitGraph } from "../src/emit.ts";
 
 const DIFFERENTIAL = import.meta.dir;
 
-const ORACLE = `
-import json, os, sys
-from pathlib import Path
-
-sys.path.insert(0, ${JSON.stringify(`${DIFFERENTIAL}/..`)})
-import build_atlas_graph as B
-
-out = []
-for case in json.load(sys.stdin):
-    root = Path(case["root"])
-    output = root / "graph" / "atlas-graph.json"
-    if case["mode"] is not None:
-        os.chmod(output.parent, case["mode"])
-    try:
-        ok = B._emit_graph(output, case["graph"])
-    finally:
-        if case["mode"] is not None:
-            os.chmod(output.parent, 0o755)
-    out.append({
-        "ok": ok,
-        "exists": output.exists(),
-        "bytes": output.read_bytes().decode() if output.exists() else None,
-        "temp": output.with_name(output.name + ".tmp").exists(),
-    })
-json.dump(out, sys.stdout)
-`;
-
 // ---------------------------------------------------------------------------
 // The corpus
 // ---------------------------------------------------------------------------
@@ -177,17 +150,7 @@ const payload = JSON.stringify(
 // before either is written down, and folded back in for the comparison.
 const theirs = JSON.parse(
   unfoldRoots(
-    oracleAnswer("emit", foldRoots(payload, theirRoots), () => {
-      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-        stdin: Buffer.from(payload),
-      });
-      if (run.exitCode !== 0) {
-        console.error("emit: the oracle failed");
-        console.error(run.stderr.toString());
-        process.exit(1);
-      }
-      return foldRoots(run.stdout.toString(), theirRoots);
-    }) as string,
+    oracleAnswer("emit", foldRoots(payload, theirRoots)) as string,
     theirRoots,
   ),
 ) as Array<{

@@ -15,21 +15,6 @@ import { oracleAnswer } from "./oracle.ts";
 
 const DIFFERENTIAL = import.meta.dir;
 
-const ORACLE = `
-import json, sys
-
-sys.path.insert(0, ${JSON.stringify(`${DIFFERENTIAL}/..`)})
-import build_atlas_graph as B
-
-out = []
-for graph in json.load(sys.stdin):
-    try:
-        out.append({"graph": B._redact_graph(graph)})
-    except Exception:
-        out.append({"raised": True})
-json.dump(out, sys.stdout)
-`;
-
 // ---------------------------------------------------------------------------
 // The corpus
 // ---------------------------------------------------------------------------
@@ -315,17 +300,7 @@ add(
 // The graphs are the whole question here — no path or clock reaches this
 // pass — so the answer is recorded as it stands.
 const question = JSON.stringify(cases.map((item) => item.graph));
-const theirs = oracleAnswer("redact", question, () => {
-  const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(question),
-  });
-  if (run.exitCode !== 0) {
-    console.error("redact: the oracle failed");
-    console.error(run.stderr.toString());
-    process.exit(1);
-  }
-  return JSON.parse(run.stdout.toString()) as unknown;
-}) as Array<{
+const theirs = oracleAnswer("redact", question) as Array<{
   graph?: Dict;
   raised?: boolean;
 }>;

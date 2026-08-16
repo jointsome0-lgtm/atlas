@@ -10,8 +10,6 @@
 
 import { oracleAnswer } from "./oracle.ts";
 
-import { spawnSync } from "node:child_process";
-
 import {
   AGENT_ROLES,
   AUTHORED_ROLES,
@@ -66,109 +64,6 @@ import {
   idType,
 } from "../src/domain.ts";
 import { sortedByCodePoint } from "../src/ordering.ts";
-
-const ORACLE = `
-import json, sys
-sys.path.insert(0, ${JSON.stringify(`${import.meta.dir}/..`)})
-import build_atlas_graph as b
-
-
-def members(value):
-    return sorted(value)
-
-
-def pairs(mapping):
-    return {key: sorted(value) if isinstance(value, (set, frozenset, tuple, list))
-            else value
-            for key, value in sorted(mapping.items())}
-
-
-CONSTANTS = {
-    "NODE_TYPES": members(b.NODE_TYPES),
-    "EDGE_TYPES": members(b.EDGE_TYPES),
-    "ID_PREFIXES": pairs(b.ID_PREFIXES),
-    "AUTHORED_ROLES": members(b.AUTHORED_ROLES),
-    "SYMMETRIC_EDGE_TYPES": members(b.SYMMETRIC_EDGE_TYPES),
-    "WEAK_HALO_EDGE_TYPES": members(b.WEAK_HALO_EDGE_TYPES),
-    "CONCEPT_KIND": members(b.CONCEPT_KIND),
-    "ENDPOINT_RULES": {
-        key: [sorted(source), sorted(target)]
-        for key, (source, target) in sorted(b.ENDPOINT_RULES.items())
-    },
-    "EDGE_WEIGHTS": members(b.EDGE_WEIGHTS),
-    "CURATED_SUBDIRECTORIES": list(b.CURATED_SUBDIRECTORIES),
-    "JOURNAL_ROW_KEYS": pairs(b.JOURNAL_ROW_KEYS),
-    "REGION_PREFIXES": members(b.REGION_PREFIXES),
-    "INTAKE_KEY_RE": b.INTAKE_KEY_RE.pattern,
-    "PART_ID_RE": b.PART_ID_RE.pattern,
-    "NODE_ID_RE": b.NODE_ID_RE.pattern,
-    "LIFECYCLE_STATUSES": members(b.LIFECYCLE_STATUSES),
-    "MATERIAL_KINDS": members(b.MATERIAL_KINDS),
-    "SENSITIVITY_CLASSES": members(b.SENSITIVITY_CLASSES),
-    "ENCOUNTER_DEPTHS": members(b.ENCOUNTER_DEPTHS),
-    "ENCOUNTER_MODES": members(b.ENCOUNTER_MODES),
-    "DEEP_USE_DEPTHS": members(b.DEEP_USE_DEPTHS),
-    "EVIDENCE_STRENGTHS": members(b.EVIDENCE_STRENGTHS),
-    "CONCEPT_EXPOSURE": list(b.CONCEPT_EXPOSURE),
-    "CONCEPT_DEFAULTS": pairs(b.CONCEPT_DEFAULTS),
-    "QUESTION_DEFAULT_STATUS": b.QUESTION_DEFAULT_STATUS,
-    "MATERIAL_DEPTH": list(b.MATERIAL_DEPTH),
-    "FRESHNESS_DAYS": pairs(b.FRESHNESS_DAYS),
-    "GATED_DEFAULTS": pairs(b.GATED_DEFAULTS),
-    "DECISION_VALUES": pairs(b.DECISION_VALUES),
-    "FOLDED_DECISION_TARGETS": pairs(b.FOLDED_DECISION_TARGETS),
-    "DEFERRED_DIMENSIONS": pairs(b.DEFERRED_DIMENSIONS),
-    "DEFERRED_DECISION_TARGET_KINDS": pairs(b.DEFERRED_DECISION_TARGET_KINDS),
-    "DECISION_TARGET_PREFIXES": pairs(b.DECISION_TARGET_PREFIXES),
-    "DECISION_OUTCOMES": members(b.DECISION_OUTCOMES),
-    "EVIDENCE_PREFIXES": members(b.EVIDENCE_PREFIXES),
-    "STATUS_EVIDENCE_PREFIXES": members(b.STATUS_EVIDENCE_PREFIXES),
-    "STALE_EVIDENCE_PREFIXES": members(b.STALE_EVIDENCE_PREFIXES),
-    "STALE_EVIDENCE_KIND": b.STALE_EVIDENCE_KIND,
-    "AGENT_ROLES": members(b.AGENT_ROLES),
-    "PROPOSERS": members(b.PROPOSERS),
-    "ROUTE_STATUSES": members(b.ROUTE_STATUSES),
-    "FORBIDDEN_ROUTE_STATUSES": members(b.FORBIDDEN_ROUTE_STATUSES),
-}
-
-payload = json.loads(sys.stdin.read())
-out = {"constants": CONSTANTS}
-
-out["fields"] = [
-    sorted(b.graph_field_expectations(graph).items())
-    for graph in payload["graphs"]
-]
-out["exposure"] = [
-    b.exposure_ceiling(case["evidence"], case["nodes"])
-    for case in payload["ceilings"]
-]
-out["depth"] = [
-    b.depth_ceiling(case["evidence"], case["nodes"])
-    for case in payload["ceilings"]
-]
-out["freshness"] = [
-    b.freshness_of(last_seen, as_of)
-    for last_seen, as_of in payload["freshness"]
-]
-out["id_type"] = [b.id_type(value) for value in payload["ids"]]
-out["matches"] = [
-    [bool(b.PART_ID_RE.fullmatch(value)),
-     bool(b.NODE_ID_RE.fullmatch(value)),
-     bool(b.INTAKE_KEY_RE.fullmatch(value))]
-    for value in payload["matches"]
-]
-out["loose_matches"] = [
-    [bool(b.PART_ID_RE.match(value)),
-     bool(b.NODE_ID_RE.match(value)),
-     bool(b.INTAKE_KEY_RE.match(value))]
-    for value in payload["matches"]
-]
-out["fold_order"] = [
-    list(b.fold_order_key(date, position))
-    for date, position in payload["fold_order"]
-]
-sys.stdout.write(json.dumps(out))
-`;
 
 const setOf = (values: ReadonlySet<string>): string[] => sortedByCodePoint([...values]);
 
@@ -506,18 +401,7 @@ const payload = {
 };
 
 const payloadText = JSON.stringify(payload);
-const oracle = oracleAnswer("domain", payloadText, () => {
-  const run = spawnSync("python3", ["-c", ORACLE], {
-    input: payloadText,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (run.status !== 0) {
-    console.error(run.stderr);
-    throw new Error("domain oracle failed");
-  }
-  return JSON.parse(run.stdout) as unknown;
-}) as {
+const oracle = oracleAnswer("domain", payloadText) as {
   constants: Record<string, unknown>;
   fields: Array<Array<[string, string[]]>>;
   exposure: number[];

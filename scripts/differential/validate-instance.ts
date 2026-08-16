@@ -22,26 +22,7 @@ import { type InstanceReport, validateInstance } from "../src/validate.ts";
 import { foldParserProse, foldQuotes } from "./spelling.ts";
 
 const DIFFERENTIAL = import.meta.dir;
-const SCRIPTS = `${DIFFERENTIAL}/..`;
 const ROOT = `${DIFFERENTIAL}/../..`;
-
-const ORACLE = `
-import json, sys
-from pathlib import Path
-
-sys.path.insert(0, ${JSON.stringify(SCRIPTS)})
-import validate_atlas as V
-
-payload = json.load(sys.stdin)
-out = []
-for case in payload:
-    try:
-        errors, warnings, counts = V.validate_instance(Path(case["root"]))
-        out.append({"errors": errors, "warnings": warnings, "counts": counts})
-    except Exception as exc:  # noqa: BLE001 - the divergence is the report
-        out.append({"raised": type(exc).__name__})
-json.dump(out, sys.stdout)
-`;
 
 // ---------------------------------------------------------------------------
 // The base instance
@@ -1149,17 +1130,7 @@ const payload = JSON.stringify(roots.map((root) => ({ root })));
 // folded back in for the comparison below.
 const theirs = JSON.parse(
   unfoldRoots(
-    oracleAnswer("validate-instance", foldRoots(payload, roots), () => {
-      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-        stdin: Buffer.from(payload),
-      });
-      if (run.exitCode !== 0) {
-        console.error("validate-instance: the oracle failed");
-        console.error(run.stderr.toString());
-        process.exit(1);
-      }
-      return foldRoots(run.stdout.toString(), roots);
-    }) as string,
+    oracleAnswer("validate-instance", foldRoots(payload, roots)) as string,
     roots,
   ),
 ) as Array<{

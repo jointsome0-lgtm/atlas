@@ -24,34 +24,7 @@ import { main } from "../src/validate-cli.ts";
 import { foldParserProse } from "./spelling.ts";
 
 const DIFFERENTIAL = import.meta.dir;
-const SCRIPTS = `${DIFFERENTIAL}/..`;
 const REPOSITORY = `${DIFFERENTIAL}/../..`;
-
-const ORACLE = `
-import contextlib, io, json, sys
-from pathlib import Path
-
-sys.path.insert(0, ${JSON.stringify(SCRIPTS)})
-import validate_atlas as V
-
-payload = json.load(sys.stdin)
-
-out = []
-for case in payload["cases"]:
-    V.ROOT = Path(case["root"])
-    stdout, stderr = io.StringIO(), io.StringIO()
-    try:
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = V.main(case["argv"])
-    except BaseException:
-        # Which exception it is says nothing a port could match; the finding is
-        # that the command could not be answered at all.
-        out.append({"raised": True, "stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
-        continue
-    out.append({"code": code, "stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
-
-json.dump({"cases": out}, sys.stdout)
-`;
 
 // ---------------------------------------------------------------------------
 // The corpus
@@ -572,31 +545,7 @@ const payload = JSON.stringify({
 const theirs = (
   JSON.parse(
     unfoldRoots(
-      oracleAnswer("validate-cli", foldRoots(payload, roots), () => {
-        const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-          stdin: Buffer.from(payload),
-        });
-        if (run.exitCode !== 0) {
-          console.error("validate-cli: the oracle failed");
-          console.error(run.stderr.toString());
-          process.exit(1);
-        }
-        // A CPython `set` renders in hash order, and that order is drawn
-        // fresh for every process. The comparison below already folds it
-        // away; the recording folds it first, so what is written down is
-        // the answer and not one process's arrangement of it.
-        const said = JSON.parse(run.stdout.toString()) as {
-          cases: Array<{ code?: number; stdout?: string; stderr?: string; raised?: boolean }>;
-        };
-        const folded = {
-          cases: said.cases.map((one) => ({
-            ...one,
-            ...(one.stdout === undefined ? {} : { stdout: foldSets(one.stdout) }),
-            ...(one.stderr === undefined ? {} : { stderr: foldSets(one.stderr) }),
-          })),
-        };
-        return foldRoots(JSON.stringify(folded), roots);
-      }) as string,
+      oracleAnswer("validate-cli", foldRoots(payload, roots)) as string,
       roots,
     ),
   ) as {

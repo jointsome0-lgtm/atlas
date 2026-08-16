@@ -10,15 +10,10 @@ import { oracleAnswer } from "./oracle.ts";
 // theirs: git's own `fatal:` lines go straight to stderr, and a comparison
 // that captured only what the checker wrote would miss them.
 //
-// The tree under test holds the oracle itself, copied to `scripts/` so it can
-// find its root the way it does — which is what the oracle's own test does,
-// and it means both runs see the same untracked file.
-
 import fs from "node:fs";
 import os from "node:os";
 
 const SCRIPTS = `${import.meta.dir}/..`;
-const ORACLE = `${SCRIPTS}/check_public_hygiene.py`;
 const PORT = `${SCRIPTS}/src/hygiene.ts`;
 
 /** The patterns a clean .gitignore carries, as the checker requires them. */
@@ -319,8 +314,6 @@ function git(root: string, ...args: string[]): void {
 
 function build(scenario: Scenario): string {
   const root = fs.mkdtempSync(`${os.tmpdir()}/atlas-hygiene-`);
-  fs.mkdirSync(`${root}/scripts`);
-  fs.copyFileSync(ORACLE, `${root}/scripts/check_public_hygiene.py`);
   if (scenario.bare !== true) git(root, "init", "--quiet");
 
   const written: string[] = [];
@@ -412,11 +405,9 @@ let vacuous = 0;
 for (const scenario of scenarios) {
   const root = build(scenario);
   try {
-    // `ask` has already folded this repository's path out of the answer, so
-    // what is recorded is the check's own words; the question is the scenario.
-    const theirs = oracleAnswer("hygiene", JSON.stringify(scenario), () =>
-      ask(root, ["python3", `${root}/scripts/check_public_hygiene.py`]),
-    ) as Answer;
+    // The frozen answer contains the check's own words with the repository
+    // path folded out; the question is the scenario.
+    const theirs = oracleAnswer("hygiene", JSON.stringify(scenario)) as Answer;
     const mine = ask(root, ["bun", "-e", driver(root)]);
 
     const show = (why: string): void => {

@@ -1,4 +1,3 @@
-import { oracleAnswerAsync } from "./oracle.ts";
 // Differential harness: the instance viewer server against the oracle.
 //
 // This one talks to the two programs over a socket, because a server's answer
@@ -16,6 +15,8 @@ import { oracleAnswerAsync } from "./oracle.ts";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
+
+import { oracleAnswer } from "./oracle.ts";
 
 const ROOT = `${import.meta.dir}/..`;
 
@@ -1509,9 +1510,7 @@ for (const [index, item] of cases.entries()) {
   // otherwise cut it in two different places and disagree about nothing.
   // `once` folds the tree's path and the bound port out of everything it
   // returns, so the answer is recorded as it stands; the question is the case.
-  const theirs = (await oracleAnswerAsync("serve", JSON.stringify([index, item]), () =>
-    once("oracle", index, item, ["python3", `${ROOT}/serve_instance.py`]),
-  )) as Answer;
+  const theirs = oracleAnswer("serve", JSON.stringify([index, item])) as Answer;
   const mine = await once("ported", index, item, ["bun", `${ROOT}/serve_instance.ts`]);
 
   const show = (why: string): void => {

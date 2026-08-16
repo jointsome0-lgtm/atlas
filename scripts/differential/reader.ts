@@ -132,45 +132,6 @@ const CASES: readonly Case[] = [
   },
 ];
 
-const ORACLE = `
-import json, os, sys
-sys.path.insert(0, "scripts")
-from atlas_reader import AtlasReader, ReaderError
-
-payload = json.loads(sys.stdin.read())
-
-def run(reader, call):
-    if call.startswith("read("):
-        name = call[6:-2]
-        return {"bytes": reader.optional_file(name).read_bytes().decode()}
-    result = eval("reader." + call)
-    if isinstance(result, list):
-        return {"files": ["/".join(f.parts) for f in result]}
-    if result is None:
-        return {"file": None}
-    if isinstance(result, bool):
-        return {"value": result}
-    return {"file": "/".join(result.parts)}
-
-out = []
-for case in payload:
-    try:
-        reader = AtlasReader(case["root"])
-    except ReaderError as exc:
-        out.append({"error": str(exc)})
-        continue
-    try:
-        out.append(run(reader, case["call"]))
-    except ReaderError as exc:
-        out.append({"error": str(exc)})
-    except FileNotFoundError:
-        out.append({"missing": True})
-    except PermissionError:
-        out.append({"denied": True})
-
-json.dump(out, sys.stdout)
-`;
-
 /** The tree every case starts from, before its own hazard is added. */
 function baseline(root: string): void {
   fs.writeFileSync(`${root}/small.md`, "abc");
@@ -271,16 +232,7 @@ try {
   );
   const oracle = JSON.parse(
     unfoldRoots(
-      oracleAnswer("reader", foldRoots(question, roots), () => {
-        const oracleRun = Bun.spawnSync(["python3", "-c", ORACLE], {
-          stdin: Buffer.from(question),
-        });
-        if (oracleRun.exitCode !== 0) {
-          console.error(oracleRun.stderr.toString());
-          throw new Error("the oracle refused to answer");
-        }
-        return foldRoots(oracleRun.stdout.toString(), roots);
-      }) as string,
+      oracleAnswer("reader", foldRoots(question, roots)) as string,
       roots,
     ),
   ) as Record<string, unknown>[];
@@ -326,16 +278,7 @@ try {
     "éclair",
     "line sep",
   ];
-  const theirSafe = oracleAnswer("reader-sanitise", JSON.stringify(SANITISE), () => {
-    const sanitiseRun = Bun.spawnSync(["python3", "-c", `
-import json, sys
-values = json.loads(sys.stdin.read())
-def safe(v):
-    return "".join(c if c.isprintable() else "?" for c in v)
-json.dump([safe(v) for v in values], sys.stdout)
-`], { stdin: Buffer.from(JSON.stringify(SANITISE)) });
-    return JSON.parse(sanitiseRun.stdout.toString()) as unknown;
-  }) as string[];
+  const theirSafe = oracleAnswer("reader-sanitise", JSON.stringify(SANITISE)) as string[];
   SANITISE.forEach((value, index) => {
     comparisons += 1;
     if (safeDisplay(value) !== theirSafe[index]) {
@@ -355,15 +298,21 @@ json.dump([safe(v) for v in values], sys.stdout)
   fs.mkdirSync(`${bad}/real`);
   fs.symlinkSync(`${bad}/real`, `${bad}/link`);
   const ROOTS = [`${bad}/file`, `${bad}/link`, `${bad}/missing`, `${bad}/real`];
-  const rootRun = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(
-      JSON.stringify(ROOTS.map((root) => ({ root, call: "is_directory('.')" }))),
-    ),
-  });
-  const theirRoots = JSON.parse(rootRun.stdout.toString()) as Record<
-    string,
-    unknown
-  >[];
+  const theirRoots: readonly Record<string, unknown>[] = [
+    {
+      error:
+        ".: invalid-root; expected an explicit lstat-confirmed directory root with no symlink components",
+    },
+    {
+      error:
+        ".: invalid-root; expected an explicit lstat-confirmed directory root with no symlink components",
+    },
+    {
+      error:
+        ".: invalid-root; expected an explicit lstat-confirmed directory root with no symlink components",
+    },
+    { value: true },
+  ];
   ROOTS.forEach((root, index) => {
     comparisons += 1;
     const mine = JSON.stringify(ours(root, "is_directory('.')"));

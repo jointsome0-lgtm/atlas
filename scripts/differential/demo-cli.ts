@@ -20,52 +20,7 @@ import { oracleAnswer } from "./oracle.ts";
 
 import { DEFAULT_PORT, parseArgs, report } from "../src/demo-cli.ts";
 
-const SCRIPTS = `${import.meta.dir}/..`;
 const PROGRAM = "view_demo.py";
-
-const ORACLE = `
-import argparse, contextlib, io, json, sys
-
-sys.path.insert(0, ${JSON.stringify(SCRIPTS)})
-sys.argv = [${JSON.stringify(PROGRAM)}]
-import view_demo
-
-# How many arguments the oracle could not place, taken from the oracle rather
-# than read back out of its message: the message joins them with spaces, and an
-# argument may hold a space, so the text cannot be counted. parse_args asks
-# parse_known_args and then complains about whatever came back over.
-leftover = []
-_known = argparse.ArgumentParser.parse_known_args
-
-def spy(self, args=None, namespace=None):
-    parsed, extras = _known(self, args, namespace)
-    leftover.append(len(extras))
-    return parsed, extras
-
-argparse.ArgumentParser.parse_known_args = spy
-
-payload = json.load(sys.stdin)
-
-out = []
-for argv in payload["shapes"]:
-    stdout, stderr = io.StringIO(), io.StringIO()
-    leftover.clear()
-    try:
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            args = view_demo.parse_args(argv)
-        code, port = None, args.port
-    except SystemExit as exit:
-        code, port = exit.code, None
-    out.append({
-        "code": code,
-        "port": port,
-        "stdout": stdout.getvalue(),
-        "stderr": stderr.getvalue(),
-        "extras": leftover[-1] if leftover else 0,
-    })
-
-json.dump({"cases": out}, sys.stdout)
-`;
 
 // ---------------------------------------------------------------------------
 // The corpus
@@ -266,17 +221,7 @@ interface Oracle {
 }
 
 const theirs = (
-  oracleAnswer("demo-cli", payload, () => {
-    const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-      stdin: Buffer.from(payload),
-    });
-    if (run.exitCode !== 0) {
-      console.error("demo-cli: the oracle failed");
-      console.error(run.stderr.toString());
-      process.exit(1);
-    }
-    return JSON.parse(run.stdout.toString()) as unknown;
-  }) as { cases: Oracle[] }
+  oracleAnswer("demo-cli", payload) as { cases: Oracle[] }
 ).cases;
 
 interface Ours {

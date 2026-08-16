@@ -26,46 +26,6 @@ import {
 // comparison would miss a parser that refuses the right documents for the
 // wrong reason — and the message is what a caller sees.
 
-const ORACLE = `
-import base64, json, sys
-sys.path.insert(0, "scripts")
-from frontmatter import (
-    FrontmatterError,
-    frontmatter_body,
-    parse_document,
-    parse_frontmatter,
-)
-
-import frontmatter as fm
-
-payload = json.loads(sys.stdin.read())
-cases = payload["cases"]
-out = []
-for case in cases:
-    data = base64.b64decode(case["data"])
-    entry = {}
-    for name, fn in (("frontmatter", parse_frontmatter), ("document", parse_document)):
-        try:
-            value = fn(data, case["source"])
-            entry[name] = {
-                "ok": True,
-                "value": json.dumps(
-                    value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-                ),
-            }
-        except FrontmatterError as exc:
-            entry[name] = {"ok": False, "error": str(exc)}
-        except Exception as exc:
-            entry[name] = {"ok": False, "error": "UNEXPECTED " + type(exc).__name__ + ": " + str(exc)}
-    try:
-        entry["body"] = {"ok": True, "value": frontmatter_body(data)}
-    except Exception as exc:
-        entry["body"] = {"ok": False, "error": type(exc).__name__}
-    out.append(entry)
-constants = {name: getattr(fm, name) for name in payload["constants"]}
-sys.stdout.write(json.dumps({"cases": out, "constants": constants}, ensure_ascii=False))
-`;
-
 interface Case {
   readonly label: string;
   readonly source: string;
@@ -299,16 +259,7 @@ const payload = JSON.stringify({
   constants: Object.keys(CONSTANTS),
 });
 
-const parsed = oracleAnswer("frontmatter", payload, () => {
-  const proc = Bun.spawnSync(["python3", "-c", ORACLE], {
-    stdin: Buffer.from(payload, "utf-8"),
-  });
-  if (proc.exitCode !== 0) {
-    console.error(`oracle failed (${proc.exitCode}): ${proc.stderr.toString()}`);
-    process.exit(2);
-  }
-  return JSON.parse(proc.stdout.toString()) as unknown;
-}) as {
+const parsed = oracleAnswer("frontmatter", payload) as {
   cases: OracleEntry[];
   constants: Record<string, number>;
 };

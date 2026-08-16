@@ -85,13 +85,6 @@ const HARNESSES: readonly Harness[] = [
   { file: "scripts/differential/serve.ts", zones: ["UTC"] },
 ];
 
-const probe = Bun.spawnSync(["python3", "-c", "import sys; print(sys.version)"]);
-if (probe.exitCode !== 0) {
-  console.error("differential: python3 is required as the oracle and is absent");
-  process.exit(2);
-}
-console.log(`oracle: python3 ${probe.stdout.toString().trim()}`);
-
 let failures = 0;
 
 // `--record` is forwarded so the oracle's answers can be written down in one

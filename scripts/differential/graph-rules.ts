@@ -29,7 +29,6 @@ import { foldQuotes } from "./spelling.ts";
 type Dict = Record<string, unknown>;
 
 const DIFFERENTIAL = import.meta.dir;
-const SCRIPTS = `${DIFFERENTIAL}/..`;
 const ROOT = `${DIFFERENTIAL}/../..`;
 
 // The three emitted files the oracle looks for, in the order it looks for
@@ -40,24 +39,6 @@ const EMITTED: ReadonlyArray<readonly [string, string]> = [
   ["atlas-graph.redacted.json", "atlas-graph"],
   ["atlas-snapshot.json", "atlas-snapshot"],
 ];
-
-const ORACLE = `
-import json, sys
-from pathlib import Path
-
-sys.path.insert(0, ${JSON.stringify(SCRIPTS)})
-import validate_atlas as V
-
-payload = json.load(sys.stdin)
-out = []
-for case in payload:
-    try:
-        errors, warnings, counts = V.validate_instance(Path(case["root"]))
-        out.append({"ok": errors, "warnings": warnings})
-    except Exception as exc:  # noqa: BLE001 - the divergence is the report
-        out.append({"raised": type(exc).__name__})
-json.dump(out, sys.stdout)
-`;
 
 // ---------------------------------------------------------------------------
 // The base emission and the surgery done to it
@@ -1329,17 +1310,7 @@ const payload = JSON.stringify(roots.map((root) => ({ root })));
 // folded back in for the comparison below.
 const theirs = JSON.parse(
   unfoldRoots(
-    oracleAnswer("graph-rules", foldRoots(payload, roots), () => {
-      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-        stdin: Buffer.from(payload),
-      });
-      if (run.exitCode !== 0) {
-        console.error("graph-rules: the oracle failed");
-        console.error(run.stderr.toString());
-        process.exit(1);
-      }
-      return foldRoots(run.stdout.toString(), roots);
-    }) as string,
+    oracleAnswer("graph-rules", foldRoots(payload, roots)) as string,
     roots,
   ),
 ) as Array<{

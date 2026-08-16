@@ -27,26 +27,7 @@ import { build } from "../src/build.ts";
 import { foldParserProse, foldQuotes } from "./spelling.ts";
 
 const DIFFERENTIAL = import.meta.dir;
-const SCRIPTS = `${DIFFERENTIAL}/..`;
 const ROOT = `${DIFFERENTIAL}/../..`;
-
-const ORACLE = `
-import json, sys
-from pathlib import Path
-
-sys.path.insert(0, ${JSON.stringify(SCRIPTS)})
-import build_atlas_graph as B
-
-payload = json.load(sys.stdin)
-out = []
-for case in payload:
-    try:
-        graph, errors, warnings = B.build(Path(case["root"]), case["as_of"])
-        out.append({"graph": graph, "errors": errors, "warnings": warnings})
-    except Exception as exc:  # noqa: BLE001 - the divergence is the report
-        out.append({"raised": type(exc).__name__, "said": str(exc)})
-json.dump(out, sys.stdout)
-`;
 
 // ---------------------------------------------------------------------------
 // The base instance
@@ -1203,17 +1184,7 @@ interface OracleReport {
 const folded = [...roots, fs.realpathSync(ROOT)];
 const theirs = JSON.parse(
   unfoldRoots(
-    oracleAnswer("build", foldRoots(payload, folded), () => {
-      const run = Bun.spawnSync(["python3", "-c", ORACLE], {
-        stdin: Buffer.from(payload),
-      });
-      if (run.exitCode !== 0) {
-        console.error("build: the oracle failed");
-        console.error(run.stderr.toString());
-        process.exit(1);
-      }
-      return foldRoots(run.stdout.toString(), folded);
-    }) as string,
+    oracleAnswer("build", foldRoots(payload, folded)) as string,
     folded,
   ),
 ) as OracleReport[];
