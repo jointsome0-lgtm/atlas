@@ -55,8 +55,42 @@ function book(harness: string): Book {
   return loaded;
 }
 
+/**
+ * Refuse a question that names the machine asking it.
+ *
+ * The answer is keyed by a hash of the question, so a question carrying this
+ * checkout's path is a different question on every computer — the recording
+ * then answers on the machine that made it and nowhere else, and the first
+ * place that shows is CI (atlas#141). It is always a fold that was missed:
+ * `foldRoots` exists for exactly this, and the fix is to add the root to its
+ * list, never to re-record per machine.
+ *
+ * Checked here rather than at the fold because here is where a missed one
+ * becomes permanent.
+ */
+const CHECKOUT = `${HERE}/../..`;
+const MACHINE: readonly string[] = [
+  CHECKOUT,
+  fs.realpathSync(CHECKOUT),
+  ...(process.env["HOME"] !== undefined && process.env["HOME"] !== "/"
+    ? [process.env["HOME"]]
+    : []),
+];
+
+function refuseMachine(harness: string, question: string): void {
+  for (const named of MACHINE) {
+    if (named === "" || !question.includes(named)) continue;
+    throw new Error(
+      `${harness}: the question names this machine (${named}), so its ` +
+        `fingerprint is different on every computer and the recording can ` +
+        `only ever answer here. Fold the root out with foldRoots.`,
+    );
+  }
+}
+
 /** The oracle's frozen answer to one question. */
 export function oracleAnswer(harness: string, question: string): unknown {
+  refuseMachine(harness, question);
   const key = fingerprint(question);
   const current = book(harness);
 

@@ -966,13 +966,21 @@ for (const scenario of SCENARIOS) {
   // One recorded answer per scenario, with this run's root folded out of both
   // the question and the answer so neither carries a directory that is gone by
   // the next run.
+  //
+  // The checkout is folded for the same reason and a stronger one: one scenario
+  // asks about the registry this repository ships, so the question names the
+  // checkout, and a checkout sits at a different path on every machine. Left
+  // unfolded, the recording answers on the machine that made it and nowhere
+  // else — which is what CI is, and a corpus only that one laptop can replay is
+  // not a proof anybody can check.
+  const theirRoots = [oracleRoot, REPO, fs.realpathSync(REPO)];
   const question = JSON.stringify({ ...scenario, root: oracleRoot });
   let theirs: Result[];
   try {
     theirs = JSON.parse(
       unfoldRoots(
-        oracleAnswer("preflight", foldRoots(question, [oracleRoot])) as string,
-        [oracleRoot],
+        oracleAnswer("preflight", foldRoots(question, theirRoots)) as string,
+        theirRoots,
       ),
     ) as Result[];
   } catch (error) {
