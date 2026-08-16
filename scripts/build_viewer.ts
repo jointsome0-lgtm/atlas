@@ -83,7 +83,7 @@ if (unknown.length > 0 || args.length > 1) {
 const check = args.includes("--check");
 const stale: string[] = [];
 
-let building = MODULES[0];
+let building: (typeof MODULES)[number] = MODULES[0];
 
 try {
   for (const name of MODULES) {

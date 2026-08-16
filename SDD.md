@@ -32,7 +32,7 @@ Layout: this file is the map. Each top-level § lives in `spec/NN-slug.md` (file
 - §17 Agent Architecture — four core roles and agent rules; role×path×tool matrix (§17.3), session contract (§17.4), deterministic/model marking (§17.5), run manifest (§17.6), pinned isolated-runner boundary and role I/O (§17.7)
 - §18 Codex Role — checkpoints and challenge questions
 - §19 Boundary Checker — forbidden terms, scanned paths
-- §20 Graph Builder — build steps, stdlib-only MVP; fold ordering + as-of (§20.1), write discipline (§20.2), edge emission discipline (§20.3), frontmatter grammar (§20.4)
+- §20 Graph Builder — build steps, no run-time dependencies; fold ordering + as-of (§20.1), write discipline (§20.2), edge emission discipline (§20.3), frontmatter grammar (§20.4)
 - §21 Importer Design — hybrid deterministic + agent import; dry-run/commit, mapping decisions (§21.3)
 - §23 Progression Model — movement loop, no completion
 - §24 Security and Privacy — local-first, ignore paths; trust model and boundary table (§24.1), reader discipline (§24.2), agent transit (§24.3), no-echo diagnostics (§24.4)

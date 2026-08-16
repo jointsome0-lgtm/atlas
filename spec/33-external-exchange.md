@@ -173,7 +173,7 @@ A sensitive plan (§33.2's marker) keeps its class across the copy: the original
 
 ## §33.4 Export: State Snapshot
 
-An emitted view, not a store: `scripts/export_snapshot.py` writes `graph/atlas-snapshot.json` (§8) on the user's explicit run — never on a schedule, never pushed (§24, §31.7). Atlas never reads a snapshot back; each export is a full regeneration (§31.8).
+An emitted view, not a store: the snapshot export writes `graph/atlas-snapshot.json` (§8) on the user's explicit run — never on a schedule, never pushed (§24, §31.7). Atlas never reads a snapshot back; each export is a full regeneration (§31.8).
 
 ```json
 {

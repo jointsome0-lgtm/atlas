@@ -1,0 +1,25 @@
+[package]
+name = "atlas-posix"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The POSIX calls Bun does not expose. No Atlas vocabulary lives here."
+
+[lib]
+crate-type = ["cdylib"]
+# A `no_std` crate supplies its own panic handler, and libtest brings another,
+# so a test target cannot link. The boundary is tested from the Bun side
+# (scripts/src/posix.test.ts) and against CPython
+# (scripts/differential/posix.ts), where the calls actually get made.
+test = false
+
+# There are no dependencies and there will not be any: the crate declares the
+# handful of libc symbols it calls itself (src/lib.rs). A build that fetches
+# nothing is a build that can be reproduced offline (§25.6).
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

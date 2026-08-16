@@ -27,3 +27,8 @@ secrets/
 .atlas-lock
 __pycache__/
 node_modules/
+
+# Cargo's scratch for the POSIX boundary. The shipped artifact is NOT here —
+# §25.8 commits it per target under native/*/lib/<triple>/, so a plain checkout
+# runs everything without a Rust toolchain, and CI rebuilds and compares it.
+native/*/target/

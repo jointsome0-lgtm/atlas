@@ -65,14 +65,14 @@ plan-importer      | the run's declared originals   | stored originals          
                    | curated atlas/, redacted       | candidate stubs, import    | other T3 surfaces
                    | graph (§24.3)                  | report, mapping-decision   |
                    |                                | appends (§21.3), receipts  |
-                   |                                | — import_plan.py (§12,§21) |
+                   |                                | — the importer (§12,§21)   |
 artifact-observer  | declared scan roots (§13.1,    | state/ journal appends,    | curated atlas/ edits,
                    | T2), the batch under           | plan-record originals      | plans/extracted/,
                    | processing (T3, §33.2),        | (plans/imported/, §33.3),  | graph/, intake/
                    | state/ journals for            | batch / observation        | beyond the declared
                    | recognition (§13.2,            | report, receipts —         | batch
-                   | whole-file §32.6 exclusion),   | observe_artifacts.py,      |
-                   | curated atlas/, redacted graph | process_intake.py (§13)    |
+                   | whole-file §32.6 exclusion),   | the observer and intake    |
+                   | curated atlas/, redacted graph | flows (§13)                |
 field-cartographer | curated atlas/, redacted       | its report only —          | every write surface;
                    | graph                          | curation lands by the      | state/ journals,
                    |                                | user's hand or review (§8) | plans/, intake/

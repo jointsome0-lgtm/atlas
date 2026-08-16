@@ -1,0 +1,8 @@
+{
+  "harness": "reader-sanitise",
+  "source": "CPython, the implementation this port replaces",
+  "recorded": "2026-08-16",
+  "answers": [
+    {"ask":"00f9e820c47e012e99d0027a760b7ce3","answer":["plain.md","with space.md","tab?here","newline?here","bell?here","escape?here","nbsp?here","zwj?here","rtl?here","emoji😀here","éclair","line?sep"]}
+  ]
+}

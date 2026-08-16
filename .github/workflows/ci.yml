@@ -6,48 +6,81 @@ on:
 
 jobs:
   hygiene:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`, because this job byte-compares the committed
+    # POSIX boundary against a fresh build. The bytes are not purely ours: the
+    # glibc startup objects the linker pulls in stamp their own package string
+    # into `.comment`, so a runner image carrying a different GCC build rebuilds
+    # different bytes from identical source and an identical Rust toolchain.
+    # Pinning the image is what makes §25.8's "pinned build recipe" reach the
+    # whole recipe. An image refresh that does move that string shows up here as
+    # a mismatch, and the fix is `bun run build:native` and a commit — the
+    # committed artifact is the one that runs, so it is the one that has to be
+    # current.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.3.11"
+          bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
-      - name: Typecheck the viewer sources
+      # rust-toolchain.toml pins the compiler §25.8 records; rustup honours it,
+      # so the boundary CI builds is the one the floor names. `--check` rebuilds
+      # and compares rather than writing: §25.8 ships the artifact committed, so
+      # the bytes in the tree have to be the bytes this toolchain produces — a
+      # stale commit would make §17.5's `deterministic` marking name something
+      # other than what ran.
+      - name: Rebuild the committed POSIX boundary and compare it
+        run: bun scripts/build_native.ts --check
+      - name: Check the boundary reaches no further than it claims
+        run: |
+          export LC_ALL=C
+          # The committed artifact, not cargo's scratch: §25.8 ships this file
+          # and `posix.ts` loads it, so it is the one whose reach is the claim.
+          # The step above already proved the two are byte-identical.
+          # `cut -d@` before the filter, not after: nm prints `openat@GLIBC_2.4`
+          # for a symbol bound to a version, and the anchored exclusions below
+          # would then miss `__cxa_finalize@GLIBC_2.2.5`. This library carries
+          # no versions today — it links no shared object, so there is nothing
+          # to bind to — which is a property of how the crate is written rather
+          # than one the check should depend on. §25.8 asks which calls it can
+          # make; which glibc defines them is not part of that answer.
+          undefined=$(nm -D -u native/atlas-posix/lib/x86_64-unknown-linux-gnu/libatlas_posix.so | awk '{print $2}' | cut -d@ -f1 | grep -vE '^(__cxa_finalize|__gmon_start__|_ITM_(de)?registerTMCloneTable|memcpy|memset)$' | sort)
+          expected=$(printf '%s\n' __errno_location close closedir fdopendir mkdirat openat readdir renameat statx unlinkat | sort)
+          if [ "$undefined" != "$expected" ]; then
+            echo "the boundary's calls changed; §25.8 says this list is its whole reach" >&2
+            diff <(echo "$expected") <(echo "$undefined") >&2 || true
+            exit 1
+          fi
+      - name: Typecheck the viewer and script sources
         run: bun run typecheck
       - name: Check the committed viewer build matches its source
         run: bun run build:check
-      - run: python scripts/check_public_hygiene.py
-      - run: python scripts/check_sdd_conventions.py check AGENTS.md --template conventions/SDD-CONVENTIONS.md
-      - run: python scripts/check_decision_log.py --baseline 2026-07-15 DECISION-LOG.md
+      - name: Unit-test the modules
+        run: bun run test
+      # The frozen recording of the Python implementation this repository
+      # replaced. The §20.1 determinism cases live inside it — build-cli asks
+      # `--as-of`, `--check` and `--redact` twice each and compares the bytes.
+      - name: Replay the oracle corpus
+        run: bun run differential
+      - run: bun scripts/check_public_hygiene.ts
+      - run: bun scripts/check_sdd_conventions.ts check AGENTS.md --template conventions/SDD-CONVENTIONS.md
+      - run: bun scripts/check_decision_log.ts --baseline 2026-08-11 DECISION-LOG.md
       - name: Check schema and implementation constants
-        run: python scripts/validate_atlas.py check-constants
+        run: bun scripts/validate_atlas.ts check-constants
       - name: Validate public golden fixtures
-        env:
-          PYTHONPATH: scripts
         run: |
-          python scripts/validate_atlas.py conformance
-          python scripts/validate_atlas.py validate fixtures/demo-instance
-          python -m unittest -v scripts.test_demo_graph_fixture
-      - name: Verify deterministic fixture builds
-        env:
-          PYTHONPATH: scripts
-        run: >-
-          python -m unittest -v
-          scripts.test_build_atlas_graph.BuilderIntegrationTests.test_graph_envelope_is_first_and_build_is_deterministic
-          scripts.test_build_atlas_graph.LaneBTests.test_explicit_as_of_flag_stamps_generated_at
-          scripts.test_build_atlas_graph.LaneBTests.test_two_emitted_graphs_are_byte_identical
-      - run: python -m unittest discover -s scripts -p "test_*.py"
+          bun scripts/validate_atlas.ts conformance
+          bun scripts/validate_atlas.ts validate fixtures/demo-instance
 
   viewer:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          python-version: "3.12"
-      - run: pip install playwright==1.54.0 && playwright install --with-deps chromium
-      - run: ATLAS_VIEWER_ACCEPTANCE=1 python -m unittest discover -s scripts -p "test_viewer*.py" -v
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      # §27.8. A missing browser driver fails the run rather than skipping it,
+      # so this proof cannot pass by not happening.
+      - run: bun run test:viewer

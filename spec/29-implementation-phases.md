@@ -25,11 +25,11 @@ Satisfying any one prerequisite, including the first knowledge viewer, does not 
 
 ### Trunk and verticals (#18)
 
-Every interface between components is a file contract — journals (§8), curated frontmatter (§20.4), the emitted graph (§10) — so implementation parallelizes as verticals over one small sequential trunk: agents share formats, never code. Each vertical owns its §§, its script, its §27 criteria, and its scenario fixtures (the shared golden set is the trunk's — §27), and is provable without its neighbors — the guards land first because the checker, grammar, and validator are the executable invariants that keep parallel work from drifting.
+Every interface between components is a file contract — journals (§8), curated frontmatter (§20.4), the emitted graph (§10) — so implementation parallelizes as verticals over one small sequential trunk: agents share formats, never domain code. The trunk's capability boundary (§25.8) is the one thing verticals link rather than re-implement: a component that knows no node kind, journal shape, or schema is not a surface they can drift apart on, and a copy per vertical would fork the containment §24.2 requires — this rule's own failure mode, in the one place it must not happen. Each vertical owns its §§, its script, its §27 criteria, and its scenario fixtures (the shared golden set is the trunk's — §27), and is provable without its neighbors — the guards land first because the checker, grammar, and validator are the executable invariants that keep parallel work from drifting.
 
 | Package | Content | Proof |
 |---------|---------|-------|
-| Trunk — guard/contract (sequential, first) | §8 skeleton; boundary checker (§19); §20.4 grammar, §25.7 schemas, `validate_atlas.py` (#30); §10.2 edge matrix transcribed (#31); the shared §27 golden fixtures; CI running every guard | §27.9; §20.4 conformance |
+| Trunk — guard/contract (sequential, first) | §8 skeleton; boundary checker (§19); §20.4 grammar, §25.7 schemas, the validator (#30); §10.2 edge matrix transcribed (#31); the shared §27 golden fixtures; CI running every guard | §27.9; §20.4 conformance |
 | V-build — builder convergence | full §20 pipeline: §14 fold with `--as-of` (#29), retired-id map (#49), lock + atomic emission (#60), influence and frontier baselines (§9.10, §15.4), `--redact` | §27.3, §27.5–§27.7, §27.11 |
 | V-view — viewer | §16 over the graph fixture (#44) | §27.2, §27.8 |
 | V-capture — deterministic capture/intake | the §26.1 manual observation floor documented (#47); intake batches (#56); deterministic import lanes — dry-run/commit, receipts, diffed re-import (§12.4, §21.1) | §27.1, §27.4 |

@@ -367,8 +367,8 @@ export const CEILINGS: Ceilings = {
   "parameter_decoded_bytes": 512
 };
 
-// §14.7 owns these boundaries; this transcribes them, as the §20 fold does
-// (build_atlas_graph.py FRESHNESS_DAYS). The viewer holds its own copy because
+// §14.7 owns these boundaries; this transcribes them, as the §20 fold
+// independently does. The viewer holds its own copy because
 // it has no config channel to receive one (§16.5) and needs them only to refuse
 // a class the derivation does not produce — never to draw one (#108). Tuning is
 // a version bump in canon, so a disagreement here is a defect: the parity test

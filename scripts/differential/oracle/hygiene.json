@@ -1,0 +1,32 @@
+{
+  "harness": "hygiene",
+  "source": "CPython, the implementation this port replaces",
+  "recorded": "2026-08-16",
+  "answers": [
+    {"ask":"92cc373b7d7ddd6eeaec961314ff5ae1","answer":{"exit":0,"out":"OK: public Git layer has no denied paths or unmarked demo fixtures\n","err":"","raw":"OK: public Git layer has no denied paths or unmarked demo fixtures\n"}},
+    {"ask":"fe1de10d8e61531f69c783292c5798bc","answer":{"exit":1,"out":"","err":"FAIL: denied path visible to the public Git layer: nested/secrets/key.txt\n","raw":"FAIL: denied path visible to the public Git layer: nested/secrets/key.txt\n"}},
+    {"ask":"661fff626a66a3058a8f829c6543cdac","answer":{"exit":1,"out":"","err":"FAIL: .gitignore missing required pattern: secrets/\n","raw":"FAIL: .gitignore missing required pattern: secrets/\n"}},
+    {"ask":"9cb60449a52eaaac2847592d853806d3","answer":{"exit":1,"out":"","err":"FAIL: .gitignore must be tracked in the index\n","raw":"FAIL: .gitignore must be tracked in the index\n"}},
+    {"ask":"cf503a239a645bc59a4242678c90ae3b","answer":{"exit":1,"out":"","err":"FAIL: .gitignore must be tracked in the index\n","raw":"FAIL: .gitignore must be tracked in the index\n"}},
+    {"ask":"86530fd56d9ef947a18bd2cca7885da9","answer":{"exit":1,"out":"","err":"FAIL: .gitignore negates required pattern: !data/\n","raw":"FAIL: .gitignore negates required pattern: !data/\n"}},
+    {"ask":"61b4ed7eef799f4265831a49eee2e00f","answer":{"exit":1,"out":"","err":"FAIL: .gitignore missing required pattern: data/\n","raw":"FAIL: .gitignore missing required pattern: data/\n"}},
+    {"ask":"0894ab7f904e3fca11b13efc79009293","answer":{"exit":0,"out":"OK: public Git layer has no denied paths or unmarked demo fixtures\n","err":"","raw":"OK: public Git layer has no denied paths or unmarked demo fixtures\n"}},
+    {"ask":"f370898bc52c2d1b0246609eaff8356f","answer":{"exit":1,"out":"","err":"FAIL: .gitignore missing required pattern: runs/\n","raw":"FAIL: .gitignore missing required pattern: runs/\n"}},
+    {"ask":"44dc3a3b6ec9400b0a8f5776ae06a1be","answer":{"exit":0,"out":"OK: public Git layer has no denied paths or unmarked demo fixtures\n","err":"","raw":"OK: public Git layer has no denied paths or unmarked demo fixtures\n"}},
+    {"ask":"c851036d37b6d676f69a132e5bdbccd4","answer":{"exit":0,"out":"OK: public Git layer has no denied paths or unmarked demo fixtures\n","err":"","raw":"OK: public Git layer has no denied paths or unmarked demo fixtures\n"}},
+    {"ask":"75f28d7a4688c836bd0b724bc1fea199","answer":{"exit":1,"out":"","err":"FAIL: .gitignore missing required pattern: *.jsonl\nFAIL: denied path visible to the public Git layer: notes.jsonl\n","raw":"FAIL: .gitignore missing required pattern: *.jsonl\nFAIL: denied path visible to the public Git layer: notes.jsonl\n"}},
+    {"ask":"65cceac0bda0d6ebd9796f8aeb67afd5","answer":{"exit":1,"out":"","err":"FAIL: denied path visible to the public Git layer: backup/store.sqlite-wal\n","raw":"FAIL: denied path visible to the public Git layer: backup/store.sqlite-wal\n"}},
+    {"ask":"71158129f950ccb7af1dbd1ab6c823f8","answer":{"exit":1,"out":"","err":"FAIL: denied path visible to the public Git layer: .env/token\n","raw":"FAIL: denied path visible to the public Git layer: .env/token\n"}},
+    {"ask":"3490e17cb007ef3dc1d12a1a0ab4ff04","answer":{"exit":1,"out":"","err":"FAIL: fixture lacks required marker 'Vera Example': fixtures/thing.md\n","raw":"FAIL: fixture lacks required marker 'Vera Example': fixtures/thing.md\n"}},
+    {"ask":"a3a183a5487f92918d850f352d9dea5b","answer":{"exit":0,"out":"OK: public Git layer has no denied paths or unmarked demo fixtures\n","err":"","raw":"OK: public Git layer has no denied paths or unmarked demo fixtures\n"}},
+    {"ask":"fc869a8161da155744b5f47fb41e439a","answer":{"exit":1,"out":"","err":"FAIL: fixture lacks required marker 'Vera Example': fixtures/thing.md\n","raw":"FAIL: fixture lacks required marker 'Vera Example': fixtures/thing.md\n"}},
+    {"ask":"04a0fe2ccc32ca387358b710001d47bc","answer":{"exit":0,"out":"OK: public Git layer has no denied paths or unmarked demo fixtures\n","err":"","raw":"OK: public Git layer has no denied paths or unmarked demo fixtures\n"}},
+    {"ask":"d08db89397b950287ec3c011714d1ab7","answer":{"exit":1,"out":"","err":"FAIL: .gitignore must be tracked in the index\nFAIL: fixture lacks required marker 'Vera Example': fixtures/loose.md\n","raw":"FAIL: .gitignore must be tracked in the index\nFAIL: fixture lacks required marker 'Vera Example': fixtures/loose.md\n"}},
+    {"ask":"9cacf5534bdf873ddf0810dab34b6e59","answer":{"exit":0,"out":"OK: public Git layer has no denied paths or unmarked demo fixtures\n","err":"","raw":"OK: public Git layer has no denied paths or unmarked demo fixtures\n"}},
+    {"ask":"81d1b7e3ac98aff440aab64a15b0a649","answer":{"exit":1,"out":"","err":"FAIL: fixture lacks required marker 'Vera Example': fixtures/intake/vera-example-batch.json\n","raw":"FAIL: fixture lacks required marker 'Vera Example': fixtures/intake/vera-example-batch.json\n"}},
+    {"ask":"64482c4965974c44df52cbde9afbfe56","answer":{"exit":1,"out":"","err":"FAIL: denied path visible to the public Git layer: fixtures/intake/other-batch.json\n","raw":"FAIL: denied path visible to the public Git layer: fixtures/intake/other-batch.json\n"}},
+    {"ask":"95dafedab26c6340f4f8e4d24f954a17","answer":{"exit":1,"out":"","err":"FAIL: .gitignore missing required pattern: state/\nFAIL: fixture lacks required marker 'Vera Example': fixtures/thing.md\nFAIL: denied path visible to the public Git layer: nested/secrets/key.txt\n","raw":"FAIL: .gitignore missing required pattern: state/\nFAIL: fixture lacks required marker 'Vera Example': fixtures/thing.md\nFAIL: denied path visible to the public Git layer: nested/secrets/key.txt\n"}},
+    {"ask":"5b53df8be184e663653ba7b0100181cb","answer":{"exit":1,"out":"","err":"fatal: not a git repository (or any of the parent directories): .git\nFAIL: cannot inspect the public Git layer: «why»\n","raw":"fatal: not a git repository (or any of the parent directories): .git\nFAIL: cannot inspect the public Git layer: Command '('git', 'ls-files', '-z', '--cached')' returned non-zero exit status 128.\n"}},
+    {"ask":"509a7ee62d3cd34023bcd8bbd4a1dbed","answer":{"exit":1,"out":"","err":"FAIL: fixture lacks required marker 'Vera Example': fixtures/\\udcff.md\n","raw":"FAIL: fixture lacks required marker 'Vera Example': fixtures/\\udcff.md\n"}}
+  ]
+}
