@@ -24,17 +24,24 @@ const TARGETS: ReadonlyMap<string, string> = new Map([
 const REPOSITORY = fileURLToPath(new URL("..", import.meta.url));
 const CRATE = path.join(REPOSITORY, "native", "atlas-posix");
 
-function fail(lines: readonly string[]): never {
+function fail(lines: readonly string[], status = 1): never {
   for (const line of lines) process.stderr.write(`ERROR: ${line}\n`);
-  process.exit(1);
+  process.exit(status);
 }
 
 function main(argv: readonly string[]): number {
   const checkOnly = argv.includes("--check");
   const rest = argv.filter((word) => word !== "--check");
   if (rest.length > 0) {
-    process.stderr.write("usage: build_native.ts [--check]\n");
-    return 2;
+    // §25.8's CLI contract reaches usage errors too — "every diagnostic line
+    // is prefixed ERROR:, usage errors included", which is why the ported
+    // commands route argparse's own error path through a prefixing writer
+    // rather than letting it print bare lines. The offending argument is not
+    // quoted back: this command takes one optional flag, so naming it adds
+    // nothing an operator does not already see, and echoing caller-supplied
+    // text is how an argument with a newline in it splits one diagnostic into
+    // two, the second of them unprefixed.
+    fail(["unexpected argument", "usage: build_native.ts [--check]"], 2);
   }
 
   const host = `${process.platform}:${process.arch}`;
