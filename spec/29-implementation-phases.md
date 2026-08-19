@@ -4,7 +4,7 @@ The package table sequences work only; MVP scope is §26's, acceptance §27's.
 
 ### Current implementation posture
 
-**State: Partial freeze.** The knowledge-domain vertical is active. Approved work may proceed through named issues and their prerequisites, including #29, #30, #31, #34, #36, #37, #42, #44, #49, and #56; every issue's own entry gates remain binding. An approved knowledge slice may land before unrelated Atlas specification debt closes, but this does not waive its gate or authorize divergence from the SDD. Normative friction discovered during implementation becomes a focused issue and, if accepted, an SDD edit plus Decision Log entry before code changes behavior.
+**State: Partial freeze.** The knowledge-domain vertical is active. Approved work may proceed through named issues and their prerequisites, including #29, #30, #31, #34, #36, #37, #42, #44, #49, and #56; every issue's own entry gates remain binding. An approved knowledge slice may land before unrelated Atlas specification debt closes. Process is AGENTS.md's "How work happens": a PR that moves a documented contract updates the owning § file in the same PR, and a trade-off gets a Decision Log line.
 
 ### Body Atlas freeze
 
