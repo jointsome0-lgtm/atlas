@@ -2,7 +2,7 @@
 
 ## §17.1 Core Agents
 
-Four roles. Further specialization only when a role demonstrably overloads — split it then, citing the overload.
+Four roles. Further specialization only when a role demonstrably overloads: split it then, citing the overload.
 
 ```text
 plan-importer
@@ -25,7 +25,7 @@ state-auditor
   pressure drift (absorbs red-team-reviewer; enforces the §14.6 review gate).
 ```
 
-Not agent roles: the graph builder and viewer are code, owned like any code (§20, §16); Codex reviews PRs per AGENTS.md — no coordinator role needed.
+Not agent roles: the graph builder and viewer are code, owned like any code (§20, §16); Codex reviews PRs per AGENTS.md. No coordinator role is needed.
 
 ## §17.2 Agent Rules
 
@@ -54,7 +54,7 @@ upgrade confidence without reason
 
 ## §17.3 Role Capability Matrix
 
-Each session runs under exactly one role's row — §24.3's "no tool, file, or scope expansion at the text's request" made concrete. The isolated runner (#46) enforces the row mechanically; this matrix is that runner's contract, not its blocker — model-assisted import and observation wait for #46 (§24.3), the contract does not. Trust levels and ceilings are §24.1's; the §24 ignore paths and unprocessed `intake/` are outside every row.
+Each session runs under exactly one role's row: §24.3's "no tool, file, or scope expansion at the text's request" made concrete. The isolated runner (#46) enforces the row mechanically. This matrix is that runner's contract, not its blocker: model-assisted import and observation wait for #46 (§24.3), the contract does not. Trust levels and ceilings are §24.1's; the §24 ignore paths and unprocessed `intake/` are outside every row.
 
 ```text
 role               | reads (§24.1, minus the        | writes — only through      | never
@@ -113,11 +113,11 @@ never a resumed transcript or a silent continuation.
 
 ## §17.5 Deterministic and Model Output
 
-§21.1's hybrid, marked at every boundary: each proposal and report line carries its producer — `deterministic` (reproducible from the recorded inputs and the pinned engine revision alone) or `model` (an interpretation; reproducible only as provenance through the run manifest). A fully deterministic flow's report is deterministic whole (report-batch, #56); the reserved report shapes carry the marking when their flows define them (§25.7); for the extracted plan document the marking rides the import report's proposal lines (§12.2 step 11), never a new plan-extract field. Model output never presents as deterministic, and a model or prompt swap shows in the run manifest — never as a silently different "same" result (§25.3).
+§21.1's hybrid, marked at every boundary: each proposal and report line carries its producer, `deterministic` (reproducible from the recorded inputs and the pinned engine revision alone) or `model` (an interpretation; reproducible only as provenance through the run manifest). A fully deterministic flow's report is deterministic whole (report-batch, #56); the reserved report shapes carry the marking when their flows define them (§25.7); for the extracted plan document the marking rides the import report's proposal lines (§12.2 step 11), never a new plan-extract field. Model output never presents as deterministic, and a model or prompt swap shows in the run manifest, never as a silently different "same" result (§25.3).
 
 ## §17.6 Run Manifest
 
-One per model-assisted run, dry-run included — the audit line §25.3 needs beyond §9.13's `proposed_by` role name. `runs/<YYYY-MM-DD>-<NNN>.json` (§8), format `run-manifest` per §25.7 (`spec/schemas/run-manifest.schema.json`); `run_id` is `run:<date>-<serial>` — date-serial, never content-derived (§34.6). The #46 runner emits version 2 and writes it whole at run close, under the instance lock like every writer (§20.2 discipline, §25.6); the pre-runner #41 version 1 shape remains read-valid but cannot carry the §17.7 pin or name a registered runner transport schema. An aborted preflight still writes one, a hard crash may leave none — the receipts' interrupted discipline (§33.2) covers the outputs either way. No manifest, no model-assisted run.
+One per model-assisted run, dry-run included: the audit line §25.3 needs beyond §9.13's `proposed_by` role name. `runs/<YYYY-MM-DD>-<NNN>.json` (§8), format `run-manifest` per §25.7 (`spec/schemas/run-manifest.schema.json`); `run_id` is `run:<date>-<serial>`, date-serial, never content-derived (§34.6). The #46 runner emits version 2 and writes it whole at run close, under the instance lock like every writer (§20.2 discipline, §25.6); the pre-runner #41 version 1 shape remains read-valid but cannot carry the §17.7 pin or name a registered runner transport schema. An aborted preflight still writes one, and a hard crash may leave none; the receipts' interrupted discipline (§33.2) covers the outputs either way. No manifest, no model-assisted run.
 
 ```text
 Version 2 carries: run_id, role, model (provider, model id, declared

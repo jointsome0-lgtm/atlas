@@ -146,7 +146,7 @@ The plan describes these ideas around a single integrated Python lab (`distribut
 
 ## §12.4 Re-Run Semantics
 
-A direct import is a batch of one — §33.2's discipline reused, never a third semantics (#40):
+A direct import is a batch of one: §33.2's discipline reused, never a third semantics (#40):
 
 ```text
 Each committing run is one batch, receipted in

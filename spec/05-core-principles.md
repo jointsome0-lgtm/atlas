@@ -22,7 +22,7 @@ Importing a route does not imply commitment.
 
 ## §5.2 Personal Trail Is Sacred
 
-The user’s actual trail must not be overwritten by proposed routes — or by any other automation. The importer, agents, and builders may only append trail segments and propose corrections; a proposal changes nothing until the user confirms it (§14.6 pattern). The user’s own hand-edits are sovereign: correcting or deleting one’s own memory is always allowed; derived consumers tolerate vanished sources (§20). Deletion tiers and the purge carve-out: §34.
+The user's actual trail must not be overwritten by proposed routes, or by any other automation. The importer, agents, and builders may only append trail segments and propose corrections; a proposal changes nothing until the user confirms it (§14.6 pattern). The user's own hand-edits are sovereign: correcting or deleting one's own memory is always allowed; derived consumers tolerate vanished sources (§20). Deletion tiers and the purge carve-out: §34.
 
 A trail is generated from:
 
@@ -62,7 +62,7 @@ starting state — unseen / unknown / vague (§12.2 step 10).
 
 Only user artifacts can update that state.
 
-A plan’s own claim of prior knowledge (“Kafka — already know it”) is plan text, not evidence. The importer may only surface it as a proposal in the import report; nothing changes until the user confirms (§14.6).
+A plan's own claim of prior knowledge ("Kafka — already know it") is plan text, not evidence. The importer may only surface it as a proposal in the import report; nothing changes until the user confirms (§14.6).
 
 ## §5.4 Materials Are Not Concepts
 
@@ -71,7 +71,7 @@ A concept is an area of knowledge.
 
 One material can touch many concepts.
 One concept can be supported by many materials.
-One section of a material can be useful for a different concept than the material’s overall topic.
+One section of a material can be useful for a different concept than the material's overall topic.
 
 ## §5.5 Primary/Supporting Are Contextual Roles
 

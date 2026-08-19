@@ -21,9 +21,9 @@ The graph builder should:
 12. Emit graph/atlas-graph.json per the §10.4 node contract (`fields` membership, per-kind payload), embedding the silhouette projection collected from zone frontmatter (`figure_region`, §32) under `projections` (§10) — the viewer's single input stays single (§16.4). The emission carries the §32.6 sensitivity class by provenance union: every entry the union marks — a node payload with persisted `sensitivity` (§10.4), a derived value resting on a classed row, an influence source, a frontier item citing classed evidence, a trail segment with classed `via` — is emitted with `sensitivity: <class>`.
 ```
 
-The default emission is complete — a local file that, containing classed entries, sits under the §32.6 default agent-context exclusion like the journals it derives from. `--redact` emits the agent-facing variant `graph/atlas-graph.redacted.json` beside the full graph, never instead of it: everything the §32.6 union marks is omitted whole at its own granularity — a value with its decisions and evidence refs, an item, a source, a node payload — never rewritten, and a top-level `withheld` key maps each top-level §10 key to its omission count: counts only, never ids (§32.6). The full graph never carries `withheld` — nothing was.
+The default emission is complete: a local file that, containing classed entries, sits under the §32.6 default agent-context exclusion like the journals it derives from. `--redact` emits the agent-facing variant `graph/atlas-graph.redacted.json` beside the full graph, never instead of it. Everything the §32.6 union marks is omitted whole at its own granularity (a value with its decisions and evidence refs, an item, a source, a node payload), never rewritten. A top-level `withheld` key maps each top-level §10 key to its omission count: counts only, never ids (§32.6). The full graph never carries `withheld`; nothing was withheld.
 
-Step 11 classifies a broken reference by the ref's origin, never the target's kind: a ref in a retained journal row — whatever it targets: a trail segment, artifact, encounter, question, or a curated node (zone, material, concept, pattern) — is skipped with a warning, never a build failure — deletion is the owner’s right (§5.2), and §34.2 promises exactly such survivors; a ref authored in a living curated file is an error — curation converges (§34.4), journals never have to. The report groups dangling journal refs apart from curated-link errors; purge notes explain purge-era dangles (§34.2–§34.3).
+Step 11 classifies a broken reference by the ref's origin, never the target's kind. A ref in a retained journal row, whatever it targets (a trail segment, artifact, encounter, question, or a curated node: zone, material, concept, pattern), is skipped with a warning, never a build failure: deletion is the owner's right (§5.2), and §34.2 promises exactly such survivors. A ref authored in a living curated file is an error: curation converges (§34.4), journals never have to. The report groups dangling journal refs apart from curated-link errors; purge notes explain purge-era dangles (§34.2–§34.3).
 
 ## §20.1 Fold Ordering and As-Of
 
@@ -84,7 +84,7 @@ lock and a second concurrent run refuses with exit 1 (§25.6).
 
 ## §20.3 Edge Emission Discipline
 
-Edges are emitted per the §10.2 matrix — the ownership column names the reading surface per type; the builder's endpoint constants transcribe the matrix and cite it, never the reverse (#31).
+Edges are emitted per the §10.2 matrix: the ownership column names the reading surface per type. The builder's endpoint constants transcribe the matrix and cite it, never the reverse (#31).
 
 ```text
 Normalization: related_to and alternative_to are symmetric
@@ -132,13 +132,13 @@ identity order (type, source, target, then the meta
 discriminant).
 ```
 
-Dependencies: none at run time. Every Atlas entry point runs on the §25.8 runtime and its standard library alone, plus the one compiled filesystem boundary §25.8 pins — a committed artifact of this repository, not a fetched package. Nothing is resolved, downloaded, or installed in order to run a checkout, so no registry is a trust root and no run needs a network. Schema support stays the closed hand-written subset §25.7 already describes: a general validator would accept keywords canon never chose, which is the fail-closed posture §24.2 refuses to trade. Typechecking and the viewer build are build-time tooling (§25.8) and reach no emitted byte.
+Dependencies: none at run time. Every Atlas entry point runs on the §25.8 runtime and its standard library alone, plus the one compiled filesystem boundary §25.8 pins, a committed artifact of this repository, not a fetched package. Nothing is resolved, downloaded, or installed in order to run a checkout, so no registry is a trust root and no run needs a network. Schema support stays the closed hand-written subset §25.7 already describes: a general validator would accept keywords canon never chose, which is the fail-closed posture §24.2 refuses to trade. Typechecking and the viewer build are build-time tooling (§25.8) and reach no emitted byte.
 
-Frontmatter parses by the §20.4 grammar — a closed hand-written parser, never a third-party YAML library (Decision Log 2026-07-16); the §25.7 schemas validate the parsed object.
+Frontmatter parses by the §20.4 grammar: a closed hand-written parser, never a third-party YAML library (Decision Log 2026-07-16). The §25.7 schemas validate the parsed object.
 
 ## §20.4 Frontmatter Grammar
 
-The YAML-shaped persisted surfaces — curated frontmatter blocks and the extracted plan document (§21.2) — are written in one deliberately closed grammar, stated here. It is YAML-shaped, not YAML: a general YAML tool may happen to read these files, but its rewrite carries no conformance promise. This section is the canon; every reader and writer — builder, importer, observer, validator — implements it, and the validator checks implementations against the conformance fixtures. Bytes in, object or diagnostic out; nothing in between is canonical.
+The YAML-shaped persisted surfaces, curated frontmatter blocks and the extracted plan document (§21.2), are written in one deliberately closed grammar, stated here. It is YAML-shaped, not YAML: a general YAML tool may happen to read these files, but its rewrite carries no conformance promise. This section is the canon; every reader and writer (builder, importer, observer, validator) implements it, and the validator checks implementations against the conformance fixtures. Bytes in, object or diagnostic out; nothing in between is canonical.
 
 ```text
 Encoding: strict UTF-8, no BOM; invalid UTF-8 is an ERROR. LF is

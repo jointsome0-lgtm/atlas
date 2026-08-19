@@ -1,6 +1,6 @@
 ## §11. Primary and Supporting Materials
 
-`primary` and `supporting` are contextual edge roles: a material (part) is primary or supporting **for** an episode of user activity — a route step, a question, a trail segment. One storage rule (#31): the route context is authored — a route is curated proposal structure; question and trail contexts are derived at build/render from the journals and never stored (§31.8 — journals stay append-only, and a role stored in a row would freeze judgment at append time). All three emit as context-tagged `primary_for` / `supporting_for` edges (§10.2 matrix, §20.3).
+`primary` and `supporting` are contextual edge roles: a material (part) is primary or supporting **for** an episode of user activity: a route step, a question, a trail segment. One storage rule (#31): the route context is authored, since a route is curated proposal structure; question and trail contexts are derived at build/render from the journals and never stored (§31.8: journals stay append-only, and a role stored in a row would freeze judgment at append time). All three emit as context-tagged `primary_for` / `supporting_for` edges (§10.2 matrix, §20.3).
 
 ## §11.1 Route Context — Authored
 
@@ -16,7 +16,7 @@ material_roles:
       - material:openapi-spec
 ```
 
-The builder emits material(part) → route edges carrying `step` metadata — part of edge identity (§10.2, §10.3).
+The builder emits material(part) → route edges carrying `step` metadata, part of edge identity (§10.2, §10.3).
 
 ## §11.2 Question Context — Derived
 
@@ -24,7 +24,7 @@ Derived from encounters citing the question (§9.7 `context.question`): the enco
 
 ## §11.3 Trail Context — Derived
 
-Derived from the segment's own record (§9.9): a material (part) cited in `via` is **primary** — the movement literally went through it; the target of an encounter citing one of the segment's `via` artifacts (§9.7 `context.artifact`) that is not itself in `via` is **supporting**. Nothing is stored. Emitted as material(part) → trail_segment edges.
+Derived from the segment's own record (§9.9): a material (part) cited in `via` is **primary**, because the movement literally went through it. The target of an encounter citing one of the segment's `via` artifacts (§9.7 `context.artifact`) that is not itself in `via` is **supporting**. Nothing is stored. Emitted as material(part) → trail_segment edges.
 
 Rule:
 
@@ -38,9 +38,9 @@ roles are computed at render time and shown context-labeled
 
 ## §11.4 Standing Support Is Not a Role
 
-§11 contexts are episodes of user activity — a route step, a question, a trail segment; roles live inside the episode. The standing relation “B helps understand X” is not an episode but graph structure: a directed `supports` edge authored as `supported_by:` (§9.14).
+§11 contexts are episodes of user activity (a route step, a question, a trail segment); roles live inside the episode. The standing relation "B helps understand X" is not an episode but graph structure: a directed `supports` edge authored as `supported_by:` (§9.14).
 
-The rule above stays about unary flags (§31.4): a support link is pairwise, names an explicit target, and carries no primacy. Aggregates over support links (“helps in N places”), like aggregates over roles, are computed at render time only.
+The rule above stays about unary flags (§31.4): a support link is pairwise, names an explicit target, and carries no primacy. Aggregates over support links ("helps in N places"), like aggregates over roles, are computed at render time only.
 
 ---
 

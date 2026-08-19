@@ -6,13 +6,13 @@ Learning plans are useful, but they usually produce pressure:
 “Here is the path. Follow it.”
 ```
 
-The user’s actual learning is not linear. A proposed route might say:
+The user's actual learning is not linear. A proposed route might say:
 
 ```text
 REST → Redis → Kafka → RabbitMQ → gRPC
 ```
 
-But the user’s real trail might become:
+But the user's real trail might become:
 
 ```text
 REST → idempotency → HTTP status semantics → Redis idempotency keys → Kafka duplicate event handling

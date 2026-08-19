@@ -1,6 +1,6 @@
 ## §33. External Exchange
 
-Atlas lives among peer systems it never learns: subsystems stay mutually blind, and adapters — living outside atlas, in whatever shell composes the systems — translate between a peer's world and atlas's generic boundary formats. No peer schema or shell-specific code appears in atlas, and atlas never interprets peer identity: a delivery's `source` label (§33.2) is an opaque namespace atlas never branches on. The outward surface is exactly three: activity-ledger and plan intake (§33.2–§33.3), the state snapshot (§33.4), and the embeddable viewer (§16.4).
+Atlas lives among peer systems it never learns. Subsystems stay mutually blind. Adapters, living outside atlas in whatever shell composes the systems, translate between a peer's world and atlas's generic boundary formats. No peer schema or shell-specific code appears in atlas, and atlas never interprets peer identity: a delivery's `source` label (§33.2) is an opaque namespace atlas never branches on. The boundary is exactly three things: activity-ledger and plan intake (§33.2–§33.3), the state snapshot (§33.4), and the embeddable viewer (§16.4).
 
 ## §33.1 Exchange Model
 
@@ -33,7 +33,7 @@ version; atlas never silently drops what it cannot place (§33.2).
 
 ## §33.2 Intake: Activity Ledger
 
-An adapter delivers a batch file under `intake/<source>/` (§8); the user runs the observer over it. Batches stay as delivered — the audit original, like `plans/imported/` (§12.2 step 1) — and are never scanned by the boundary checker (§19): a foreign system's voice may say `done` freely; what atlas makes of a batch is already structure-scanned in `state/`. The originals never enter default agent context (§24).
+An adapter delivers a batch file under `intake/<source>/` (§8); the user runs the observer over it. Batches stay as delivered: they are the audit original, like `plans/imported/` (§12.2 step 1), and the boundary checker never scans them (§19). A foreign system's voice may say `done` freely; what atlas makes of a batch is already structure-scanned in `state/`. The originals never enter default agent context (§24).
 
 Envelope:
 
@@ -167,13 +167,13 @@ follow. Tier-2 body capture arrives through this format (§32.4).
 
 ## §33.3 Intake: Plans
 
-A `plan` record — inline `text` or a `ref` to a delivered file — enters §12 unchanged; a route from an external plan is an ordinary SuggestedRoute (§5.1).
+A `plan` record, inline `text` or a `ref` to a delivered file, enters §12 unchanged. A route from an external plan is an ordinary SuggestedRoute (§5.1).
 
-A sensitive plan (§33.2's marker) keeps its class across the copy: the original lands under `plans/imported/<class>/` — placement, never an edit, an as-delivered document stays byte-identical — and the SuggestedRoute built from it carries `sensitivity: <class>` in frontmatter; the §32.6 default-context exclusion follows both (the batch original under `intake/` is already covered, §24). Candidate concept stubs from a classed input carry the class like the route — `sensitivity: <class>` in frontmatter — so everything already keyed to the class follows without a new mechanism: §34.6 gives the stub a date-serial id at creation (the title stays in the body — content, purged with it), the §33.4 default exclusion keeps it out of snapshots, and §34.2 keeps it in the input's purge closure while the input is its only provenance. The user adopts a stub by re-authoring it as their own (§5.2) — that curation deliberately removes the class and takes the stub out of the closure. Stubs from unclassed inputs stay plain — there, ids and links are structure; when the source is classed, a slug derived from its text is content (the 2026-07-06 rule, scoped — Decision Log 2026-07-15).
+A sensitive plan (§33.2's marker) keeps its class across the copy. The original lands under `plans/imported/<class>/`; that is placement, never an edit, and an as-delivered document stays byte-identical. The SuggestedRoute built from it carries `sensitivity: <class>` in frontmatter; the §32.6 default-context exclusion follows both (the batch original under `intake/` is already covered, §24). Candidate concept stubs from a classed input carry the class like the route, `sensitivity: <class>` in frontmatter, so everything already keyed to the class follows without a new mechanism: §34.6 gives the stub a date-serial id at creation (the title stays in the body: content, purged with it), the §33.4 default exclusion keeps it out of snapshots, and §34.2 keeps it in the input's purge closure while the input is its only provenance. The user adopts a stub by re-authoring it as their own (§5.2); that curation deliberately removes the class and takes the stub out of the closure. Stubs from unclassed inputs stay plain: there, ids and links are structure. When the source is classed, a slug derived from its text is content (the 2026-07-06 rule, scoped; Decision Log 2026-07-15).
 
 ## §33.4 Export: State Snapshot
 
-An emitted view, not a store: the snapshot export writes `graph/atlas-snapshot.json` (§8) on the user's explicit run — never on a schedule, never pushed (§24, §31.7). Atlas never reads a snapshot back; each export is a full regeneration (§31.8).
+An emitted view, not a store: the snapshot export writes `graph/atlas-snapshot.json` (§8) on the user's explicit run, never on a schedule, never pushed (§24, §31.7). Atlas never reads a snapshot back; each export is a full regeneration (§31.8).
 
 ```json
 {
@@ -229,7 +229,7 @@ An emitted view, not a store: the snapshot export writes `graph/atlas-snapshot.j
 }
 ```
 
-The included set is closed — extending it is a Decision Log entry, made when a real adapter asks (§28.3):
+The included set is closed; extending it is a Decision Log entry, made when a real adapter asks (§28.3):
 
 ```text
 per-node derived state on the node's own scales — freshness and
@@ -287,6 +287,6 @@ stayed home; any of it enters a snapshot only by the user's
 explicit per-export choice (§32.6 declassification).
 ```
 
-Stability: node ids are stable slugs (§10.1) and persist across snapshots; a consumer must tolerate an id that vanishes — deletion is the owner's right (§5.2, §34), the same tolerance §20 requires of the builder. Id retirement resolves inside atlas (§34.4): a snapshot exports living ids only; no redirect map is exported until a real adapter asks (§28.3).
+Stability: node ids are stable slugs (§10.1) and persist across snapshots. A consumer must tolerate an id that vanishes: deletion is the owner's right (§5.2, §34), and §20 requires the same tolerance of the builder. Id retirement resolves inside atlas (§34.4): a snapshot exports living ids only; no redirect map is exported until a real adapter asks (§28.3).
 
 ---

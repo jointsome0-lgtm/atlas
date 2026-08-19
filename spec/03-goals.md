@@ -8,9 +8,9 @@ Atlas should:
 2. Extract concepts, materials, sections/aspects, probes, and suggested routes.
 3. Track user-created artifacts over time.
 4. Update knowledge state only from meaningful evidence.
-5. Preserve the user’s real personal trail.
+5. Preserve the user's real personal trail.
 6. Visualize the difference between proposed paths and actual movement.
-7. Show the user’s current frontier without creating obligations.
+7. Show the user's current frontier without creating obligations.
 8. Support agent-based analysis, review, and graph maintenance.
 9. Keep all data local, versionable, inspectable, and editable.
 
