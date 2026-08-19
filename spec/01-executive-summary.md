@@ -25,5 +25,7 @@ Influence field is understanding becoming visible.
 
 Atlas must never become a TODO system, productivity ledger, sprint board, or guilt machine.
 
+> **Atlas does not tell the user what they failed to complete. Atlas shows where the user is, how they got there, and what nearby parts of the field are now visible.**
+
 ---
 
