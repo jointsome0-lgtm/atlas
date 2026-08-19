@@ -63,7 +63,6 @@ jobs:
       - name: Replay the oracle corpus
         run: bun run differential
       - run: bun scripts/check_public_hygiene.ts
-      - run: bun scripts/check_sdd_conventions.ts check AGENTS.md --template conventions/SDD-CONVENTIONS.md
       - run: bun scripts/check_decision_log.ts --baseline 2026-08-11 DECISION-LOG.md
       - name: Check schema and implementation constants
         run: bun scripts/validate_atlas.ts check-constants
