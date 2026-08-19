@@ -2,19 +2,16 @@
 
 | Vendored file | Source in `selfos-skills` | Version | Source commit |
 | --- | --- | --- | --- |
-| `scripts/check_sdd_conventions.ts` | `skills/sdd-conventions/scripts/sync_conventions.ts` | 1.0.1 | `5feaf8dbb0b80b417b3d966847e06f3ce321df08` |
 | `scripts/check_decision_log.ts` | `skills/sdd-conventions/scripts/check_decision_log.ts` | 2.0.0 | `5feaf8dbb0b80b417b3d966847e06f3ce321df08` |
-| `AGENTS.md` conventions block | `skills/sdd-conventions/conventions/SDD-CONVENTIONS.md` | template v1.1.0 | `eb03fb69a657bce3f4305f2edc9d9ea35e87c0bd` |
-| `conventions/SDD-CONVENTIONS.md` | `skills/sdd-conventions/conventions/SDD-CONVENTIONS.md` | template v1.1.0 | `eb03fb69a657bce3f4305f2edc9d9ea35e87c0bd` |
 
-Each checker was vendored twice for the length of the TypeScript migration
+The checker was vendored twice for the length of the TypeScript migration
 (#119) — a `.ts` copy and the `.py` copy it was proved against. The cutover
 tranche removed the Python side along with every other Python file, so what is
 listed above is now the whole of it. Upstream holds the two forms to identical
 arguments, output, exit status and written bytes with a differential harness;
-here they were compared on this repository's own `AGENTS.md` and
-`DECISION-LOG.md`, including the 202-diagnostic unbaselined run, and agreed
-byte for byte before the Python copies went.
+here they were compared on this repository's own `DECISION-LOG.md`, including
+the 202-diagnostic unbaselined run, and agreed byte for byte before the Python
+copy went.
 
 Upstream records two divergences it does not fix (`selfos-skills#116`), both the
 runtime's Unicode table rather than a checker's rules: CPython 3.12 answers from
@@ -25,11 +22,9 @@ Neither reaches this repository — no path or issue number here is spelled in o
 
 The recorded source commit is a commit pin, not a content hash: it cannot detect
 upstream drift in either direction, so freshness is verified by diffing against a
-current `selfos-skills` checkout. The template rows stay at v1.3.0's predecessor
-deliberately — adopting it lands three new conventions and is its own decision
-(#120), not part of keeping the scripts current.
+current `selfos-skills` checkout. Update by rerunning the copy against a current
+`selfos-skills` checkout in an explicit PR.
 
-The committed template copy is what CI checks the `AGENTS.md` block against, so a
-block edit cannot pass by recomputing its own hash; template and block update
-together. Update by rerunning sync/copy against a current `selfos-skills`
-checkout in an explicit PR.
+`check_sdd_conventions.ts` and its template left on 2026-08-20 with the SDD
+process gate (see the Decision Log). The spec stays as reference
+documentation; AGENTS.md no longer has a CI-checked conventions block.

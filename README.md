@@ -1,10 +1,10 @@
 # Atlas
 
-Atlas is a specification-led knowledge-state graph under a **partial freeze**. The approved knowledge-domain vertical is active; Body Atlas remains design-only and implementation-frozen until the objective gates in [§29's Body Atlas freeze section](spec/29-implementation-phases.md) are satisfied and a new explicit owner decision is recorded. See [§29](spec/29-implementation-phases.md) for the current implementation posture.
+Atlas is a knowledge-state graph under a **partial freeze**. The approved knowledge-domain vertical is active; Body Atlas remains design-only and implementation-frozen until the objective gates in [§29's Body Atlas freeze section](spec/29-implementation-phases.md) are satisfied and a new explicit owner decision is recorded. See [§29](spec/29-implementation-phases.md) for the current implementation posture.
 
-## Design specification
+## Design docs
 
-[`SDD.md`](SDD.md) is the map and stable-numbered § index; each section lives in its own file under [`spec/`](spec/). Start with the index, then open only the section files needed for the question at hand.
+[`SDD.md`](SDD.md) is the map and stable-numbered § index; each section lives in its own file under [`spec/`](spec/). Start with the index, then open only the section files needed for the question at hand. The spec documents what Atlas is. Day-to-day changes flow issue → PR; a § file changes in the same PR that moves the contract it documents.
 
 ## Building
 
