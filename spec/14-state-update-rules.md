@@ -65,7 +65,7 @@ performed / drilled  → applied      (body strengths §32.3; doing applies the 
 explained + reviewed → taught       (explained and survived review, §14.1)
 ```
 
-This table is the knowledge ladder's own. Each ladder keeps its mapping beside itself (motor exposure in §32.3, zone contact in §32.2), all over the one §9.6 strength list, folded by the same monotone-max machinery.
+Each ladder keeps its mapping beside itself (this table for knowledge, motor exposure in §32.3, zone contact in §32.2), all over the one §9.6 strength list, folded by the same monotone-max machinery.
 
 Rules:
 
@@ -94,7 +94,7 @@ Probe responses are artifacts (§9.6): evidence for proposals,
 never direct writes.
 ```
 
-**No decision means no knowledge.** A review-gated dimension with no confirmed decision folds to a no-knowledge value that asserts nothing, the first value of its scale: `unknown` (confidence §14.2; the zone capacities and `condition`, §32.2), `vague` and `none` (clarity §14.3, coverage §14.4; floors, not claims), `open` (question status §9.8). Edge weight keeps its own chain (§14.9): decision, else the authored hypothesis (a cited claim, not silence), else `unassessed`. A gated scale whose first value made a positive claim would let silence assert it; §32.2's `condition` gained `unknown` for exactly this (#38). The monotone ladders obey the same rule from the other side: no evidence reads `unseen` (§14.1, §32.2–§32.3). §20 step 9 is this rule's else-branch.
+**No decision means no knowledge.** A review-gated dimension with no confirmed decision folds to a no-knowledge value that asserts nothing, the first value of its scale: `unknown` (confidence §14.2; the zone capacities and `condition`, §32.2), `vague` and `none` (clarity §14.3, coverage §14.4; floors, not claims), `open` (question status §9.8). Edge weight keeps its own chain (§14.9): decision, else the authored hypothesis (a cited claim, not silence), else `unassessed`. A first value that claimed anything would let silence assert it (#38). The monotone ladders obey the same rule from the other side: no evidence reads `unseen` (§14.1, §32.2–§32.3). §20 step 9 is this rule's else-branch.
 
 ## §14.7 Freshness Decay
 
@@ -106,9 +106,9 @@ aging  ≤ 90 days
 stale  > 90 days
 ```
 
-A day here is a calendar day: the count is the difference between two dates, each a bare year-month-day carrying no time and no zone. No clock, offset, or local calendar enters the comparison, so a boundary never depends on where or when the build ran. That property is what makes the as-of rule above hold in the first place.
+A day here is a calendar day: the count is the difference between two bare year-month-day dates carrying no time and no zone. No clock, offset, or local calendar enters the comparison, so a boundary never depends on where or when the build ran.
 
-The block above owns these numbers: canon transcribed by every implementation, never instance configuration. The viewer has no config channel to receive one (§16.5), so a producer and a consumer disagreeing about the boundaries is a defect, not a deployment. The §20 fold is the one classifier: every contact-carrying state entry, concept understanding and material/part contact alike, is classified there, against the one as-of. The emitted graph carries the class, and a consumer renders it rather than deriving a second one (#105). Tuning the numbers is therefore not a config edit but a semantic change (the same dates would mean a different class) and takes a version bump with a Decision Log entry (§25.7) on both formats that publish a class: the graph (§10) and the snapshot (§33.4), whose already-exported `aging` would otherwise change meaning under an OUT consumer that never reclassifies. Per-field thresholds stay unbuilt until a field asks for one, and first need the rule this section lacks: which policy classifies an entry whose node spans two fields, §10.4 making `fields` a set where freshness is singular (#108). The shape that would carry them is a named policy the consumer already knows (a `default-v1` the emission cites and an unknown one visibly refuses, never the numbers themselves), but it waits on the same missing rule and on a real second clock (§28.3). Staleness feeds the Frontier input (§15.1) with adjacency wording only: a stale node is an invitation, never an obligation (§25.4).
+The block above owns these numbers: canon transcribed by every implementation, never instance configuration. The viewer has no config channel to receive one (§16.5). The §20 fold is the one classifier: every contact-carrying state entry, concept understanding and material/part contact alike, is classified there, against the one as-of. The emitted graph carries the class, and a consumer renders it rather than deriving a second one (#105). Tuning the numbers is a semantic change, not a config edit, and takes a version bump with a Decision Log entry (§25.7) on both formats that publish a class, the graph (§10) and the snapshot (§33.4). Per-field thresholds stay unbuilt until a field asks for one. They first need the rule this section lacks, a classification policy for a node spanning two fields (#108); the carrier would be a named policy the consumer can visibly refuse, never raw numbers, and it also waits on a real second clock (§28.3). Staleness feeds the Frontier input (§15.1) with adjacency wording only: a stale node is an invitation, never an obligation (§25.4).
 
 ## §14.8 Material State
 
@@ -128,7 +128,7 @@ part:fastapi-tutorial/path-operations:
 
 `depth_reached` is monotone like exposure. The `status: active` field on the Material file (§9.2) is lifecycle (active/archived), not understanding.
 
-Material state is contact, not understanding: it records how deeply the source was engaged, never how well its ideas are understood. Understanding is read off the concepts the material maps to (§9.3); a material's through-line is read off its `overall_concepts` (§9.2), moved by cross-part synthesis artifacts. Keys are independent: an encounter moves exactly the id it targets. Part contact never aggregates into the parent material, and "read every part" fabricates no whole-material depth.
+Material state is contact, not understanding: how deeply the source was engaged, never how well its ideas are understood. Understanding is read off the concepts the material maps to (§9.3); a material's through-line is read off its `overall_concepts` (§9.2), moved by cross-part synthesis artifacts. Keys are independent: an encounter moves exactly the id it targets, part contact never aggregates into the parent material, and "read every part" fabricates no whole-material depth.
 
 ## §14.9 Edge Weight
 
