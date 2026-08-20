@@ -14,7 +14,7 @@ modify no production resources
 
 User-initiated agent sessions are the one legal outward transit: invoking an agent on Atlas data is the user's explicit act, and the user chooses the model provider. Secrets never ride along: the ignore paths below stay out of any agent context, and §24.3 states the transit discipline.
 
-Encryption at rest is deployment hygiene, not an Atlas gate: instance confidentiality rests on the machine's own protections plus the §24.3 provider terms the user accepts per session, and no § makes at-rest encryption a precondition for any record class, §32.6-classed records included (Decision Log 2026-07-25). Ecosystem deployment guidance may still recommend it.
+Encryption at rest is deployment hygiene, not an Atlas gate: no § makes it a precondition for any record class, §32.6-classed records included (Decision Log 2026-07-25). Ecosystem deployment guidance may still recommend it.
 
 Ignore paths:
 
@@ -29,7 +29,7 @@ build/
 .git/
 ```
 
-`intake/` never enters default agent context: a delivered original keeps a foreign system's voice and may carry §32.6-class text (a raw health export) whether or not its records were marked. The one legitimate reader is the user-initiated flow processing a batch (§31.7, §33.2). Unlike the ignore paths this is a default, not an absolute: that flow is a session the user explicitly started for it (§32.6 discipline).
+`intake/` never enters default agent context: a delivered original may carry §32.6-class text (a raw health export) whether or not its records were marked. The one legitimate reader is the user-initiated flow processing a batch (§31.7, §33.2). Unlike the ignore paths this is a default, not an absolute: that flow is a session the user explicitly started for it (§32.6 discipline).
 
 ## §24.1 Trust Model
 
