@@ -358,7 +358,7 @@ stale
 
 No `done`.
 
-A question is born `open`. The creation record, one line appended to `state/questions.jsonl` (§8), never mutates. Status transitions are review-gated like the §14.6 dimensions: a StateDecision with `dimension: status` (§9.13), citing the evidence that makes the transition true. `stale` is a judgment too, citing the user's own note (§31.5: nothing declines automatically). The §20 fold derives current status: last confirmed decision, else `open`. Any transition can be proposed, `resolved → open` included; reopening is movement, not failure (§4).
+A question is born `open`. The creation record, one line appended to `state/questions.jsonl` (§8), never mutates. Status transitions are review-gated like the §14.6 dimensions: a StateDecision with `dimension: status` (§9.13), citing the artifact or encounter that made the transition true: the generic §9.12 evidence set narrows to those two kinds for this dimension. `stale` is a judgment too, citing the user's own note (§31.5: nothing declines automatically). The §20 fold derives current status: last confirmed decision, else `open`. Any transition can be proposed, `resolved → open` included; reopening is movement, not failure (§4).
 
 ---
 
@@ -398,7 +398,7 @@ several → a synthesis step (comparison note, design doc) that grew
           out of each listed origin.
 ```
 
-A landing is the same record with `from` absent (and, typically, a `reason` naming what pulled attention).
+A landing is the same record with only `from` absent; `reason` stays required (§10.4) and names what pulled attention.
 
 Rule:
 
