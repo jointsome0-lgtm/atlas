@@ -28,7 +28,7 @@ concept_edges:
 
 A concept file carries identity, links, and content only. Understanding state is derived at build time from the `state/` journals (§8, §20) and moves only per §14. Material roles live on contextual edges only (§11). `aliases` is search vocabulary; a retired id lives in `formerly:` (§34.4), never in `aliases`.
 
-Concepts are the third author of the one authored edge species (#31): the same `concept_edges:` block that parts (§9.3) and patterns (§32.1) carry. Roles legal from a concept source: `related_to`, `prerequisite_of`, `extends`, `contradicts`, `alternative_to` (§10.2 matrix). These structural concept→concept edges are what the honest-lever rule draws on (§15.3); `alternative_to` is deliberately not a lever type. `alternative_to` names substitutable approaches. Alternatives don't disagree, so `contradicts` is not its substitute (#94). It is symmetric like `related_to` (§20.3) and may carry `alternative_in:`, the concept-kind ids the substitution holds for, as an optional annotation (§10.3). `related_concepts` stays as sugar for `role: related_to` with no weight. An authored `weight` is the §14.9 hypothesis, gated like every other.
+Concepts author the same `concept_edges:` block as parts (§9.3) and patterns (§32.1), the one authored edge species (#31). Roles legal from a concept source: `related_to`, `prerequisite_of`, `extends`, `contradicts`, `alternative_to` (§10.2 matrix). These structural edges feed the honest-lever rule (§15.3); `alternative_to` is not a lever type. `alternative_to` names substitutable approaches, not disagreement (#94); it is symmetric like `related_to` (§20.3) and may carry `alternative_in:`, the concept-kind ids the substitution holds for (§10.3). `related_concepts` is sugar for `role: related_to` with no weight. An authored `weight` is the §14.9 hypothesis, gated like every other.
 
 Body:
 
@@ -178,7 +178,7 @@ material_roles:
 ---
 ```
 
-`material_roles` is where the route authors contextual roles (§11.1): per-step primary/supporting materials, written by import when the plan implies them (§12.2 step 6) and hand-editable like all curated content. Each `step` names a member of `steps`. The block is optional, per step and as a whole. Per step the two lists are disjoint: the same material in both is a build ERROR (§20.3), like a conflicting authored weight.
+`material_roles` is where the route authors contextual roles (§11.1): per-step primary/supporting materials, written by import when the plan implies them (§12.2 step 6) and hand-editable like all curated content. Each `step` names a member of `steps`. The block is optional, per step and as a whole. Per step the two lists are disjoint: the same material in both is a build ERROR (§20.3).
 
 SuggestedRoute states:
 
@@ -229,10 +229,9 @@ core_concepts:
 ---
 ```
 
-A direction is not a route.
-It is a compass.
+A direction is not a route; it is a compass.
 
-`stable_while` (optional) is the direction's falsifiable validity condition: the assumptions under which the direction remains a direction. It is the documented reason a hand edit would flip `status: active` (#95). Like the §9.11 check body it is prose for the user, never evaluated. No build derives a validity boolean from it, and no clock decays it (§14.7 runs over regions and materials, not directions). It informs frontier wording only through the user's own reading; it never qualifies an item (§15.2).
+`stable_while` (optional) is the direction's falsifiable validity condition: the assumptions under which the direction remains a direction, the documented reason a hand edit would flip `status: active` (#95). Prose for the user, never evaluated: no build derives a validity boolean from it, no clock decays it (§14.7 runs over regions and materials, not directions), and it reaches frontier wording only through the user's own reading, never qualifying an item (§15.2).
 
 ---
 
@@ -359,7 +358,7 @@ stale
 
 No `done`.
 
-A question is born `open`. The creation record, one line appended to `state/questions.jsonl` (§8), never mutates. Status transitions are review-gated like the §14.6 dimensions: a StateDecision with `dimension: status` (§9.13), citing the evidence that makes the transition true, i.e. the artifact or encounter that resolved or clarified it. `stale` is a judgment too, citing the user's own note (nothing declines automatically, §31.5). The §20 fold derives current status: last confirmed decision, else `open`. Any transition can be proposed, `resolved → open` included. Reopening is movement, not failure (§4).
+A question is born `open`. The creation record, one line appended to `state/questions.jsonl` (§8), never mutates. Status transitions are review-gated like the §14.6 dimensions: a StateDecision with `dimension: status` (§9.13), citing the artifact or encounter that made the transition true: the generic §9.12 evidence set narrows to those two kinds for this dimension. `stale` is a judgment too, citing the user's own note (§31.5: nothing declines automatically). The §20 fold derives current status: last confirmed decision, else `open`. Any transition can be proposed, `resolved → open` included; reopening is movement, not failure (§4).
 
 ---
 
@@ -399,19 +398,7 @@ several → a synthesis step (comparison note, design doc) that grew
           out of each listed origin.
 ```
 
-Landing example:
-
-```yaml
-id: trail-segment:2026-06-07-002
-type: trail_segment
-date: 2026-06-07
-direction: direction:backend-distributed-systems-python
-to: concept:kafka
-via:
-  - artifact:note-kafka-conference-talk
-reason: >
-  Conference talk pulled attention to Kafka; no prior context.
-```
+A landing is the same record with only `from` absent; `reason` stays required (§10.4) and names what pulled attention.
 
 Rule:
 
@@ -485,13 +472,7 @@ weak   ← one authored hop from any strong/medium node over
 
 Combining is ordinal max: no counting, no numeric scores (§4, §19). `sources` is the explicit deduplicated set of contributing records. A weak node inherits the record whose halo reached it, so the claim stays citable (§25.3). Influence `freshness` is §14.7 over the newest source date against the build as-of (#34). The mapping is a v1 floor to tune after real trail data; any change bumps through the Decision Log.
 
-Influence does not mean mastery.
-
-It means:
-
-```text
-“This area has been affected by real user movement.”
-```
+Influence never means mastery; it means real user movement affected the area.
 
 ---
 
