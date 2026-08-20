@@ -140,7 +140,7 @@ probe:rabbitmq-dlq
 probe:redis-rate-limit
 ```
 
-All extracted understanding state starts as `unseen` / `unknown` / `vague`; understanding is never imported (see §5.3; §12.2 step 10).
+Understanding is never imported (§5.3; §12.2 step 10 states the starting state).
 
 The plan describes these ideas around a single integrated Python lab (`distributed-systems-python-lab` repo) using FastAPI, Redis, Kafka, RabbitMQ, gRPC, pytest/Testcontainers, and E2E job-flow tests.
 
