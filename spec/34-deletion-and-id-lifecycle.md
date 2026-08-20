@@ -34,14 +34,14 @@ owner-declared  — anything the owner decides must be unrecoverable,
                   file.
 ```
 
-Urgency: accidental entry → immediate; planned retirement of a
-legitimately-lived record → the owner's schedule; several redactions
-may batch into one rewrite (one §34.3 note) — a rewrite invalidates
-every copy and is expensive.
+Urgency: an accidental entry is purged immediately; a planned
+retirement of a legitimately-lived record runs on the owner's
+schedule. Several redactions may batch into one rewrite (one §34.3
+note); a rewrite invalidates every copy and is expensive.
 
 ## §34.2 Purge Closure
 
-The rewrite set is computed, never guessed — provenance closure, the
+The rewrite set is computed, never guessed: provenance closure, the
 same travel rule the §33.4 default exclusion uses:
 
 ```text
@@ -75,11 +75,11 @@ survives deliberately: receipts (§33.2, every lane's) — provenance
 ```
 
 The closure is reviewed before the rewrite runs: the runbook presents
-the computed set and the owner adjusts it by declaration — extending:
+the computed set and the owner adjusts it by declaration. Extending:
 a surviving row whose free text (a segment's `reason`, a question's
 text) paraphrases the purged content, or a class-carrying survivor
 whose retained association is itself telling (pulled in whole, never
-edited); rescuing: a question that outgrew its purged source, or a
+edited). Rescuing: a question that outgrew its purged source, or a
 since-curated candidate stub (§33.3), is re-authored as the user's
 own instead of dying with the source.
 
@@ -87,14 +87,14 @@ Derived outputs are in no rewrite set (§25.6, §31.8); the mandatory
 post-purge step is a rebuild.
 
 No new tolerance mechanism: no tombstone kind, no acknowledged-
-dangles registry — dangling refs stay dangling, §20 tolerates them
-(grouped in the build report apart from curated-link errors), the
-purge note explains them to a later reader. Revisit trigger: dangle
-noise actually hurting on a live instance.
+dangles registry. Dangling refs stay dangling; §20 tolerates them
+(grouped in the build report apart from curated-link errors), and
+the purge note explains them to a later reader. Revisit trigger:
+dangle noise actually hurting on a live instance.
 
 ## §34.3 Purge Notes
 
-`state/purges.jsonl` (§8) — one append-only row per purge event,
+`state/purges.jsonl` (§8): one append-only row per purge event,
 content-free by construction:
 
 ```json
@@ -103,34 +103,35 @@ content-free by construction:
 ```
 
 `classes` lists the §32.6 classes involved, omitted for a purely
-owner-declared purge. `gen` is a monotone per-instance counter —
-content-free by construction, it names the operation: two same-day
+owner-declared purge. `gen` is a monotone per-instance counter.
+Content-free by construction, it names the operation: two same-day
 purges stay distinguishable, and the composing shell's completion
 marks (the manifest and delivery-registry ack columns on its
 deletion page) cite it, so an interrupted revocation walk resumes
-against exactly this purge. Nothing else — no ids, no counts, no
-reasons: the note must survive every future rewrite untouched. Like
-receipts it is provenance, not evidence: §9.12 is untouched,
-the §20 fold never reads it. Roles: explains that era's dangling
-refs to a later reader; anchors export invalidation — every
-registered delivery either carries this `gen` as its supersession
-ack or is walked (the delivery registry lives on the composing
-shell's deletion page). Per-event notes never enter this engine's
-Decision Log: purge metadata stays instance-side — the standing
-carve-out entry records the operation, never the events.
+against exactly this purge. Nothing else goes in: no ids, no
+counts, no reasons. The note must survive every future rewrite
+untouched. Like receipts it is provenance, not evidence: §9.12 is
+untouched, and the §20 fold never reads it. Its roles: it explains
+that era's dangling refs to a later reader, and it anchors export
+invalidation, since every registered delivery either carries this
+`gen` as its supersession ack or is walked (the delivery registry
+lives on the composing shell's deletion page). Per-event notes
+never enter this engine's Decision Log: purge metadata stays
+instance-side. The standing carve-out entry records the operation,
+never the events.
 
 What survives still correlates, and the correlation is named, not
 denied: a dangling date-serial id (type/date/ordinal), this note's
 date and classes, and the §20 build report's grouped dangles
 together bound "a classed record existed that day, at least N of
-them". By design — none of the three is exported, so the surface is
-instance-side only; the deletion page's residual inventory carries
-it (§34.6).
+them". By design none of the three is exported, so this reading
+exists instance-side only; the deletion page's residual inventory
+carries it (§34.6).
 
 ## §34.4 Rename and Merge: `formerly`
 
 A curated node's id changes by retiring the old id into the
-survivor's `formerly:` list — rename and merge are one operation
+survivor's `formerly:` list. Rename and merge are one operation
 (identity continuation, n→1); which one it was is the git story:
 
 ```yaml
@@ -175,7 +176,7 @@ Scope: curated nodes only. Journal record ids (artifact:,
 
 ## §34.5 Split Is Curation
 
-There is no 1→n redirect — deliberately (§5.3). A split is ordinary
+There is no 1→n redirect, deliberately (§5.3). A split is ordinary
 curation:
 
 ```text
@@ -192,8 +193,8 @@ re-attributing old evidence to a finer node is the owner's own
 ## §34.6 Id Hygiene and Retirement
 
 Refs to purged records deliberately survive (§34.2), so the id is
-what remains — it says nothing beyond type, date, and ordinal
-(what remains still correlates: §34.3 names the surface):
+what remains; it must say nothing beyond type, date, and ordinal
+(what remains still correlates: §34.3 names it):
 
 ```text
 §32.6-classed records and classed curated files take

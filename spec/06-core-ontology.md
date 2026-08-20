@@ -21,11 +21,11 @@ State          = current state on the field's scales (§14.1–§14.4; §32.2–
 Frontier       = nearby territory naturally suggested by current state
 ```
 
-This glossary is the canonical kind list. A domain design pass (§25.5) that adds kinds extends it, the §10.1/§10.2 registries, the §10.1 field column, and the §10.4 node contract in the same commit — an unregistered kind leaves §20 step 11 and §19 nothing to validate against.
+This glossary is the canonical kind list. A domain design pass (§25.5) that adds kinds extends it, the §10.1/§10.2 registries, the §10.1 field column, and the §10.4 node contract in the same commit; an unregistered kind leaves §20 step 11 and §19 nothing to validate against.
 
 ## §6.1 Avoid-Synonyms and Flagged Ambiguities
 
-A glossary term erodes through near-synonyms. A kind carries an avoid-line only where drift has actually been observed — in this repository or its direct ancestors (#96) — as exact tokens, each banned **only as a stand-in for the kind** in spec text and curated prose: a token's other technical senses stay legal, and known nearby collisions are named on the line; never an exhaustive thesaurus. §19 does not scan these lines, and any per-token scan integration is separate opt-in work (#96).
+A glossary term erodes through near-synonyms. A kind carries an avoid-line only where drift has actually been observed, in this repository or its direct ancestors (#96). The line holds exact tokens, each banned **only as a stand-in for the kind** in spec text and curated prose: a token's other technical senses stay legal, and known nearby collisions are named on the line. It is never an exhaustive thesaurus. §19 does not scan these lines, and any per-token scan integration is separate opt-in work (#96).
 
 ```text
 Material   — avoid: resource, reference, reading — as stand-ins
@@ -39,7 +39,7 @@ Encounter  — avoid: pass, session, study — as stand-ins for
              as activity words are other senses, untouched.)
 ```
 
-Flagged ambiguities — words that once meant several things; the term and its resolution live here as a pointer, the argument lives in the Decision Log (a copy is a future fork):
+Flagged ambiguities: words that once meant several things. The term and its resolution live here as a pointer; the argument lives in the Decision Log (a copy is a future fork):
 
 ```text
 source — in the ancestor lineage meant Material, record origin,

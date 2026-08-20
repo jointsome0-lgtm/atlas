@@ -1,10 +1,10 @@
 ## §1. Executive Summary
 
-**Atlas** is a local-first system for building a living knowledge graph of a technical field and the user’s movement through it.
+**Atlas** is a local-first system for building a living knowledge graph of a technical field and the user's movement through it.
 
 It imports external learning plans as **suggested routes**, extracts **concepts**, **materials**, **material parts**, **practice probes**, and **directions**, but does not treat any route as mandatory.
 
-The system then observes the user’s actual artifacts — notes, tests, code, diagrams, explanations, reviews — and uses them to update:
+The system then observes the user's actual artifacts (notes, tests, code, diagrams, explanations, reviews) and uses them to update:
 
 ```text
 1. FieldGraph        — what exists in the domain
@@ -24,6 +24,8 @@ Influence field is understanding becoming visible.
 ```
 
 Atlas must never become a TODO system, productivity ledger, sprint board, or guilt machine.
+
+> **Atlas does not tell the user what they failed to complete. Atlas shows where the user is, how they got there, and what nearby parts of the field are now visible.**
 
 ---
 

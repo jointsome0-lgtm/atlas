@@ -1,8 +1,8 @@
 ## §32. Body Atlas — Second Domain Instantiation
 
-The body domain instantiates the §25.5 domain rule: same core, its own field semantics, scales, and capture — nothing here forks the core.
+The body domain instantiates the §25.5 domain rule: same core, its own field semantics, scales, and capture; nothing here forks the core.
 
-One derived graph serves both domains. The body model is a viewer projection, not a data entity: the silhouette is curated content — a `zone → figure region` mapping holding no state, authored as `figure_region` in each zone's frontmatter (§8: one mapping, no second registry of zones) and embedded by the builder into the emitted graph (§20 step 12, §10), so the viewer's single input stays single (§16.4); the figure artwork itself is a viewer asset, like its stylesheet. Indicators (influence, freshness, condition) are rendered onto the regions at view time from the fold output (§31.8). A domain brings its own field geometry: knowledge has none (force-directed layout), the body is anatomical.
+One derived graph serves both domains. The body model is a viewer projection, not a data entity. The silhouette is curated content: a `zone → figure region` mapping holding no state, authored as `figure_region` in each zone's frontmatter (§8: one mapping, no second registry of zones) and embedded by the builder into the emitted graph (§20 step 12, §10), so the viewer's single input stays single (§16.4). The figure artwork itself is a viewer asset, like its stylesheet. Indicators (influence, freshness, condition) are rendered onto the regions at view time from the fold output (§31.8). A domain brings its own field geometry: knowledge has none (force-directed layout), the body is anatomical.
 
 ## §32.1 Field: Zones and Patterns
 
@@ -19,7 +19,7 @@ pattern = movement skill (freestyle stroke, freestyle catch,
 
 Patterns are concept-kind nodes, not materials: technique is understanding of a movement, and material state is contact only (§14.8). The pattern→zone link is the same species as `concept_edges` (§9.3): an authored edge with `role: loads` and a gated weight (§14.9), authored in the pattern's frontmatter as a part authors its `concept_edges`.
 
-Materials stay materials — programs, technique videos, methodology articles. A program part maps to patterns like a chapter maps to concepts:
+Materials stay materials: programs, technique videos, methodology articles. A program part maps to patterns like a chapter maps to concepts:
 
 ```text
 material:program-x/squat-block ──concept_edges──▶ pattern:squat
@@ -41,7 +41,7 @@ zone:
   freshness: fresh | aging | stale                # derived from last load (§14.7)
 ```
 
-Contact moves by the §14.5 machinery over the §9.6 strengths, mapped structurally — by what the evidence did to the zone, not what it says:
+Contact moves by the §14.5 machinery over the §9.6 strengths, mapped structurally, by what the evidence did to the zone, not what it says:
 
 ```text
 touched = in a session artifact's touches, or behind a weaker
@@ -53,17 +53,17 @@ loaded  = named in the artifact's supports_state_updates
 probed  = an artifact answering a probe on the zone (§9.11)
 ```
 
-Encounters and study artifacts never move contact: reading about a zone is not loading it — they feed material state (§14.8) and pattern study (§32.3).
+Encounters and study artifacts never move contact: reading about a zone is not loading it. They feed material state (§14.8) and pattern study (§32.3).
 
-**No decision means no knowledge (§14.6).** With no confirmed decision the gated zone dimensions fold to `unknown` — capacities and `condition` alike. `fine` is a positive medical claim ("nothing is wrong here"), exactly as gated as `chronic`: it enters only through a confirmed decision citing measurement evidence, so an implicit `fine` is unrepresentable and an unexamined zone never renders as a healthy one (#38).
+**No decision means no knowledge (§14.6).** With no confirmed decision the gated zone dimensions fold to `unknown`, capacities and `condition` alike. `fine` is a positive medical claim ("nothing is wrong here"), exactly as gated as `chronic`: it enters only through a confirmed decision citing measurement evidence, so an implicit `fine` is unrepresentable and an unexamined zone never renders as a healthy one (#38).
 
 **Down through a probe, never through a curve.** Freshness shows the fact of no contact — always, honestly. Capacity and condition move down only through the gate, on measurement evidence: a probe artifact, a diary line, a medical record. The honest route down is the chain: staleness (visible fact) → probe invitation (frontier) → measurement (artifact) → evidenced proposal → user decision.
 
-**`chronic` lives in shadow.** A permanent condition (old injury, standing precaution) renders as a subtle shading on the silhouette, visible on focus — never an alarm badge or a permanent red flag (§25.4). But it is always on the table at suggestion time (§32.5). Care notes ("overhead pressing — cautious") are curated markdown in the zone file, like §9.1 concept-file sections — no schema. Leaving `chronic` (or `restricted`) is proposed only on medical evidence, through the gate.
+**`chronic` lives in shadow.** A permanent condition (old injury, standing precaution) renders as a subtle shading on the silhouette, visible on focus, never an alarm badge or a permanent red flag (§25.4). But it is always on the table at suggestion time (§32.5). Care notes ("overhead pressing — cautious") are curated markdown in the zone file, like §9.1 concept-file sections; no schema. Leaving `chronic` (or `restricted`) is proposed only on medical evidence, through the gate.
 
 ## §32.3 Pattern State
 
-Technique is understanding of a movement: patterns take the knowledge scales (§14.2–§14.4) verbatim — confidence (executes reliably across contexts: pool vs open water, fresh vs fatigued), clarity (model of the movement; `disputed` = technique schools conflict), coverage (facets: breathing on both sides, paces, turns), freshness. Only the exposure ladder is domain-worded:
+Technique is understanding of a movement: patterns take the knowledge scales (§14.2–§14.4) verbatim. Confidence is executing reliably across contexts (pool vs open water, fresh vs fatigued); clarity is the model of the movement (`disputed` = technique schools conflict); coverage is facets (breathing on both sides, paces, turns); freshness is unchanged. Only the exposure ladder is domain-worded:
 
 ```text
 unseen   = in the graph, never met
@@ -74,9 +74,9 @@ drilled  = deliberately practiced it
 reviewed = technique survived external review (coach, video analysis)
 ```
 
-`tried` ranks above `studied`: doing is deeper contact than reading — a motor skill is not a text. The ladder is monotone via max; §14.5 machinery unchanged. Years of swimming with no technique work reads as `tried` + `clarity: vague` — much done, little understood.
+`tried` ranks above `studied`: doing is deeper contact than reading; a motor skill is not a text. The ladder is monotone via max; §14.5 machinery unchanged. Years of swimming with no technique work reads as `tried` + `clarity: vague`: much done, little understood.
 
-The §9.6 strengths map to the ladder — the mapping lives here, beside it (§14.5):
+The §9.6 strengths map to the ladder; the mapping lives here, beside it (§14.5):
 
 ```text
 noticed                       → touched
@@ -87,7 +87,7 @@ drilled                       → drilled
 performed|drilled + reviewed  → reviewed
 ```
 
-Paper work is study for a motor skill: a program note applying squat theory moves `studied`, never `tried` — only `performed`/`drilled` session evidence (§32.4) means doing. `reviewed` requires the performance reviewed (coach's eye, video analysis), not an explanation of it. Encounters raise motor exposure to at most `studied` — §14.5's read-cap, domain-worded.
+Paper work is study for a motor skill: a program note applying squat theory moves `studied`, never `tried`; only `performed`/`drilled` session evidence (§32.4) means doing. `reviewed` requires the performance reviewed (coach's eye, video analysis), not an explanation of it. Encounters raise motor exposure to at most `studied`: §14.5's read-cap, domain-worded.
 
 ## §32.4 Capture: the Diary Is the Only Evidence Source
 
@@ -144,13 +144,13 @@ imbalance                  — pressing grows while its antagonist
                              sits in shadow
 ```
 
-Imbalance speaks plainly under the honest-lever rule (§15.3): a real structural edge, the user's own declared direction or question as the anchor, cited evidence — "if the goal is pressing: the back is the real lever; no rowing in 6 weeks (diary)". Deficit against population norms stays forbidden.
+Imbalance speaks plainly under the honest-lever rule (§15.3): a real structural edge, the user's own declared direction or question as the anchor, cited evidence, e.g. "if the goal is pressing: the back is the real lever; no rowing in 6 weeks (diary)". Deficit against population norms stays forbidden.
 
-**Suggestion-time constraints** (a per-domain surface, §25.5): route import and frontier generation read zone `condition`. A step loading a `chronic`/`restricted` zone is neither silently dropped nor silently passed — it surfaces in the import report flagged "loads a chronic zone — adapt?", and the user decides (§31.3 discipline).
+**Suggestion-time constraints** (a per-domain rule, §25.5): route import and frontier generation read zone `condition`. A step loading a `chronic`/`restricted` zone is neither silently dropped nor silently passed: it surfaces in the import report flagged "loads a chronic zone — adapt?", and the user decides (§31.3 discipline).
 
 ## §32.6 Medical Layer
 
-Medicine decomposes onto the existing ontology — no new subsystem, no second graph:
+Medicine decomposes onto the existing ontology, with no new subsystem and no second graph:
 
 ```text
 reference knowledge (anatomy maps, contraindication rules)
@@ -166,12 +166,12 @@ individual development map
 
 Medical evidence ages per §14.7; a frontier re-probe invitation stays adjacency wording, never obligation (§31.6).
 
-**Atlas characterizes; it never diagnoses or prescribes.** Derived condition is a characterization of recorded evidence, never a diagnosis; suggestions stay propose-and-decide (§32.5); moving any class boundary — declassification included — is the user's explicit act, never an inference (§33.4).
+**Atlas characterizes; it never diagnoses or prescribes.** Derived condition is a characterization of recorded evidence, never a diagnosis; suggestions stay propose-and-decide (§32.5); moving any class boundary, declassification included, is the user's explicit act, never an inference (§33.4).
 
-**Sensitivity class — taint is union by provenance.** The class is per-row, never per-journal: §33.2 persists it onto every journal row derived from a classed record, §33.3 onto imported routes and stubs, §34.6 shapes the ids. From there it travels to everything derived from a classed row: a derived value is classed iff any record in its provenance is classed — fold output (a `condition` resting on a medical row), influence sources, frontier items citing classed evidence, graph entries, snapshot sections. This is the rule's one statement (#38): §33.4's default exclusion is its export instance, §20 step 12 emits under it, §10.4 defers to it. The taint roots are exactly the persisted classes — classed journal rows (§33.2) and classed curated files (§33.3); curation is the owner's own voice, and re-authoring content as one's own deliberately removes the class (§33.3 adoption) — so a care note in a zone file (§32.2) is unclassed by construction, and content that must stay classed stays in classed records, never re-authored into curation.
+**Sensitivity class: taint is union by provenance.** The class is per-row, never per-journal: §33.2 persists it onto every journal row derived from a classed record, §33.3 onto imported routes and stubs, §34.6 shapes the ids. From there it travels to everything derived from a classed row: a derived value is classed iff any record in its provenance is classed. That covers fold output (a `condition` resting on a medical row), influence sources, frontier items citing classed evidence, graph entries, and snapshot sections. This is the rule's one statement (#38): §33.4's default exclusion is its export instance, §20 step 12 emits under it, §10.4 defers to it. The taint roots are exactly the persisted classes: classed journal rows (§33.2) and classed curated files (§33.3). Curation is the owner's own voice, and re-authoring content as one's own deliberately removes the class (§33.3 adoption). So a care note in a zone file (§32.2) is unclassed by construction, and content that must stay classed stays in classed records, never re-authored into curation.
 
-The class keeps classed content out of default agent context (§24, §31.7 discipline): a mixed journal or a derived file containing classed rows or values inherits the exclusion whole — it enters only a session the user explicitly started for it. An agent-facing build is therefore produced by the builder's explicit redaction flag (§20 step 12), never by hand-editing output; every redacted emission — the snapshot included — discloses per-section withheld counts: counts only, never ids (§33.4).
+The class keeps classed content out of default agent context (§24, §31.7 discipline): a mixed journal or a derived file containing classed rows or values inherits the exclusion whole. It enters only a session the user explicitly started for it. An agent-facing build is therefore produced by the builder's explicit redaction flag (§20 step 12), never by hand-editing output. Every redacted emission, the snapshot included, discloses per-section withheld counts: counts only, never ids (§33.4).
 
-The class also sets the deletion default — a classed record is purged when deleted (§34.1) — and the id convention: classed records take non-descriptive date-serial ids at creation (§34.6). Today the layer is light — diary lines and thrown-in PDFs; individual development maps arrive when the layer matures, through this same design, not a new one.
+The class also sets the deletion default (a classed record is purged when deleted, §34.1) and the id convention: classed records take non-descriptive date-serial ids at creation (§34.6). Today the layer is light, diary lines and thrown-in PDFs; individual development maps arrive when the layer matures, through this same design, not a new one.
 
 ---

@@ -33,7 +33,7 @@ notes: []
 
 ## §21.3 Mapping Decisions
 
-The review step's identity questions — "is candidate X the existing node Y?" — are remembered in a dedicated journal, `state/mapping-decisions.jsonl` (§8), mirroring the §9.13 shape:
+The review step's identity questions ("is candidate X the existing node Y?") are remembered in a dedicated journal, `state/mapping-decisions.jsonl` (§8), mirroring the §9.13 shape:
 
 ```json
 {"date": "2026-07-15", "target": "candidate:redis -> concept:redis", "evidence": ["import:sha256:ab12...", "report:plan:learn-basics-swe"], "decision": "confirmed"}

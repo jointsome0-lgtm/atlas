@@ -17,11 +17,11 @@ Generated graph file:
 }
 ```
 
-`projections` is curated viewer-projection content the builder embeds (zone → figure region, §32; §20 step 12) so the viewer's single input stays single (§16.4) — a mapping, never state (§31.8).
+`projections` is curated viewer-projection content the builder embeds (zone → figure region, §32; §20 step 12) so the viewer's single input stays single (§16.4). It is a mapping, never state (§31.8).
 
-`format` + `version` are the §25.7 emitted-file envelope: `format` names the schema (`atlas-graph`), `version` is the graph-file contract version — an integer the viewer checks before rendering (an unsupported version fails visibly, #44).
+`format` + `version` are the §25.7 emitted-file envelope: `format` names the schema (`atlas-graph`), `version` is the graph-file contract version, an integer the viewer checks before rendering (an unsupported version fails visibly, #44).
 
-`generated_at` is the fold's as-of date rendered at UTC midnight (§20.1) — the same shape as the snapshot's (§33.4); it is absent in a build with no dated input, and a consumer must tolerate its absence.
+`generated_at` is the fold's as-of date rendered at UTC midnight (§20.1), the same shape as the snapshot's (§33.4). It is absent in a build with no dated input, and a consumer must tolerate its absence.
 
 ## §10.1 Node Types
 
@@ -42,9 +42,9 @@ zone
 pattern
 ```
 
-Node ids follow `prefix:kebab-case-slug`, where the prefix is the hyphenated type name (`suggested-route:…`, `trail-segment:…`) or its short form (`part:material-slug/part-slug` for material_part). Underscores appear in type names only, never in ids. Id lifecycle — retirement into `formerly:` (§34.4), the reuse ban, and non-descriptive date-serial ids for §32.6-classed records (§34.6) — is §34's.
+Node ids follow `prefix:kebab-case-slug`, where the prefix is the hyphenated type name (`suggested-route:…`, `trail-segment:…`) or its short form (`part:material-slug/part-slug` for material_part). Underscores appear in type names only, never in ids. Id lifecycle is §34's: retirement into `formerly:` (§34.4), the reuse ban, and non-descriptive date-serial ids for §32.6-classed records (§34.6).
 
-`zone` and `pattern` are the body field's region kinds (§32.1). The list is canonical and closed — §19 scans node types as a closed set, §20 step 11 validates against it; the extension rule is §6's: a domain pass registers its kinds here in the same commit.
+`zone` and `pattern` are the body field's region kinds (§32.1). The list is canonical and closed: §19 scans node types as a closed set, and §20 step 11 validates against it. The extension rule is §6's: a domain pass registers its kinds here in the same commit.
 
 The registry carries the field column for the region kinds (#33):
 
@@ -191,7 +191,7 @@ optional annotation.
 
 ## §10.4 Per-kind Node Contract
 
-One closed table (extended under §6's rule: a domain pass edits it in the same commit) defines, per node kind, how the builder derives `fields` — the node's field membership — and which curated fields are embedded in the node payload (#32, #33). §20 step 12 emits it; the §16 views render from it and nothing else.
+One closed table (extended under §6's rule: a domain pass edits it in the same commit) defines, per node kind, how the builder derives `fields`, the node's field membership, and which curated fields are embedded in the node payload (#32, #33). §20 step 12 emits it; the §16 views render from it and nothing else.
 
 Membership is a set: `fields` = the union of the fields (§10.1 column) of the region nodes reachable through the kind's listed refs. Chains bottom out at region kinds, so resolution is acyclic by construction; a cross-field material or route is a member of each field it touches.
 

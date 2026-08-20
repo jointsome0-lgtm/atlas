@@ -4,7 +4,7 @@ The **Frontier** is not a TODO list.
 
 It is the visible edge of the current influence field.
 
-Pressure-freedom is a design law, not per-item data: no schema carries a `pressure` field — the boundary checker fails on the key itself (§19).
+Pressure-freedom is a design law, not per-item data: no schema carries a `pressure` field, and the boundary checker fails on the key itself (§19).
 
 ## §15.1 Inputs
 
@@ -19,7 +19,7 @@ stale nodes
 weak confidence nodes
 ```
 
-Current position is derived, never stored: the `to` concepts of the most recent trail segments (per direction, recency-weighted). A direction may have several simultaneous heads (forks, star-shaped days; a landing counts like any segment) — no head is "main"; recency, not topology, fades old ones. Anything derivable from the trail must not become a second source of truth beside it.
+Current position is derived, never stored: the `to` concepts of the most recent trail segments (per direction, recency-weighted). A direction may have several simultaneous heads (forks, star-shaped days; a landing counts like any segment). No head is "main"; recency, not topology, fades old ones. Anything derivable from the trail must not become a second source of truth beside it.
 
 ## §15.2 Output
 
@@ -47,7 +47,7 @@ frontier:
       - artifact:create-job-endpoint
 ```
 
-An item carries no synthetic id: its identity is the (kind, target) pair, and the array is emitted sorted by target id (§15.4). `evidence` is mandatory — the records that make the item true (§15.3).
+An item carries no synthetic id: its identity is the (kind, target) pair, and the array is emitted sorted by target id (§15.4). `evidence` is mandatory: the records that make the item true (§15.3).
 
 Forbidden frontier wording:
 
@@ -74,9 +74,9 @@ Dependency wording is governed by §15.3.
 
 ## §15.3 The Honest-Lever Rule
 
-The frontier is honest, not soft: softening a true dependency into a euphemism is manipulation of the flattering kind, and manufacturing urgency is manipulation of the pressuring kind — both are banned as mechanisms, whatever the vocabulary (§19).
+The frontier is honest, not soft: softening a true dependency into a euphemism is manipulation of the flattering kind, and manufacturing urgency is manipulation of the pressuring kind. Both are banned as mechanisms, whatever the vocabulary (§19).
 
-A dependency suggestion — "to move X, Y is the real lever" — is allowed when all three hold:
+A dependency suggestion ("to move X, Y is the real lever") is allowed when all three hold:
 
 ```text
 1. the edge is real: a structural link (loads, prerequisite_of,
@@ -110,7 +110,7 @@ stale_concept    — nodes with influence ≠ none whose influence
                    real movement once, unvisited long since
 ```
 
-The §32.5 body kinds (stale_zone, stale_pattern, …) run through this same machinery once the body field has data; future_consequence and the remaining §32.5 kinds have no deterministic v1 formula, and the other §15.1 inputs (routes, material gaps, weak-confidence nodes) stay inputs for post-v1 kinds — each joins only via a Decision Log entry.
+The §32.5 body kinds (stale_zone, stale_pattern, …) run through this same machinery once the body field has data; future_consequence and the remaining §32.5 kinds have no deterministic v1 formula, and the other §15.1 inputs (routes, material gaps, weak-confidence nodes) stay inputs for post-v1 kinds. Each joins only via a Decision Log entry.
 
 Selection:
 

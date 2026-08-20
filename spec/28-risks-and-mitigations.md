@@ -1,56 +1,11 @@
 ## §28. Risks and Mitigations
 
-## §28.1 Risk: Atlas Becomes a Task Manager
+Each risk keeps its number: living §§ and the Decision Log cite them.
 
-Mitigation:
-
-```text
-ban todo/done states
-use optional suggested routes
-use frontier language
-boundary checker
-state-auditor (red-team duty, §17.1)
-```
-
-## §28.2 Risk: Agents Overclaim Understanding
-
-Mitigation:
-
-```text
-state updates require artifacts
-confidence upgrades require explanation/review
-state-auditor agent checks claims
-```
-
-## §28.3 Risk: Graph Becomes Unmaintainable
-
-Mitigation:
-
-```text
-create MaterialPart only when needed
-allow rough/stub concepts
-avoid exhaustive linking
-generated views from simple files
-```
-
-## §28.4 Risk: Suggested Routes Dominate Personal Trail
-
-Mitigation:
-
-```text
-different visual layers
-suggested routes hideable
-personal trail rendered as primary memory
-```
-
-## §28.5 Risk: Primary/Supporting Becomes Global Again
-
-Mitigation:
-
-```text
-store roles only on contextual edges
-validate no global primary/supporting on material node
-```
+- **§28.1 Atlas becomes a task manager.** Banned states (§4), frontier wording (§15), the boundary checker (§19), the state-auditor's red-team duty (§17.1).
+- **§28.2 Agents overclaim understanding.** State updates require artifacts; confidence upgrades require explanation and review (§14); the state-auditor checks claims.
+- **§28.3 Complexity without need.** The graph and the engine grow only when something real asks: rough and stub concepts are fine, exhaustive linking is not, and no format, type, or abstraction lands before a real adapter, domain, or case asks for it.
+- **§28.4 Suggested routes dominate the personal trail.** Separate visual layers; routes are hideable; the trail renders as primary memory (§16).
+- **§28.5 Primary/supporting becomes global again.** Roles live only on contextual edges (§11); the validator rejects a global role on a material node.
 
 ---
-

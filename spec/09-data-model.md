@@ -26,9 +26,9 @@ concept_edges:
 ---
 ```
 
-Concept files carry identity, links, and content only: understanding state is derived at build time from the `state/` journals (§8, §20) and moves only per §14; material roles live on contextual edges only (§11). `aliases` is search vocabulary; a retired id lives in `formerly:` (§34.4), never in `aliases`.
+A concept file carries identity, links, and content only. Understanding state is derived at build time from the `state/` journals (§8, §20) and moves only per §14. Material roles live on contextual edges only (§11). `aliases` is search vocabulary; a retired id lives in `formerly:` (§34.4), never in `aliases`.
 
-Concepts are the one authored edge species' third author (#31): the same `concept_edges:` block parts (§9.3) and patterns (§32.1) carry. Roles legal from a concept source: `related_to`, `prerequisite_of`, `extends`, `contradicts`, `alternative_to` (§10.2 matrix) — the structural concept→concept edges the honest-lever rule draws on (§15.3; `alternative_to` is deliberately not a lever type). `alternative_to` names substitutable approaches — alternatives don't disagree, so `contradicts` is not its substitute (#94); it is symmetric like `related_to` (§20.3) and may carry `alternative_in:` — the concept-kind ids the substitution holds for — as optional annotation (§10.3). `related_concepts` stays as sugar for `role: related_to` with no weight; an authored `weight` is the §14.9 hypothesis, gated like every other.
+Concepts are the third author of the one authored edge species (#31): the same `concept_edges:` block that parts (§9.3) and patterns (§32.1) carry. Roles legal from a concept source: `related_to`, `prerequisite_of`, `extends`, `contradicts`, `alternative_to` (§10.2 matrix). These structural concept→concept edges are what the honest-lever rule draws on (§15.3); `alternative_to` is deliberately not a lever type. `alternative_to` names substitutable approaches. Alternatives don't disagree, so `contradicts` is not its substitute (#94). It is symmetric like `related_to` (§20.3) and may carry `alternative_in:`, the concept-kind ids the substitution holds for, as an optional annotation (§10.3). `related_concepts` stays as sugar for `role: related_to` with no weight. An authored `weight` is the §14.9 hypothesis, gated like every other.
 
 Body:
 
@@ -91,7 +91,7 @@ parts: []
 ---
 ```
 
-`overall_concepts` is the material's through-line (motif): what the material argues or teaches as a whole — not the union of its parts' concepts. It moves per §14.8. A material may also list standing helpers of the whole via optional `supported_by:` (§9.14).
+`overall_concepts` is the material's through-line (motif): what the material argues or teaches as a whole, not the union of its parts' concepts. It moves per §14.8. A material may also list standing helpers of the whole via optional `supported_by:` (§9.14).
 
 Material kinds:
 
@@ -112,7 +112,7 @@ internal
 
 ## §9.3 MaterialPart
 
-A **MaterialPart** is a named sub-unit of a material — a section, chapter, timestamp range, module, or block. It is created when sub-units map to different concepts than the whole.
+A **MaterialPart** is a named sub-unit of a material: a section, chapter, timestamp range, module, or block. It is created when sub-units map to different concepts than the whole.
 
 Example:
 
@@ -178,7 +178,7 @@ material_roles:
 ---
 ```
 
-`material_roles` is the route's authored contextual-role surface (§11.1): per-step primary/supporting materials, written by import when the plan implies them (§12.2 step 6) and hand-editable like all curated content. Each `step` names a member of `steps`; the block is optional per step and whole; per step the two lists are disjoint — the same material in both is a build ERROR (§20.3), like a conflicting authored weight.
+`material_roles` is where the route authors contextual roles (§11.1): per-step primary/supporting materials, written by import when the plan implies them (§12.2 step 6) and hand-editable like all curated content. Each `step` names a member of `steps`. The block is optional, per step and as a whole. Per step the two lists are disjoint: the same material in both is a build ERROR (§20.3), like a conflicting authored weight.
 
 SuggestedRoute states:
 
@@ -232,7 +232,7 @@ core_concepts:
 A direction is not a route.
 It is a compass.
 
-`stable_while` (optional) is the direction's falsifiable validity condition — the assumptions under which the direction remains a direction; it is the documented reason a hand edit would flip `status: active` (#95). Like the §9.11 check body it is prose for the user, never evaluated: no build derives a validity boolean from it, no clock decays it (§14.7 runs over regions and materials, not directions), and it informs frontier wording only through the user's own reading — it never qualifies an item (§15.2).
+`stable_while` (optional) is the direction's falsifiable validity condition: the assumptions under which the direction remains a direction. It is the documented reason a hand edit would flip `status: active` (#95). Like the §9.11 check body it is prose for the user, never evaluated. No build derives a validity boolean from it, and no clock decays it (§14.7 runs over regions and materials, not directions). It informs frontier wording only through the user's own reading; it never qualifies an item (§15.2).
 
 ---
 
@@ -288,7 +288,7 @@ drilled
 
 `performed` and `drilled` are the body sessions' strengths (§32.3–§32.4): a session line evidences doing, a drill log deliberate practice.
 
-An artifact answering a probe (§9.11) links it via `probe:`. The response is ordinary evidence — no verdict is stored; evaluation exists only as the fate of a proposal (§14.6).
+An artifact answering a probe (§9.11) links it via `probe:`. The response is ordinary evidence. No verdict is stored; evaluation exists only as the fate of a proposal (§14.6).
 
 ---
 
@@ -359,13 +359,13 @@ stale
 
 No `done`.
 
-A question is born `open`; the creation record — one line appended to `state/questions.jsonl` (§8) — never mutates. Status transitions are review-gated like the §14.6 dimensions: a StateDecision with `dimension: status` (§9.13), citing the evidence that makes the transition true — the artifact or encounter that resolved or clarified it; `stale` is a judgment too, citing the user's own note (nothing declines automatically, §31.5). The §20 fold derives current status: last confirmed decision, else `open`. Any transition can be proposed, `resolved → open` included — reopening is movement, not failure (§4).
+A question is born `open`. The creation record, one line appended to `state/questions.jsonl` (§8), never mutates. Status transitions are review-gated like the §14.6 dimensions: a StateDecision with `dimension: status` (§9.13), citing the evidence that makes the transition true, i.e. the artifact or encounter that resolved or clarified it. `stale` is a judgment too, citing the user's own note (nothing declines automatically, §31.5). The §20 fold derives current status: last confirmed decision, else `open`. Any transition can be proposed, `resolved → open` included. Reopening is movement, not failure (§4).
 
 ---
 
 ## §9.9 PersonalTrail and TrailSegment
 
-A **PersonalTrail** is the user’s actual movement.
+A **PersonalTrail** is the user's actual movement.
 
 A **TrailSegment** is one step.
 
@@ -389,7 +389,7 @@ resulting_questions:
   - question:201-vs-202
 ```
 
-`from` is the step's causal origin(s): a list of 0..n concepts, written as a scalar when there is one (the common case). Every listed origin must be evidenced by the segment's own context — co-touched in a `via` artifact as the work the movement grew out of, or the concept whose question the artifact answers (§13.2 step 9):
+`from` is the step's causal origin(s): a list of 0..n concepts, written as a scalar when there is one (the common case). Every listed origin must be evidenced by the segment's own context: co-touched in a `via` artifact as the work the movement grew out of, or the concept whose question the artifact answers (§13.2 step 9):
 
 ```text
 absent  → a landing: movement into a concept with no evidenced origin
@@ -429,7 +429,7 @@ Topology is emergent: chains, forks, and stars are all normal shapes.
 
 ## §9.10 InfluenceField
 
-The **InfluenceField** is computed from artifacts, encounters, questions, and trail segments — at build time, by the graph builder (§20). It exists only inside `graph/atlas-graph.json`; no `state/` file stores it (§31.8: derived is never stored).
+The **InfluenceField** is computed at build time by the graph builder (§20) from artifacts, encounters, questions, and trail segments. It exists only inside `graph/atlas-graph.json`; no `state/` file stores it (§31.8: derived is never stored).
 
 Example (shape inside the derived graph output):
 
@@ -483,7 +483,7 @@ weak   ← one authored hop from any strong/medium node over
          alternative_to | loads — never further (#94)
 ```
 
-Combining is ordinal max — no counting, no numeric scores (§4, §19). `sources` is the explicit deduplicated set of contributing records; a weak node inherits the record whose halo reached it, so the claim stays citable (§25.3). Influence `freshness` is §14.7 over the newest source date against the build as-of (#34). The mapping is a v1 floor to tune after real trail data; any change bumps through the Decision Log.
+Combining is ordinal max: no counting, no numeric scores (§4, §19). `sources` is the explicit deduplicated set of contributing records. A weak node inherits the record whose halo reached it, so the claim stays citable (§25.3). Influence `freshness` is §14.7 over the newest source date against the build as-of (#34). The mapping is a v1 floor to tune after real trail data; any change bumps through the Decision Log.
 
 Influence does not mean mastery.
 
@@ -497,7 +497,7 @@ It means:
 
 ## §9.11 Probe
 
-A **Probe** is a curated practice check that can reveal state (§6): understanding for knowledge, capacity for the body (§32.2). Probes live in `atlas/probes/` (§8): extracted at plan import (§12.2 step 7) or written by hand; lifecycle is editing the file, like all curated content.
+A **Probe** is a curated practice check that can reveal state (§6): understanding for knowledge, capacity for the body (§32.2). Probes live in `atlas/probes/` (§8), extracted at plan import (§12.2 step 7) or written by hand. Lifecycle is editing the file, like all curated content.
 
 Example:
 
@@ -514,9 +514,9 @@ status: active
 ---
 ```
 
-`source_plan` is optional (absent for hand-written probes); `status: active | archived` is lifecycle, as in §9.2. Body (Markdown): the check itself — task, scenario, “explain what happens and why”.
+`source_plan` is optional (absent for hand-written probes); `status: active | archived` is lifecycle, as in §9.2. Body (Markdown): the check itself, e.g. a task, a scenario, "explain what happens and why".
 
-Deliberately absent: `expected:` / answer / rubric fields. A formalized correct answer is a drift vector toward grading (§25.4).
+Deliberately absent: `expected:` / answer / rubric fields. A formalized correct answer pushes the system toward grading (§25.4).
 
 ---
 
@@ -530,9 +530,9 @@ Encounter (§9.7)
 Question  (§9.8)
 ```
 
-This list is canonical: §14.6, §25.3, and §31.5 cite it and must not re-enumerate it — a copy is a future fork (#8, #15).
+This list is canonical: §14.6, §25.3, and §31.5 cite it and must not re-enumerate it. A copy is a future fork (#8, #15).
 
-Not evidence: trail segments (memory of movement, §9.9 — their `via` already points at evidence), plans and routes (§31.3), agent output. An agent review is a mechanism (propose→confirm, §14.6), not a record kind: the user’s review responses are artifacts; the verdict is the fate of the proposal, recorded as a StateDecision (§9.13).
+Not evidence: trail segments (memory of movement, §9.9; their `via` already points at evidence), plans and routes (§31.3), agent output. An agent review is a mechanism (propose→confirm, §14.6), not a record kind. The user's review responses are artifacts; the verdict is the fate of the proposal, recorded as a StateDecision (§9.13).
 
 ---
 
@@ -569,7 +569,7 @@ not a task state (§4).
 
 ## §9.14 SupportRelation
 
-A **SupportRelation** is a standing, directed link between materials or parts: the source deepens understanding of the target — “B helps understand X”. It is authored graph structure, the same species as `concept_edges` (§9.3), not a §11 role (§11.4).
+A **SupportRelation** is a standing, directed link between materials or parts: the source deepens understanding of the target, "B helps understand X". It is authored graph structure, the same species as `concept_edges` (§9.3), not a §11 role (§11.4).
 
 Authored on the receiving side: `supported_by:` on a Material (§9.2) or inside a `parts[]` entry (§9.3). An entry is an id, or a map with an optional note:
 
@@ -612,7 +612,7 @@ as audit (§25.3).
 
 ## §9.15 Plan
 
-A **Plan** is an imported external proposal source — the provenance root of one import lineage (§12). The graph node (§10.1) is built from the import's extracted YAML (§21.2), whose `id`/`title` it mirrors (§12.3):
+A **Plan** is an imported external proposal source: the provenance root of one import lineage (§12). The graph node (§10.1) is built from the import's extracted YAML (§21.2), whose `id`/`title` it mirrors (§12.3):
 
 ```yaml
 id: plan:learn-basics-swe
@@ -620,7 +620,7 @@ type: plan
 title: Backend distributed systems practice in Python
 ```
 
-Storage is the import flow's, not a new surface (§12.2 step 1, §21.2): the node is the lineage, not one file — a changed plan's versions (§12.4) share it.
+Storage stays inside the import flow; nothing new is added (§12.2 step 1, §21.2). The node is the lineage, not one file: a changed plan's versions (§12.4) share it.
 
 Rules:
 

@@ -95,6 +95,6 @@ atlas/
                   # the file names are the implementation's
 ```
 
-ADRs are created when a decision needs one — none are pre-named. Templates (`_template.md`) live inside their entity directory.
+ADRs are created when a decision needs one; none are pre-named. Templates (`_template.md`) live inside their entity directory.
 
 ---
