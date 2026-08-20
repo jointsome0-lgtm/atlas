@@ -1,11 +1,8 @@
 ## §34. Deletion and Id Lifecycle
 
-Instance-side deletion semantics and the life of a stable id: the two
-deletion tiers, what a purge removes (closure), what survives and why,
-and how ids are renamed, merged, and retired. This section owns the
-data-model half; the git/backup mechanics (copies manifest, delivery
-registry, revocation runbook) live on the composing shell's deletion
-page.
+This section owns the data-model half of deletion and id lifecycle;
+the git/backup mechanics (copies manifest, delivery registry,
+revocation runbook) live on the composing shell's deletion page.
 
 ## §34.1 Two Tiers
 
@@ -103,22 +100,19 @@ content-free by construction:
 ```
 
 `classes` lists the §32.6 classes involved, omitted for a purely
-owner-declared purge. `gen` is a monotone per-instance counter.
-Content-free by construction, it names the operation: two same-day
-purges stay distinguishable, and the composing shell's completion
-marks (the manifest and delivery-registry ack columns on its
-deletion page) cite it, so an interrupted revocation walk resumes
-against exactly this purge. Nothing else goes in: no ids, no
-counts, no reasons. The note must survive every future rewrite
-untouched. Like receipts it is provenance, not evidence: §9.12 is
-untouched, and the §20 fold never reads it. Its roles: it explains
-that era's dangling refs to a later reader, and it anchors export
-invalidation, since every registered delivery either carries this
-`gen` as its supersession ack or is walked (the delivery registry
-lives on the composing shell's deletion page). Per-event notes
-never enter this engine's Decision Log: purge metadata stays
-instance-side. The standing carve-out entry records the operation,
-never the events.
+owner-declared purge. `gen` is a monotone per-instance counter
+naming the operation: the composing shell's completion marks (the
+manifest and delivery-registry ack columns on its deletion page)
+cite it, so an interrupted revocation walk resumes against exactly
+this purge. Nothing else goes in: no ids, no counts, no reasons.
+The note must survive every future rewrite untouched. Like receipts
+it is provenance, not evidence: §9.12 is untouched, and the §20
+fold never reads it. It explains that era's dangling refs to a
+later reader, and it anchors export invalidation: every registered
+delivery either carries this `gen` as its supersession ack or is
+walked. Per-event notes never enter this engine's Decision Log,
+purge metadata stays instance-side; the standing carve-out entry
+records the operation, never the events.
 
 What survives still correlates, and the correlation is named, not
 denied: a dangling date-serial id (type/date/ordinal), this note's
