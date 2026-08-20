@@ -9,7 +9,7 @@
 
 ## § Index
 
-Section numbers are stable: issues and the Decision Log cite them as `§7` / `§7.2`. Never renumber. New sections take the next free number or a sub-number; update this index when sections change. Retired numbers are never reused: §22 (2026-07-04, merged into §12.3); §18 (2026-08-20, retired: Codex's review role lives in AGENTS.md); §30 (2026-08-20, retired: its core statement moved into §1).
+Section numbers are stable: issues and the Decision Log cite them as `§7` / `§7.2`. Never renumber. New sections take the next free number or a sub-number; update this index when sections change. Retired numbers are never reused: §22 (2026-07-04, merged into §12.3); §18 (2026-08-20, retired with the SDD gate (#149): per-PR Codex review supersedes its checkpoints, and §28.1–§28.5 keep its challenge questions); §30 (2026-08-20, retired: its core statement moved into §1).
 
 This file is the map. Each top-level § lives in `spec/NN-slug.md` (file name starts with the § number); the Decision Log lives in `DECISION-LOG.md`. Point reads: open the § file. Full pass: read `spec/` files in index order.
 

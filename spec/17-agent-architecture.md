@@ -25,7 +25,7 @@ state-auditor
   pressure drift (absorbs red-team-reviewer; enforces the §14.6 review gate).
 ```
 
-Not agent roles: the graph builder and viewer are code, owned like any code (§20, §16); Codex reviews PRs per AGENTS.md. No coordinator role is needed.
+Not agent roles: the graph builder and viewer are code, owned like any code (§20, §16); Codex reviews every PR (the #149 flow), and §28.1–§28.5 keep the drift questions retired §18 used to ask. No coordinator role is needed.
 
 ## §17.2 Agent Rules
 
