@@ -132,7 +132,7 @@ identity order (type, source, target, then the meta
 discriminant).
 ```
 
-Dependencies: none at run time. Every Atlas entry point runs on the §25.8 runtime and its standard library alone, plus the one compiled filesystem boundary §25.8 pins, a committed artifact of this repository, not a fetched package. Nothing is resolved, downloaded, or installed in order to run a checkout, so no registry is a trust root and no run needs a network. Schema support stays the closed hand-written subset §25.7 already describes: a general validator would accept keywords canon never chose, which is the fail-closed posture §24.2 refuses to trade. Typechecking and the viewer build are build-time tooling (§25.8) and reach no emitted byte.
+Dependencies: none at run time. Every Atlas entry point runs on the §25.8 runtime and its standard library alone, plus the one compiled filesystem boundary §25.8 pins, a committed artifact of this repository, not a fetched package. Nothing is resolved, downloaded, or installed in order to run a checkout, so no registry is a trust root and no run needs a network. Schema support stays the closed hand-written subset §25.7 already describes: a general validator would accept keywords canon never chose (§24.2 fail-closed). Typechecking and the viewer build are build-time tooling (§25.8) and reach no emitted byte.
 
 Frontmatter parses by the §20.4 grammar: a closed hand-written parser, never a third-party YAML library (Decision Log 2026-07-16). The §25.7 schemas validate the parsed object.
 

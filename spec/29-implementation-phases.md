@@ -25,7 +25,7 @@ Satisfying any one prerequisite, including the first knowledge viewer, does not 
 
 ### Trunk and verticals (#18)
 
-Every interface between components is a file contract (journals §8, curated frontmatter §20.4, the emitted graph §10), so implementation parallelizes as verticals over one small sequential trunk: agents share formats, never domain code. The trunk's capability boundary (§25.8) is the one thing verticals link rather than re-implement: a component that knows no node kind, journal shape, or schema is not something they can drift apart on, and a copy per vertical would fork the containment §24.2 requires, this rule's own failure mode in the one place it must not happen. Each vertical owns its §§, its script, its §27 criteria, and its scenario fixtures (the shared golden set is the trunk's, §27), and is provable without its neighbors. The guards land first because the checker, grammar, and validator are the executable invariants that keep parallel work from drifting.
+Every interface between components is a file contract (journals §8, curated frontmatter §20.4, the emitted graph §10), so implementation parallelizes as verticals over one small sequential trunk: agents share formats, never domain code. The trunk's capability boundary (§25.8) is the one thing verticals link rather than re-implement: a copy per vertical would fork the containment §24.2 requires. Each vertical owns its §§, its script, its §27 criteria, and its scenario fixtures (the shared golden set is the trunk's, §27), and is provable without its neighbors. The guards land first: the checker, grammar, and validator are the executable invariants that keep parallel work from drifting.
 
 | Package | Content | Proof |
 |---------|---------|-------|
