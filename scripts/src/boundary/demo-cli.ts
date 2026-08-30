@@ -173,8 +173,8 @@ export interface Sinks {
  * Answer the shapes that never reach a socket: help, and every refusal.
  *
  * Null means the line named a port and the caller should go and serve it.
- * Split out so the differential can compare what a caller sees without also
- * binding one.
+ * Split out so a test can read what a caller sees without also binding
+ * one.
  */
 export function report(
   parsed: Parsed,

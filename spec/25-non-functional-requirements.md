@@ -161,20 +161,18 @@ complete set of calls it can make — the blindness claimed above
 is something a reviewer checks in one command rather than a
 promise the prose makes.
 Viewer build: the viewer's source of truth is TypeScript under
-viewer/src/; Bun type-strips it to the committed viewer/*.js the
+viewer/src/; Bun type-strips it to the untracked viewer/*.js the
 browser loads, and TypeScript 6.0.3 typechecks the sources. The
 emission is pure erasure: a construct that survives stripping —
 enum, namespace, parameter properties, import aliases,
 decorators — is barred in the source, by erasableSyntaxOnly and,
 for decorators (which that flag does not reach), by the build
-refusing to emit them. Output equality is the second gate, not
-the ban: the committed file must reproduce byte for byte from
-its source, which alone would pass a regenerated enum. No
-consumer of the viewer may require Bun — the emission stays
-committed, and an embedder (§16.4) loads bytes, never a build.
-That half of the rule is untouched by the runtime above: the
-operator of an Atlas command now needs Bun; a viewer consumer
-still does not.
+refusing to emit them. The emission is a build product (#158):
+`bun run build` writes it, the serve commands emit it when it is
+missing, and CI builds it before the acceptance suite runs. No
+consumer of the viewer may require Bun — the operator serving an
+instance already runs Bun, and an embedder (§16.4) loads bytes
+from a served origin, never a build.
 Text: strict UTF-8 without BOM, LF only — every Atlas-authored
 persisted text file (§20.4 states it for frontmatter); delivered
 intake batches and imported plan originals stay as delivered

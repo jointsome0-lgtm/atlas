@@ -76,8 +76,8 @@ atlas/
   viewer/
     index.html
     viewer.css
-    contract.js   # generated from src/, committed (§25.8)
-    viewer.js     # generated from src/, committed (§25.8)
+    contract.js   # generated from src/ by `bun run build`, untracked (§25.8)
+    viewer.js     # generated from src/ by `bun run build`, untracked (§25.8)
     src/
       contract.ts # the viewer's source of truth
       viewer.ts

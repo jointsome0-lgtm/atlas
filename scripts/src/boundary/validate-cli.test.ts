@@ -6,8 +6,8 @@
  * itself. What the three passes conclude is tested where they live; this is
  * about the dispatch and the summary each one prints.
  *
- * That the Python and TypeScript implementations answer identically is a
- * separate question, asked in `scripts/differential/validate-cli.ts`.
+ * That the Python and TypeScript implementations answered identically was
+ * proved by the retired differential lane (git history, 3980cc3).
  *
  * Run: bun test scripts/src
  */

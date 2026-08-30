@@ -10,10 +10,10 @@
  * a property of a general file server this port does not mount. The demo
  * serves through the instance server's closed route table, which has no
  * logging path at all, and that it writes nothing to stderr while answering
- * requests is compared over a real socket in `scripts/differential/serve.ts`.
+ * requests was compared over a real socket by the retired differential lane.
  *
- * That the Python and TypeScript command lines answer identically is a
- * separate question, asked over 848 lines in `scripts/differential/demo-cli.ts`.
+ * That the Python and TypeScript command lines answered identically was
+ * proved by the retired differential lane (git history, 3980cc3).
  *
  * Run: bun test scripts/src
  */

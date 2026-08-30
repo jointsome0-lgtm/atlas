@@ -27,7 +27,7 @@ export interface SchemaError {
 /**
  * The only JSON Schema keywords the authored schemas may use (§25.7).
  *
- * Exported so a differential can compare the set itself rather than infer it
+ * Exported so a check can compare the set itself rather than infer it
  * from behaviour: a keyword quietly missing here is a rule quietly not
  * enforced, and every schema that uses it goes on validating clean.
  */

@@ -9,8 +9,8 @@
  * Whether the check reaches the same verdict as the oracle over repositories
  * built to break it — a secret nested three deep, a rule taken back by a
  * negation, a fixture marked in the tree and unmarked in the index — is a
- * separate question, asked over 24 constructed repositories in
- * `scripts/differential/hygiene.ts`.
+ * separate question, answered over 24 constructed repositories by the
+ * retired differential lane (git history, 3980cc3).
  *
  * Run: bun test scripts/src
  */

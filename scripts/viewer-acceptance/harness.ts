@@ -84,8 +84,6 @@ export function lab(): Lab {
   };
 
   async function start(): Promise<void> {
-    // The emission is a build product (untracked): a fresh checkout has the
-    // sources but not the files the browser loads.
     for (const emitted of ["viewer.js", "contract.js"]) {
       if (!fs.existsSync(`${ROOT}/viewer/${emitted}`)) {
         throw new Error(`viewer/${emitted} is missing — run \`bun run build\` first`);
