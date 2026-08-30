@@ -32,6 +32,7 @@ import {
   pythonRepr,
   serveConnection,
 } from "./serve.ts";
+import { buildViewer } from "./viewer-emission.ts";
 
 const ROOT = `${import.meta.dir}/../../..`;
 
@@ -203,6 +204,7 @@ export function main(argv: readonly string[], program: string): Promise<number> 
   const parsed = parseArgs(argv);
   const answered = report(parsed, program, { out: process.stdout, err: process.stderr });
   if (answered !== null) return Promise.resolve(answered);
+  if (!buildViewer()) return Promise.resolve(1);
   const port = (parsed as { readonly port: number }).port;
 
   const directory = fs.mkdtempSync(`${os.tmpdir()}/atlas-viewer-`);

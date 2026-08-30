@@ -25,6 +25,7 @@ import fs from "node:fs";
 import { AtlasReader, ReaderError, type ScannedFile } from "./reader.ts";
 import { PosixError } from "./posix.ts";
 import { type Placed, pythonInt, readWords } from "./argv.ts";
+import { buildViewer } from "./viewer-emission.ts";
 
 const ROOT = `${import.meta.dir}/../../..`;
 
@@ -964,6 +965,7 @@ export function main(argv: readonly string[], program: string): Promise<number> 
     diagnose(usageLine(program));
     return Promise.resolve(2);
   }
+  if (!buildViewer()) return Promise.resolve(1);
   const { instance, port } = parsed.args;
   const readers = openReaders(instance);
   if (readers === null) return Promise.resolve(1);

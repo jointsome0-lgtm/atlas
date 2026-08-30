@@ -13,7 +13,7 @@
  * It is a port of `check_decision_log.py`, which remains the implementation for
  * repositories without a JavaScript runtime. The two are held to identical
  * observable behaviour — arguments, diagnostics, their order, and exit codes —
- * by the retired differential lane (git history, 3980cc3).
+ * by `scripts/differential/decision-log.ts` in this repository.
  *
  * Almost every awkward line below is a regular expression. Python's `\s`, `\w`
  * and `\d` are Unicode classes and JavaScript's are not: a JavaScript `\d` is
@@ -996,8 +996,8 @@ export function parseArgs(argv: readonly string[], program: string): Arguments |
  *
  * This is the one place either side reads Unicode from its own tables rather
  * than from a rule, so a code point assigned in one release and not the other
- * would be rendered differently. The retired differential corpus pinned the
- * characters that matter.
+ * would be rendered differently. The differential corpus pins the characters
+ * that matter.
  */
 const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
 
