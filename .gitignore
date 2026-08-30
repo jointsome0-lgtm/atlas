@@ -20,6 +20,10 @@ plans/
 runs/
 secrets/
 
+# Viewer emission: built from viewer/src by `bun run build`, not tracked
+viewer/viewer.js
+viewer/contract.js
+
 # Local agent and tool state
 .claude/
 .codex/
