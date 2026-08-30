@@ -1,6 +1,18 @@
 #!/usr/bin/env bun
 
-import ts from "typescript";
+import type * as TS from "typescript";
+
+let ts: typeof TS | null = null;
+try {
+  ts = (await import("typescript")).default ?? null;
+} catch {
+  ts = null;
+}
+if (ts === null) {
+  console.error(
+    "WARNING: erasability gate skipped — typescript is not installed; `bun install` restores it and CI enforces it",
+  );
+}
 
 const SRC = new URL("../viewer/src/", import.meta.url);
 const OUT = new URL("../viewer/", import.meta.url);
@@ -38,22 +50,24 @@ function banner(name: string): string {
 // helper code of their own. Refuse them here, where the emission happens, so
 // `bun run build` fails too — not only CI's typecheck step.
 function assertErasable(name: string, source: string): void {
-  const parsed = ts.createSourceFile(
+  const t = ts;
+  if (t === null) return;
+  const parsed = t.createSourceFile(
     `${name}.ts`,
     source,
-    ts.ScriptTarget.ESNext,
+    t.ScriptTarget.ESNext,
     true,
-    ts.ScriptKind.TS,
+    t.ScriptKind.TS,
   );
   const found: string[] = [];
-  const walk = (node: ts.Node): void => {
-    if (ts.isDecorator(node)) {
+  const walk = (node: TS.Node): void => {
+    if (t.isDecorator(node)) {
       const at = parsed.getLineAndCharacterOfPosition(node.getStart(parsed));
       found.push(`viewer/src/${name}.ts:${at.line + 1}:${at.character + 1}`);
     }
-    ts.forEachChild(node, walk);
+    t.forEachChild(node, walk);
   };
-  ts.forEachChild(parsed, walk);
+  t.forEachChild(parsed, walk);
   if (found.length > 0) {
     fail(1, [
       ...found.map((at) => `${at}: decorator emits runtime code`),

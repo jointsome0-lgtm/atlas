@@ -27,7 +27,7 @@ The viewer is static and fetches `graph/atlas-graph.json` relative to itself, so
 - `bun scripts/view_demo.ts` builds the invented demo fixtures into a temporary directory and serves them at `http://127.0.0.1:8137/viewer/index.html`.
 - `bun scripts/serve_instance.ts INSTANCE_DIR` serves a private instance's already-built graph together with this checkout's viewer at `http://127.0.0.1:8138/viewer/index.html` (`--port` overrides). The instance path is required — the engine never guesses or remembers where private data lives.
 
-Both commands emit `viewer/viewer.js` and `viewer/contract.js` from `viewer/src/` when they are missing; that build needs the dev tooling, so run `bun install` once per clone before viewing.
+Both commands rebuild `viewer/viewer.js` and `viewer/contract.js` from `viewer/src/` before serving, using Bun's built-in transpiler — nothing is installed to view. With the dev tooling restored (`bun install`), the same build also runs the decorator gate.
 
 Port 8138 is the fixed origin an embedding shell allowlists in its CSP (§16.4); a random port could not be. The command is read-only: it binds loopback explicitly, answers GET and HEAD over a closed route table (the viewer's own files plus the one graph file — no listing, no other instance path), serves only requests addressed to `127.0.0.1`/`localhost` at its own port, and writes nothing. Building the graph belongs to `scripts/build_atlas_graph.ts`.
 

@@ -168,8 +168,12 @@ enum, namespace, parameter properties, import aliases,
 decorators — is barred in the source, by erasableSyntaxOnly and,
 for decorators (which that flag does not reach), by the build
 refusing to emit them. The emission is a build product (#158):
-`bun run build` writes it, the serve commands emit it when it is
-missing, and CI builds it before the acceptance suite runs. No
+`bun run build` writes it, the serve commands rebuild it before
+every serve with the runtime's own transpiler, and `bun run
+test:viewer` builds it before the §27.8 suite. The decorator
+refusal needs the dev tooling and runs wherever `bun install`
+restored it — every dev build and CI; a runtime-only serve still
+emits, saying on stderr that the gate did not run. No
 consumer of the viewer may require Bun — the operator serving an
 instance already runs Bun, and an embedder (§16.4) loads bytes
 from a served origin, never a build.

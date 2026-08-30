@@ -7,7 +7,7 @@
     "build:native": "bun scripts/build_native.ts",
     "typecheck": "bunx --bun tsc --noEmit && bunx --bun tsc --noEmit -p tsconfig.scripts.json",
     "test": "bun test scripts/src",
-    "test:viewer": "bun test --timeout 60000 scripts/viewer-acceptance",
+    "test:viewer": "bun run build && bun test --timeout 60000 scripts/viewer-acceptance",
     "verify": "bun run build:native && bun run typecheck && bun run build && bun run test"
   },
   "devDependencies": {
