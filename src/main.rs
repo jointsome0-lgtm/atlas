@@ -8,21 +8,44 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use store::Store;
 
+const EXAMPLE_SETUP: &str = if cfg!(windows) {
+    r#"Example in PowerShell. Use a fresh directory for invented Vera Example data:
+  $ATLAS_DEMO_DIR = Join-Path ([IO.Path]::GetTempPath()) ("vera-example-atlas-" + [guid]::NewGuid())"#
+} else {
+    r#"Example in Bash. Use a fresh directory for invented Vera Example data:
+  ATLAS_DEMO_DIR="$(mktemp -d /tmp/vera-example-atlas.XXXXXX)""#
+};
+
+const EXAMPLE_RECORD: &str = r#"  tatlas --data-dir "$ATLAS_DEMO_DIR" --json add --id vera-example-1 --material https://example.org/book --actor "Vera Example" --original "Vera Example: I opened the introduction.""#;
+
 #[derive(Parser)]
 #[command(
     name = "tatlas",
     version,
-    about = "Record interactions with materials in an explicit private directory",
-    after_help = "Examples (invented Vera Example data):\n  tatlas --data-dir /tmp/vera-atlas add --material https://example.org/book --actor 'Vera Example'\n  tatlas --data-dir /tmp/vera-atlas --json add --id vera-note-1 --material https://example.org/book --actor 'Vera Example' --context 'Vera Example research'\n  tatlas --data-dir /tmp/vera-atlas list --material https://example.org/book\n  tatlas --data-dir /tmp/vera-atlas list --context research --state focus\n  tatlas --data-dir /tmp/vera-atlas get --id vera-note-1\n  tatlas --data-dir /tmp/vera-atlas edit --id vera-note-1 --if-revision 1 --note 'Vera Example correction'\n  tatlas --data-dir /tmp/vera-atlas rm --id vera-note-1 --if-revision 2\n  tatlas --data-dir /tmp/vera-atlas mark --material https://example.org/book --state focus --if-revision 0\n  tatlas --data-dir /tmp/vera-atlas marks\n  tatlas --data-dir /tmp/vera-atlas mark --material https://example.org/book --state none --if-revision 1\n\nRetry: retain --id before add for safe identical retries at revision 1.\nWithout a known ID, recover an uncertain add using list/get; do not blindly repeat.\nAfter an uncertain edit or mark, read get/marks and reconcile the revision.\nAll means list without --state. A bare reference does not imply reading."
+    about = "Keep a local log of a person's or agent's interactions with books, articles and other materials",
+    after_help = r#"Start:
+  tatlas add --help
+
+Use the same private data directory for later commands. Keep real records outside
+public code checkouts. Saving a reference alone does not claim reading.
+The actor is the person or agent who interacted with the material.
+
+Use tatlas <command> --help for its fields, example and recovery steps.
+Exit codes: 0 success; 1 operation/storage error; 2 flag parsing error;
+3 revision or ID conflict. After an uncertain write, read the current state."#
 )]
 struct Cli {
     #[arg(
         long,
         global = true,
-        help = "Absolute private data directory outside the public checkout"
+        help = "Required for data commands: absolute private directory outside public code checkouts"
     )]
     data_dir: Option<PathBuf>,
-    #[arg(long, global = true, help = "Emit JSON receipts, results and errors")]
+    #[arg(
+        long,
+        global = true,
+        help = "JSON results on stdout and errors on stderr; output only"
+    )]
     json: bool,
     #[command(subcommand)]
     command: Command,
@@ -30,22 +53,31 @@ struct Cli {
 
 #[derive(Args, Default)]
 struct DetailArgs {
-    #[arg(long, help = "Exact original statement, preserved as supplied")]
+    #[arg(long, help = "Original statement, stored exactly as supplied")]
     original: Option<String>,
     #[arg(
         long,
-        help = "Interaction date, YYYY-MM-DD; independent of recording time"
+        help = "Date of the interaction, YYYY-MM-DD; separate from when this record is saved"
     )]
     interaction_date: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Supplied action label, for example opened or read; no action is inferred"
+    )]
     action: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Part of the material, for example introduction or pages 1-5"
+    )]
     portion: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Context text; list --context matches a case-sensitive substring"
+    )]
     context: Option<String>,
-    #[arg(long)]
+    #[arg(long, help = "Additional note about this record")]
     note: Option<String>,
-    #[arg(long, help = "Artifact link, stored without fetching")]
+    #[arg(long, help = "Reference to related output, stored without fetching")]
     artifact: Option<String>,
 }
 
@@ -83,27 +115,57 @@ impl From<StateArg> for State {
 #[derive(Subcommand)]
 enum Command {
     #[command(
-        about = "Save an interaction; no action is inferred",
-        after_help = "For safe retries, choose and retain --id before add. An identical retry at revision 1 confirms the existing record. If a generated-ID result is lost, recover with list --material and get; do not blindly repeat add."
+        about = "Save a material reference and any supplied account of interaction",
+        after_help = format!(r#"Only --material and --actor are required record fields. Other fields are optional.
+The data directory is initialized on the first write. Use a persistent private
+directory for real records. A material reference alone claims no reading.
+
+{EXAMPLE_SETUP}
+{EXAMPLE_RECORD}
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json get --id vera-example-1
+
+The result contains record.id and record.revision. Keep the ID for later reads
+and changes. A new record starts at revision 1.
+
+Retry: choose and retain --id before sending add. The same ID and all the same
+supplied fields confirm the existing record only while it is still at revision 1.
+Changed fields, an edited record or a deleted ID produce a conflict.
+If an automatically generated ID is lost, recover with list --material and get;
+do not blindly repeat add. If several records match, the result is unresolved."#)
     )]
     Add {
         #[arg(
             long,
-            help = "Optional stable retry key: 1..64 lowercase ASCII letters, digits, '-' or '_'; no Windows device names"
+            help = "Choose and retain before add for safe retries; 1..64 lowercase ASCII letters, digits, '-' or '_'; no Windows device names"
         )]
         id: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Exact URL or other material reference; stored without fetching or normalization"
+        )]
         material: String,
         #[arg(
             long,
-            help = "Explicit person or agent responsible for this interaction"
+            help = "Person or agent who interacted with the material; do not infer from the caller"
         )]
         actor: String,
         #[command(flatten)]
         details: DetailArgs,
     },
     #[command(
-        about = "List newest recorded interactions first, then ID for ties; filters combine with AND"
+        about = "List saved interactions",
+        after_help = format!(r#"Lists live interactions, newest recording time first, then ascending ID for ties.
+Filters combine with AND. Omit --state for All. --state none includes materials
+that were never marked and materials whose marks were cleared.
+The optional interaction date does not control this order.
+
+{EXAMPLE_SETUP}
+{EXAMPLE_RECORD}
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json list --material https://example.org/book
+
+The result contains a records array, with each record's ID and revision.
+Reads require an initialized data directory. Malformed data makes the whole list
+fail without partial output. Deletion receipts are available through get."#)
     )]
     List {
         #[arg(long, help = "Exact material reference; no URL normalization")]
@@ -113,43 +175,136 @@ enum Command {
         #[arg(long, value_enum, help = "Current material mark; omit for All")]
         state: Option<StateArg>,
     },
-    #[command(about = "Read a record, including a deletion receipt")]
+    #[command(
+        about = "Read one record and its revision",
+        after_help = format!(r#"{EXAMPLE_SETUP}
+{EXAMPLE_RECORD}
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json get --id vera-example-1
+
+The result contains record. Use record.revision as --if-revision when editing
+or deleting this record. Read again before a later change.
+A deleted record returns its ID/revision deletion receipt with status deleted.
+An unknown ID is an error. This command does not change data."#)
+    )]
     Get {
-        #[arg(long)]
+        #[arg(long, help = "Record ID from add or list")]
         id: String,
     },
-    #[command(about = "Correct supplied fields; leave omitted fields unchanged")]
+    #[command(
+        about = "Correct one record",
+        after_help = format!(r#"First read get --id with the same data directory. Copy record.revision into
+--if-revision. Supply at least one field to change or --clear FIELD.
+Omitted fields, the record ID and recording time stay unchanged.
+--clear removes an optional field; repeat it to clear several fields.
+
+{EXAMPLE_SETUP}
+{EXAMPLE_RECORD}
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json get --id vera-example-1
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json edit --id vera-example-1 --if-revision 1 --note "Vera Example correction"
+
+Revision 1 is valid here because the example just created this record.
+The result contains record with its updated revision.
+
+On a revision conflict, get the current record and reconsider the change.
+Do not merely increase --if-revision and repeat. After an uncertain result,
+use get to compare fields and revision with the intended change. A matching
+value alone does not prove which caller wrote it."#)
+    )]
     Edit {
-        #[arg(long)]
+        #[arg(long, help = "Record ID from add or list")]
         id: String,
-        #[arg(long)]
+        #[arg(long, help = "Current record.revision from get; read before changing")]
         if_revision: u64,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Correct the exact material reference; no fetching or normalization"
+        )]
         material: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Correct the stated person or agent; do not infer from the caller"
+        )]
         actor: Option<String>,
         #[command(flatten)]
         details: DetailArgs,
         #[arg(long, value_parser = ["original", "interaction-date", "action", "portion", "context", "note", "artifact"], help = "Clear an optional field; repeat for multiple fields")]
         clear: Vec<String>,
     },
-    #[command(about = "Delete record content, retaining only its ID/revision deletion receipt")]
+    #[command(
+        about = "Delete one record's content",
+        after_help = format!(r#"First read get --id with the same data directory. Copy record.revision into
+--if-revision. Deletion removes content and keeps an ID/revision receipt.
+The ID stays reserved; it cannot be reused for a new record.
+
+{EXAMPLE_SETUP}
+{EXAMPLE_RECORD}
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json get --id vera-example-1
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json rm --id vera-example-1 --if-revision 1
+
+Revision 1 is valid here because the example just created this record.
+The result contains record with status deleted and its new revision.
+
+After an uncertain deletion, repeat rm with the same pre-deletion revision
+to confirm its receipt without another write, or read get.
+On a conflict, read get and reconsider the deletion; do not guess a revision.
+Filesystem blocks and external backups are not securely erased."#)
+    )]
     Rm {
-        #[arg(long)]
+        #[arg(long, help = "Record ID from add or list")]
         id: String,
-        #[arg(long)]
+        #[arg(long, help = "Current record.revision from get; read before deleting")]
         if_revision: u64,
     },
-    #[command(about = "Set one material's current mark; revision 0 means never marked")]
+    #[command(
+        about = "Set or clear a material's Focus/Later mark",
+        after_help = format!(r#"First run marks with the same data directory. Find the exact material reference
+in its marks object and use that entry's revision as --if-revision.
+Use 0 only if the material is absent. Mark and record revisions are separate.
+
+{EXAMPLE_SETUP}
+{EXAMPLE_RECORD}
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json marks
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json mark --material https://example.org/book --state focus --if-revision 0
+
+Revision 0 is valid here because the example's marks object is empty.
+The result contains material and mark with its state and updated revision.
+Focus and Later are mutually exclusive. --state none clears the mark and
+increments its revision; it does not reset to 0. Marks are independent of records.
+Marks can exist without records; mark can initialize an empty data directory.
+
+On a conflict, run marks and reconsider the change. Do not merely increase
+the revision and repeat. After an uncertain result, compare the material's
+state and revision with the intended change; matching values alone do not
+prove which caller wrote them."#)
+    )]
     Mark {
-        #[arg(long)]
+        #[arg(long, help = "Exact material reference whose mark should change")]
         material: String,
-        #[arg(long, value_enum)]
+        #[arg(
+            long,
+            value_enum,
+            help = "focus: current focus; later: keep for later; none: clear"
+        )]
         state: StateArg,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Material's mark revision from marks; 0 only if absent, never a record revision"
+        )]
         if_revision: u64,
     },
-    #[command(about = "Read current marks and their revisions, including cleared marks")]
+    #[command(
+        about = "Read material marks and their revisions",
+        after_help = format!(r#"{EXAMPLE_SETUP}
+{EXAMPLE_RECORD}
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json mark --material https://example.org/book --state focus --if-revision 0
+  tatlas --data-dir "$ATLAS_DEMO_DIR" --json marks
+
+The result contains a marks object keyed by exact material references.
+Each entry has state and revision. Use that revision when changing the mark.
+A cleared mark remains present with state none and its current revision;
+only an absent entry uses revision 0. Reads require an initialized directory.
+This command does not change data or read interaction records."#)
+    )]
     Marks,
 }
 

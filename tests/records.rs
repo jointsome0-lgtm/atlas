@@ -225,21 +225,25 @@ fn help_and_errors_are_usable_without_storage() {
         .unwrap();
     assert!(help.status.success());
     let help = String::from_utf8(help.stdout).unwrap();
-    for term in [
-        "Vera Example",
-        "--if-revision",
-        "--json",
-        "Retry",
-        "--state none",
-    ] {
+    for term in ["tatlas add --help", "--data-dir", "--json"] {
         assert!(help.contains(term), "missing {term}");
     }
-    let add_help = Command::new(env!("CARGO_BIN_EXE_tatlas"))
-        .args(["add", "--help"])
-        .output()
-        .unwrap();
-    assert!(add_help.status.success());
-    assert!(String::from_utf8_lossy(&add_help.stdout).contains("do not blindly repeat"));
+    for subcommand in ["add", "list", "get", "edit", "rm", "mark", "marks"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_tatlas"))
+            .args([subcommand, "--help"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{subcommand} help requires data");
+        assert!(output.stderr.is_empty());
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            text.contains("Vera Example"),
+            "{subcommand} lacks an example"
+        );
+        if subcommand == "add" {
+            assert!(text.contains("do not blindly repeat"));
+        }
+    }
     let missing_actor = command(&directory(), &["add", "--material", "Vera Example book"])
         .output()
         .unwrap();

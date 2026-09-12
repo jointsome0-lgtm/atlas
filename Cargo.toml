@@ -2,7 +2,7 @@
 name = "atlas"
 version = "0.1.0"
 edition = "2024"
-description = "A local record of interactions with materials"
+description = "A local CLI log of how people and agents interact with books, articles and other materials"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/jointsome0-lgtm/atlas"
