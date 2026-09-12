@@ -361,7 +361,19 @@ impl Store {
                 }
             }
         }
-        records.sort_by(|a, b| a.id().cmp(b.id()));
+        records.sort_by(|a, b| match (a, b) {
+            (
+                Record::Live {
+                    recorded_at_ms: a_time,
+                    ..
+                },
+                Record::Live {
+                    recorded_at_ms: b_time,
+                    ..
+                },
+            ) => b_time.cmp(a_time).then_with(|| a.id().cmp(b.id())),
+            _ => unreachable!("list contains only live records"),
+        });
         Ok(records)
     }
 }

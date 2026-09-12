@@ -101,7 +101,9 @@ enum Command {
         #[command(flatten)]
         details: DetailArgs,
     },
-    #[command(about = "List live interactions, sorted by ID; filters combine with AND")]
+    #[command(
+        about = "List newest recorded interactions first, then ID for ties; filters combine with AND"
+    )]
     List {
         #[arg(long, help = "Exact material reference; no URL normalization")]
         material: Option<String>,

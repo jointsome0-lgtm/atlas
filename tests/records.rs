@@ -1,6 +1,7 @@
 mod support;
 
-use serde_json::json;
+use serde_json::{Value, json};
+use std::fs;
 use std::process::Command;
 use support::{command, directory, run};
 
@@ -124,18 +125,36 @@ fn correction_and_deletion_have_durable_receipts() {
 }
 
 #[test]
-fn filters_are_exact_for_material_and_substring_for_context() {
+fn list_orders_by_recording_time_and_id_with_exact_material_and_context_filters() {
     let data = directory();
-    for (id, material, context) in [
+    for (id, material, context, recorded_at_ms, interaction_date) in [
+        (
+            "vera-b",
+            "https://example.org/book",
+            "Vera Example research",
+            1_700_000_002_000_u64,
+            "2099-01-01",
+        ),
+        (
+            "vera-z",
+            "https://example.org/book",
+            "Vera Example research",
+            1_700_000_003_000,
+            "1900-01-01",
+        ),
         (
             "vera-a",
             "https://example.org/book",
             "Vera Example research",
+            1_700_000_002_000,
+            "2098-01-01",
         ),
         (
-            "vera-b",
+            "vera-0",
             "https://example.org/book#part",
             "Vera Example reading",
+            1_700_000_002_500,
+            "2100-01-01",
         ),
     ] {
         run(
@@ -150,21 +169,51 @@ fn filters_are_exact_for_material_and_substring_for_context() {
                 "Vera Example",
                 "--context",
                 context,
+                "--interaction-date",
+                interaction_date,
             ],
         );
+        let path = data.path().join("records").join(format!("{id}.json"));
+        let mut fixture: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        fixture["recorded_at_ms"] = recorded_at_ms.into();
+        fs::write(path, serde_json::to_vec(&fixture).unwrap()).unwrap();
     }
-    let material = run(&data, &["list", "--material", "https://example.org/book"]);
-    assert_eq!(material["records"].as_array().unwrap().len(), 1);
-    assert_eq!(material["records"][0]["id"], "vera-a");
-    assert_eq!(
-        run(&data, &["list", "--context", "research"])["records"][0]["id"],
-        "vera-a"
-    );
-    assert!(
-        run(&data, &["list", "--context", "Research"])["records"]
+    let ids = |result: Value| {
+        result["records"]
             .as_array()
             .unwrap()
-            .is_empty()
+            .iter()
+            .map(|record| record["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        ids(run(&data, &["list"])),
+        ["vera-z", "vera-0", "vera-a", "vera-b"]
+    );
+    assert_eq!(
+        ids(run(
+            &data,
+            &["list", "--material", "https://example.org/book"]
+        )),
+        ["vera-z", "vera-a", "vera-b"]
+    );
+    assert_eq!(
+        ids(run(&data, &["list", "--context", "research"])),
+        ["vera-z", "vera-a", "vera-b"]
+    );
+    assert!(ids(run(&data, &["list", "--context", "Research"])).is_empty());
+    assert!(
+        ids(run(
+            &data,
+            &[
+                "list",
+                "--material",
+                "https://example.org/book#part",
+                "--context",
+                "research"
+            ]
+        ))
+        .is_empty()
     );
 }
 

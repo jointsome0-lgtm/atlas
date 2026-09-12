@@ -34,7 +34,7 @@ atlas --data-dir "$ATLAS_DEMO_DIR" mark \
   --material https://example.org/book --state none --if-revision 1
 ```
 
-`atlas --help` has command examples. Each subcommand has `--help`. `--data-dir` and `--json` work before or after the subcommand. JSON is output only. JSON failures go to stderr, successful results to stdout. Exit codes are 0 for success, 1 for storage or operation failure, 2 for CLI syntax and 3 for revision or ID conflicts. Conflicts include the current revision.
+`atlas --help` has command examples. Each subcommand has `--help`. `--data-dir` and `--json` work before or after the subcommand. JSON is output only. JSON failures go to stderr, successful results to stdout. Exit codes are 0 for success, 1 for storage or operation errors including value validation, 2 for flag parsing and 3 for revision or ID conflicts. Conflicts include the current revision.
 
 ## Records and marks
 
@@ -46,7 +46,7 @@ Optional flags are `--original`, `--interaction-date YYYY-MM-DD`, `--action`, `-
 
 `mark --material REF --state focus|later|none --if-revision N` updates one current material mark. Use revision 0 for a material never marked. `marks` lists marks and their revisions, including cleared entries. Focus and Later are mutually exclusive. Marks can exist without records, and deleting or correcting an interaction does not change marks. No time-based transitions occur.
 
-`list` returns all live interactions, sorted by ID. `--material` matches the exact reference; `--context` searches a case-sensitive substring; `--state` filters by the current material mark. Filters combine with AND. Omit `--state` for All. Unmarked and explicitly cleared materials both match `--state none`.
+`list` returns all live interactions, newest recording time first. Equal recording times use ascending IDs. The optional interaction date does not affect this order. `--material` matches the exact reference; `--context` searches a case-sensitive substring; `--state` filters by the current material mark. Filters combine with AND. Omit `--state` for All. Unmarked and explicitly cleared materials both match `--state none`.
 
 ## Recovery and concurrent commands
 
