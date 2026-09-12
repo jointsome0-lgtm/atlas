@@ -135,7 +135,7 @@ Stage new files before running limits. The public-hygiene check reads staged blo
 
 CI runs the checks on all five supported platforms, then builds and installs each wheel through pip, uv tool and uvx. One Linux job also builds and installs the source archive. The publisher uploads those same tested artifacts to PyPI; the GitHub release attaches them and SHA256SUMS. It does not rebuild packages. Rust SBOM generation is disabled because its metadata includes local build paths.
 
-Publishing uses repository `jointsome0-lgtm/atlas`, workflow `ci.yml` and environment `pypi`. A tag `vX.Y.Z` must match Cargo.toml and Cargo.lock and point to a commit on main. The tag must also be allowed by the environment's deployment policy; the first release configured only `v0.1.0`. Changes to publishing access require the owner's approval.
+Publishing uses repository `jointsome0-lgtm/atlas`, workflow `ci.yml` and environment `pypi`. A tag `vX.Y.Z` must match Cargo.toml and Cargo.lock and point to a commit on main. The tag must also be allowed by the environment's deployment policy. Changes to publishing access require the owner's approval.
 
 ## Map
 
