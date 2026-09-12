@@ -192,8 +192,10 @@ impl Store {
             .map_err(io)?;
         serde_json::to_writer_pretty(file.as_file_mut(), value).map_err(|e| e.to_string())?;
         file.write_all(b"\n").map_err(io)?;
-        file.as_file().sync_all().map_err(io)?;
-        file.persist(path).map_err(|e| io(e.error))?;
+        let (file, temporary) = file.keep().map_err(|e| io(e.error))?;
+        let temporary = tempfile::TempPath::try_from_path(temporary).map_err(io)?;
+        file.sync_all().map_err(io)?;
+        fs::rename(&temporary, path).map_err(io)?;
         #[cfg(not(windows))]
         File::open(parent).and_then(|f| f.sync_all()).map_err(|error| {
             Error::from(format!("write may have committed but directory sync failed: {error}; read current state before retrying"))

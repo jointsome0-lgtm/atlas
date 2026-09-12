@@ -214,6 +214,7 @@ fn observers_only_see_complete_replacements() {
         ],
     );
     let path = data.path().join("records/vera-atomic.json");
+    let original = fs::File::open(&path).unwrap();
     let data_path = data.path().to_path_buf();
     let writer = thread::spawn(move || {
         for revision in 1..25 {
@@ -246,10 +247,22 @@ fn observers_only_see_complete_replacements() {
     }
     writer.join().unwrap();
     assert!(samples > 0);
+    let original: Value = serde_json::from_reader(original).unwrap();
+    assert_eq!(original["revision"], 1);
     assert_eq!(
         run(&data, &["get", "--id", "vera-atomic"])["record"]["revision"],
         25
     );
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
+        assert_eq!(
+            fs::metadata(&path).unwrap().file_attributes() & FILE_ATTRIBUTE_TEMPORARY,
+            0,
+            "committed record must not remain temporary"
+        );
+    }
 }
 
 #[test]
