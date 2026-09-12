@@ -102,7 +102,8 @@ impl Store {
             suffix.push(ancestor.file_name().ok_or("invalid data-dir")?);
             ancestor = ancestor.parent().ok_or("invalid data-dir")?;
         }
-        let mut resolved = ancestor.canonicalize().map_err(io)?;
+        let resolved_ancestor = ancestor.canonicalize().map_err(io)?;
+        let mut resolved = resolved_ancestor.clone();
         for part in suffix.iter().rev() {
             resolved.push(part);
         }
@@ -155,20 +156,23 @@ impl Store {
         }
         if writable {
             builder.create(&records).map_err(io)?;
-            File::open(&resolved)
-                .and_then(|f| f.sync_all())
-                .map_err(io)?;
-            let mut parent = if resolved != ancestor {
-                resolved.parent()
-            } else {
-                None
-            };
-            while let Some(path) = parent {
-                File::open(path).and_then(|f| f.sync_all()).map_err(io)?;
-                if path == ancestor {
-                    break;
+            #[cfg(not(windows))]
+            {
+                File::open(&resolved)
+                    .and_then(|f| f.sync_all())
+                    .map_err(io)?;
+                let mut parent = if resolved != resolved_ancestor {
+                    resolved.parent()
+                } else {
+                    None
+                };
+                while let Some(path) = parent {
+                    File::open(path).and_then(|f| f.sync_all()).map_err(io)?;
+                    if path == resolved_ancestor {
+                        break;
+                    }
+                    parent = path.parent();
                 }
-                parent = path.parent();
             }
         } else if !records.is_dir() {
             return Err("data directory is not initialized: missing records directory".into());
@@ -190,9 +194,11 @@ impl Store {
         file.write_all(b"\n").map_err(io)?;
         file.as_file().sync_all().map_err(io)?;
         file.persist(path).map_err(|e| io(e.error))?;
+        #[cfg(not(windows))]
         File::open(parent).and_then(|f| f.sync_all()).map_err(|error| {
             Error::from(format!("write may have committed but directory sync failed: {error}; read current state before retrying"))
-        })
+        })?;
+        Ok(())
     }
 
     fn record_path(&self, id: &str) -> Result<PathBuf> {

@@ -217,7 +217,7 @@ fn observers_only_see_complete_replacements() {
     let data_path = data.path().to_path_buf();
     let writer = thread::spawn(move || {
         for revision in 1..25 {
-            let note = "Vera Example note ".repeat(2048);
+            let note = "Vera Example note ".repeat(1024);
             let output = Command::new(env!("CARGO_BIN_EXE_atlas"))
                 .arg("--data-dir")
                 .arg(&data_path)
@@ -253,7 +253,6 @@ fn observers_only_see_complete_replacements() {
 }
 
 #[test]
-#[cfg(unix)]
 fn kernel_lock_blocks_a_writer_and_releases_when_holder_dies() {
     let data = directory();
     run(
@@ -268,7 +267,14 @@ fn kernel_lock_blocks_a_writer_and_releases_when_holder_dies() {
             "Vera Example",
         ],
     );
-    let mut holder = Command::new("python3").args(["-c", "import fcntl,sys,time; f=open(sys.argv[1], 'r+'); fcntl.flock(f, fcntl.LOCK_EX); print('Vera Example locked', flush=True); time.sleep(30)"]).arg(data.path().join(".lock")).stdout(Stdio::piped()).spawn().unwrap();
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let script = "import sys,time\nf=open(sys.argv[1], 'r+b')\nif sys.platform == 'win32':\n import msvcrt\n msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)\nelse:\n import fcntl\n fcntl.flock(f, fcntl.LOCK_EX)\nprint('Vera Example locked', flush=True)\ntime.sleep(30)";
+    let mut holder = Command::new(python)
+        .args(["-c", script])
+        .arg(data.path().join(".lock"))
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
     let mut marker = String::new();
     BufReader::new(holder.stdout.take().unwrap())
         .read_line(&mut marker)
@@ -322,6 +328,30 @@ fn malformed_storage_and_bad_input_fail_without_overwriting_records() {
     );
     let path = data.path().join("records/vera-malformed.json");
     let before = fs::read(&path).unwrap();
+    for id in ["Vera-example", "con", "nul", "com1", "lpt9"] {
+        let output = command(
+            &data,
+            &[
+                "add",
+                "--id",
+                id,
+                "--material",
+                "Vera Example",
+                "--actor",
+                "Vera Example",
+            ],
+        )
+        .output()
+        .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(
+            serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]
+                .as_str()
+                .unwrap()
+                .contains("id must contain")
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
     for args in [
         vec![
             "edit",

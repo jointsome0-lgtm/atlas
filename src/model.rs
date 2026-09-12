@@ -80,13 +80,19 @@ pub fn nonblank(name: &str, value: &str) -> Result<()> {
 }
 
 pub fn validate_id(id: &str) -> Result<()> {
+    let device = matches!(id, "con" | "prn" | "aux" | "nul")
+        || id
+            .strip_prefix("com")
+            .or_else(|| id.strip_prefix("lpt"))
+            .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'));
     if id.is_empty()
         || id.len() > 64
         || !id
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+        || device
     {
-        Err("id must contain 1..64 ASCII letters, digits, '-' or '_'".into())
+        Err("id must contain 1..64 lowercase ASCII letters, digits, '-' or '_'; Windows device names are reserved".into())
     } else {
         Ok(())
     }

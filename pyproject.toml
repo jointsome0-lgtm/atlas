@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "atlas"
+dynamic = ["version"]
+description = "A local record of interactions with materials"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+  "Environment :: Console",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Rust",
+]
+
+[project.urls]
+Source = "https://github.com/jointsome0-lgtm/atlas"
+Issues = "https://github.com/jointsome0-lgtm/atlas/issues"
+
+[tool.maturin]
+bindings = "bin"
+strip = true
+locked = true
+
+[tool.maturin.sbom]
+rust = false

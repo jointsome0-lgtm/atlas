@@ -4,7 +4,7 @@ use std::process::{Command, Output};
 use tempfile::TempDir;
 
 fn limits(root: &Path) -> Output {
-    Command::new("python3")
+    Command::new(if cfg!(windows) { "python" } else { "python3" })
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/limits.py"))
         .arg("--root")
         .arg(root)

@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "A local record of interactions with materials"
 license = "MIT"
+readme = "README.md"
+repository = "https://github.com/jointsome0-lgtm/atlas"
+include = ["/Cargo.toml", "/Cargo.lock", "/pyproject.toml", "/README.md", "/LICENSE", "/src/**"]
 default-run = "atlas"
 
 [dependencies]

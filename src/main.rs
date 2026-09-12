@@ -88,7 +88,7 @@ enum Command {
     Add {
         #[arg(
             long,
-            help = "Optional stable retry key: 1..64 ASCII letters, digits, '-' or '_'"
+            help = "Optional stable retry key: 1..64 lowercase ASCII letters, digits, '-' or '_'; no Windows device names"
         )]
         id: Option<String>,
         #[arg(long)]

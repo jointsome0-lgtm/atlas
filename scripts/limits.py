@@ -121,7 +121,7 @@ def check(root):
             errors.append(f'README.md: Map must list each visible directory exactly once: {sorted(directories)}')
     metadata = json.loads(command(['cargo', 'metadata', '--offline', '--no-deps', '--format-version', '1', '--manifest-path', str(root / 'Cargo.toml')], root))
     package = next(p for p in metadata['packages'] if Path(p['manifest_path']).resolve() == (root / 'Cargo.toml').resolve())
-    target_names = {str(Path(t['src_path']).relative_to(root)): t['name'] for t in package['targets'] if 'test' in t['kind']}
+    target_names = {Path(t['src_path']).relative_to(root).as_posix(): t['name'] for t in package['targets'] if 'test' in t['kind']}
     targets = set(target_names)
     if any(Path(name).parent != Path('tests') or not name.endswith('.rs') for name in targets):
         errors.append('Rust integration tests must live in tests/*.rs')

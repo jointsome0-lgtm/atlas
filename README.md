@@ -38,7 +38,7 @@ atlas --data-dir "$ATLAS_DEMO_DIR" mark \
 
 ## Records and marks
 
-`add` requires `--material` and `--actor`. An ID is generated unless you supply `--id`. Supplied IDs contain 1 to 64 ASCII letters, digits, hyphens or underscores. Material references are exact strings. Atlas neither normalizes URLs nor fetches sources.
+`add` requires `--material` and `--actor`. An ID is generated unless you supply `--id`. Supplied IDs contain 1 to 64 lowercase ASCII letters, digits, hyphens or underscores. Windows device names such as `con`, `nul`, `com1` and `lpt1` are reserved on every platform, so a store can move between case-insensitive filesystems. Material references are exact strings. Atlas neither normalizes URLs nor fetches sources.
 
 Optional flags are `--original`, `--interaction-date YYYY-MM-DD`, `--action`, `--portion`, `--context`, `--note` and `--artifact`. The original statement is stored exactly as supplied. Recording time is UTC, generated when saving, and separate from the optional interaction date. JSON represents it as Unix milliseconds in `recorded_at_ms`.
 
@@ -56,7 +56,7 @@ Edits and marks require the revision observed by the caller. A stale write fails
 
 The store is a directory containing `records/<id>.json`, optional `marks.json`, and `.lock`. JSON schema version 1 rejects unknown fields and invalid record identities. Writers initialize the store; reads require an initialized store. New directories and files use private permissions on Unix. Existing directory permissions remain the owner's responsibility.
 
-All Atlas processes using a store coordinate through the same OS advisory lock. Writers hold an exclusive lock across reading, revision checks and replacement; readers use a shared lock. A writer creates a temporary file beside its destination, flushes and syncs it, renames it atomically, then syncs the directory. The OS releases locks when processes die. Leftover `.atlas-*` temporary files are ignored; they may retain uncommitted content and may be removed only while no Atlas process is using the store. Keep `.lock` in place.
+All Atlas processes using a store coordinate through the same OS advisory lock. Writers hold an exclusive lock across reading, revision checks and replacement; readers use a shared lock. A writer creates a temporary file beside its destination, flushes and syncs it, renames it atomically, then syncs the directory on Linux and macOS. Windows flushes the record file but does not sync the containing directory; a power loss can therefore lose a recently completed rename. Process coordination and complete file replacement still apply. The OS releases locks when processes die. Leftover `.atlas-*` temporary files are ignored; they may retain uncommitted content and may be removed only while no Atlas process is using the store. Keep `.lock` in place.
 
 Use a local filesystem with working advisory locks and atomic rename. Network filesystems and uncoordinated direct edits are outside this protocol. Malformed JSON fails visibly, and Atlas does not repair it automatically. Lists fail without partial output if any record is malformed. A failure after rename or a lost output receipt may mean the write committed; read current state before retrying. These tests exercise process restarts and concurrent processes, not power-loss simulation.
 
@@ -76,7 +76,7 @@ Stage new files before running the repository limits check. The public-hygiene c
 ## Map
 
 - `examples/`: Rust syntax checker used by the limits entrypoint.
-- `scripts/`: Repository limits and public Git hygiene entrypoint.
+- `scripts/`: Repository limits, distribution contents and installed CLI checks.
 - `src/`: CLI parsing, presentation, record operations and JSON storage.
 - `tests/`: Product and limits tests through executable boundaries.
 - `tests/support/`: Temporary-store and subprocess helpers for CLI tests.
