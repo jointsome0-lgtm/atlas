@@ -10,9 +10,10 @@ use store::Store;
 
 #[derive(Parser)]
 #[command(
+    name = "tatlas",
     version,
     about = "Record interactions with materials in an explicit private directory",
-    after_help = "Examples (invented Vera Example data):\n  atlas --data-dir /tmp/vera-atlas add --material https://example.org/book --actor 'Vera Example'\n  atlas --data-dir /tmp/vera-atlas --json add --id vera-note-1 --material https://example.org/book --actor 'Vera Example' --context 'Vera Example research'\n  atlas --data-dir /tmp/vera-atlas list --material https://example.org/book\n  atlas --data-dir /tmp/vera-atlas list --context research --state focus\n  atlas --data-dir /tmp/vera-atlas get --id vera-note-1\n  atlas --data-dir /tmp/vera-atlas edit --id vera-note-1 --if-revision 1 --note 'Vera Example correction'\n  atlas --data-dir /tmp/vera-atlas rm --id vera-note-1 --if-revision 2\n  atlas --data-dir /tmp/vera-atlas mark --material https://example.org/book --state focus --if-revision 0\n  atlas --data-dir /tmp/vera-atlas marks\n  atlas --data-dir /tmp/vera-atlas mark --material https://example.org/book --state none --if-revision 1\n\nRetry: retain --id before add for safe identical retries at revision 1.\nWithout a known ID, recover an uncertain add using list/get; do not blindly repeat.\nAfter an uncertain edit or mark, read get/marks and reconcile the revision.\nAll means list without --state. A bare reference does not imply reading."
+    after_help = "Examples (invented Vera Example data):\n  tatlas --data-dir /tmp/vera-atlas add --material https://example.org/book --actor 'Vera Example'\n  tatlas --data-dir /tmp/vera-atlas --json add --id vera-note-1 --material https://example.org/book --actor 'Vera Example' --context 'Vera Example research'\n  tatlas --data-dir /tmp/vera-atlas list --material https://example.org/book\n  tatlas --data-dir /tmp/vera-atlas list --context research --state focus\n  tatlas --data-dir /tmp/vera-atlas get --id vera-note-1\n  tatlas --data-dir /tmp/vera-atlas edit --id vera-note-1 --if-revision 1 --note 'Vera Example correction'\n  tatlas --data-dir /tmp/vera-atlas rm --id vera-note-1 --if-revision 2\n  tatlas --data-dir /tmp/vera-atlas mark --material https://example.org/book --state focus --if-revision 0\n  tatlas --data-dir /tmp/vera-atlas marks\n  tatlas --data-dir /tmp/vera-atlas mark --material https://example.org/book --state none --if-revision 1\n\nRetry: retain --id before add for safe identical retries at revision 1.\nWithout a known ID, recover an uncertain add using list/get; do not blindly repeat.\nAfter an uncertain edit or mark, read get/marks and reconcile the revision.\nAll means list without --state. A bare reference does not imply reading."
 )]
 struct Cli {
     #[arg(
@@ -322,7 +323,7 @@ fn main() {
                 if json {
                     eprintln!("{}", json!({"error": message}));
                 } else {
-                    eprintln!("atlas: {message}");
+                    eprintln!("tatlas: {message}");
                 }
                 std::process::exit(1);
             }
@@ -334,7 +335,7 @@ fn main() {
                     json!({"error": error.to_string(), "current_revision": error.current_revision})
                 );
             } else {
-                eprintln!("atlas: {error}");
+                eprintln!("tatlas: {error}");
             }
             std::process::exit(if error.current_revision.is_some() {
                 3

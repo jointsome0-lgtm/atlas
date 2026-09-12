@@ -1,40 +1,72 @@
-# Atlas
+# Trail Atlas
 
-Atlas records how people and agents interact with materials. It is one local Rust CLI with the same flags for everyone. A saved reference says only that it was saved. Atlas does not infer reading, understanding or an actor.
+Trail Atlas records how people and agents interact with materials. It is one local Rust CLI with the same flags for everyone. A saved reference says only that it was saved. Atlas does not infer reading, understanding or an actor.
 
-## Build and install
+## Install
 
-Use current stable Rust with a native linker. This implementation was checked with Rust 1.98.1; CI checks stable Rust on Linux.
+The PyPI package `trail-atlas` installs the executable `tatlas`.
+
+```sh
+uv tool install trail-atlas
+tatlas --help
+```
+
+Or, inside an activated Python virtual environment:
+
+```sh
+python -m pip install trail-atlas
+tatlas --help
+```
+
+For a one-off run:
+
+```sh
+uvx --from trail-atlas tatlas --help
+```
+
+Release wheels cover Linux with glibc 2.28 or newer (x86_64 and ARM64), macOS 13 or newer (Intel and Apple silicon), and Windows x86_64. Installing a matching wheel needs no Rust toolchain. Other targets require a source build and have no native CI coverage. Data is plain JSON; the executable has no server or network access.
+
+## Build from source
+
+Use current stable Rust with a native linker. This implementation was checked with Rust 1.98.1.
 
 ```sh
 cargo build --locked --release
 cargo install --locked --path .
 ```
 
-The executable is `target/release/atlas`. Rust and Cargo are needed to build, not to run it. This version is tested on local Linux filesystems. Data is plain JSON; there is no server or network access.
+The executable is `target/release/tatlas` (`tatlas.exe` on Windows). Rust and a linker are also needed when pip builds the source archive because no wheel matches the platform.
 
 ## Try it
 
-All data below is invented and marked Vera Example. Every command uses an explicitly chosen absolute directory. Choose a private directory outside every public code checkout for real records. Atlas does not discover repository boundaries at runtime.
+All data below is invented and marked Vera Example. The first example uses Bash. Every command uses an explicitly chosen absolute directory. Choose a private directory outside every public code checkout for real records. Atlas does not discover repository boundaries at runtime.
 
 ```sh
 ATLAS_DEMO_DIR="$(mktemp -d /tmp/vera-example-atlas.XXXXXX)"
-atlas --data-dir "$ATLAS_DEMO_DIR" add --id vera-example-1 \
+tatlas --data-dir "$ATLAS_DEMO_DIR" add --id vera-example-1 \
   --material https://example.org/book --actor 'Vera Example' \
   --original 'Vera Example: I opened the introduction.' \
   --action opened --portion introduction --context 'Vera Example research'
-atlas --data-dir "$ATLAS_DEMO_DIR" mark \
+tatlas --data-dir "$ATLAS_DEMO_DIR" mark \
   --material https://example.org/book --state focus --if-revision 0
-atlas --data-dir "$ATLAS_DEMO_DIR" list --context research --state focus
-atlas --data-dir "$ATLAS_DEMO_DIR" edit --id vera-example-1 \
+tatlas --data-dir "$ATLAS_DEMO_DIR" list --context research --state focus
+tatlas --data-dir "$ATLAS_DEMO_DIR" edit --id vera-example-1 \
   --if-revision 1 --note 'Vera Example correction' --clear action
-atlas --data-dir "$ATLAS_DEMO_DIR" --json get --id vera-example-1
-atlas --data-dir "$ATLAS_DEMO_DIR" rm --id vera-example-1 --if-revision 2
-atlas --data-dir "$ATLAS_DEMO_DIR" mark \
+tatlas --data-dir "$ATLAS_DEMO_DIR" --json get --id vera-example-1
+tatlas --data-dir "$ATLAS_DEMO_DIR" rm --id vera-example-1 --if-revision 2
+tatlas --data-dir "$ATLAS_DEMO_DIR" mark \
   --material https://example.org/book --state none --if-revision 1
 ```
 
-`atlas --help` has command examples. Each subcommand has `--help`. `--data-dir` and `--json` work before or after the subcommand. JSON is output only. JSON failures go to stderr, successful results to stdout. Exit codes are 0 for success, 1 for storage or operation errors including value validation, 2 for flag parsing and 3 for revision or ID conflicts. Conflicts include the current revision.
+In PowerShell, create a temporary store and save an invented reference with:
+
+```powershell
+$AtlasDemoDir = Join-Path ([IO.Path]::GetTempPath()) ("vera-example-atlas-" + [guid]::NewGuid())
+tatlas --data-dir "$AtlasDemoDir" add --material https://example.org/book --actor "Vera Example"
+tatlas --data-dir "$AtlasDemoDir" --json list
+```
+
+`tatlas --help` has command examples. Each subcommand has `--help`. `--data-dir` and `--json` work before or after the subcommand. JSON is output only. JSON failures go to stderr, successful results to stdout. Exit codes are 0 for success, 1 for storage or operation errors including value validation, 2 for flag parsing and 3 for revision or ID conflicts. Conflicts include the current revision.
 
 ## Records and marks
 
@@ -72,6 +104,10 @@ python3 scripts/limits.py
 The repository follows the limits model. The Python entrypoint checks tracked size, directories, Markdown and public Git hygiene. It uses Cargo's integration-target discovery, verifies that each target lists runnable tests, and uses a Rust syntax checker built with `rustc_lexer` and `syn` for comments, doc attributes, test discovery and source-inclusion rules. Tests exercise the executable and the checker with invented temporary repositories. This is an explicit Rust adaptation of the Python-oriented limits skill.
 
 Stage new files before running the repository limits check. The public-hygiene check reads staged blobs, so an unstaged edit cannot hide an unmarked staged fixture or missing ignore rule. Its known path rules do not detect every personal fact. Review data before committing. The optional `.githooks/pre-commit` runs formatting and limits; no tool changes your Git hook configuration.
+
+The CI workflow runs the goal tests, formatting, lint and limits checks on each supported platform, then builds a wheel and installs it through both pip and uv. The installed CLI probe uses an empty PATH and invented data. One Linux job also builds and installs the source archive. Distribution checks restrict archive contents to the binary and package metadata, or the explicitly included build sources, README and license.
+
+Before the first PyPI release, configure a [Trusted Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/) for repository `jointsome0-lgtm/atlas`, workflow `ci.yml` and environment `pypi`. Use a tag `vX.Y.Z` matching the stable version in Cargo.toml and Cargo.lock, pointing to a commit on main. The tag run repeats all checks. Only after every platform passes does the publisher upload those same artifacts to PyPI; the following GitHub release attaches them with SHA256 checksums. The publisher does not rebuild packages. Rust SBOM generation is disabled because its metadata includes local build paths.
 
 ## Map
 

@@ -10,7 +10,7 @@ pub fn directory() -> TempDir {
 }
 
 pub fn command(directory: &TempDir, args: &[&str]) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_atlas"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_tatlas"));
     command
         .arg("--data-dir")
         .arg(directory.path())

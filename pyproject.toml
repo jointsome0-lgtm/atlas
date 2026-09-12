@@ -3,7 +3,7 @@ requires = ["maturin>=1.15,<2"]
 build-backend = "maturin"
 
 [project]
-name = "atlas"
+name = "trail-atlas"
 dynamic = ["version"]
 description = "A local record of interactions with materials"
 readme = "README.md"

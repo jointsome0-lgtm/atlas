@@ -52,7 +52,7 @@ def artifacts(directory, name, version):
     for path in found:
         if path.suffix == ".whl":
             require(path.name.startswith(stem + "-py3-none-"), "wheel name/version/bindings differ")
-            executable = "atlas.exe" if "-win_" in path.name else "atlas"
+            executable = "tatlas.exe" if "-win_" in path.name else "tatlas"
             info = stem + ".dist-info/"
             with zipfile.ZipFile(path) as archive:
                 expected = {stem + ".data/scripts/" + executable, info + "METADATA", info + "WHEEL", info + "RECORD", info + "licenses/LICENSE"}
@@ -81,7 +81,7 @@ def artifacts(directory, name, version):
 
 def probe(executable, version):
     environment = dict(os.environ, PATH="")
-    require(run([executable, "--version"], env=environment) == "atlas " + version, "installed CLI version differs")
+    require(run([executable, "--version"], env=environment) == "tatlas " + version, "installed CLI version differs")
     with tempfile.TemporaryDirectory(prefix="vera-example-atlas-") as directory:
         data = Path(directory) / "Vera Example \u0410\u0442\u043b\u0430\u0441"
         def cli(*args):
@@ -112,7 +112,7 @@ def install(path, version, source=False):
         venv.EnvBuilder(with_pip=True).create(virtual)
         binaries = virtual / ("Scripts" if os.name == "nt" else "bin")
         python = binaries / ("python.exe" if os.name == "nt" else "python")
-        executable = "atlas.exe" if os.name == "nt" else "atlas"
+        executable = "tatlas.exe" if os.name == "nt" else "tatlas"
         print(run([python, "-m", "pip", "install", "--no-deps", path], env=environment))
         probe(binaries / executable, version)
         if not source:
@@ -121,11 +121,11 @@ def install(path, version, source=False):
             environment.update(UV_TOOL_DIR=str(root / "uv-tools"), UV_TOOL_BIN_DIR=str(root / "uv-bin"), UV_CACHE_DIR=str(root / "uv-cache"), UV_PYTHON_DOWNLOADS="never")
             print(run([uv, "tool", "install", "--python", sys.executable, "--no-index", path], env=environment))
             probe(root / "uv-bin" / executable, version)
-            require(run([uv, "tool", "run", "--isolated", "--python", sys.executable, "--no-index", "--from", path, "atlas", "--version"], env=environment) == "atlas " + version, "uvx version differs")
+            require(run([uv, "tool", "run", "--isolated", "--python", sys.executable, "--no-index", "--from", path, "tatlas", "--version"], env=environment) == "tatlas " + version, "uvx version differs")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check Atlas release artifacts and actual pip/uv installs")
+    parser = argparse.ArgumentParser(description="Check Trail Atlas release artifacts and actual pip/uv installs")
     parser.add_argument("mode", choices=["version", "release", "artifacts", "wheel", "source"])
     parser.add_argument("value", nargs="?")
     args = parser.parse_args()
@@ -133,7 +133,6 @@ def main():
     if args.mode == "version":
         print(name + " " + version)
     elif args.mode == "release":
-        require(name != "atlas", "choose an available PyPI distribution name before releasing")
         require(args.value == "v" + version, "tag must equal v plus the Cargo version")
         subprocess.run(["git", "merge-base", "--is-ancestor", "HEAD", "origin/main"], cwd=ROOT, check=True)
     else:

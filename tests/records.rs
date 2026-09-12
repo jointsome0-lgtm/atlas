@@ -219,7 +219,7 @@ fn list_orders_by_recording_time_and_id_with_exact_material_and_context_filters(
 
 #[test]
 fn help_and_errors_are_usable_without_storage() {
-    let help = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let help = Command::new(env!("CARGO_BIN_EXE_tatlas"))
         .arg("--help")
         .output()
         .unwrap();
@@ -234,7 +234,7 @@ fn help_and_errors_are_usable_without_storage() {
     ] {
         assert!(help.contains(term), "missing {term}");
     }
-    let add_help = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let add_help = Command::new(env!("CARGO_BIN_EXE_tatlas"))
         .args(["add", "--help"])
         .output()
         .unwrap();
@@ -250,14 +250,14 @@ fn help_and_errors_are_usable_without_storage() {
             .unwrap()
             .contains("--actor")
     );
-    let missing_data = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let missing_data = Command::new(env!("CARGO_BIN_EXE_tatlas"))
         .args(["--json", "list"])
         .output()
         .unwrap();
     assert!(!missing_data.status.success());
     assert!(String::from_utf8_lossy(&missing_data.stderr).contains("--data-dir"));
     let data = directory();
-    let readable = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let readable = Command::new(env!("CARGO_BIN_EXE_tatlas"))
         .arg("--data-dir")
         .arg(data.path())
         .args([

@@ -218,7 +218,7 @@ fn observers_only_see_complete_replacements() {
     let writer = thread::spawn(move || {
         for revision in 1..25 {
             let note = "Vera Example note ".repeat(1024);
-            let output = Command::new(env!("CARGO_BIN_EXE_atlas"))
+            let output = Command::new(env!("CARGO_BIN_EXE_tatlas"))
                 .arg("--data-dir")
                 .arg(&data_path)
                 .args([
@@ -479,7 +479,7 @@ fn malformed_storage_and_bad_input_fail_without_overwriting_records() {
 fn read_commands_do_not_initialize_a_missing_store() {
     let root = directory();
     let missing = root.path().join("vera-example-missing");
-    let output = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let output = Command::new(env!("CARGO_BIN_EXE_tatlas"))
         .arg("--data-dir")
         .arg(&missing)
         .args(["--json", "list"])
