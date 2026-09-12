@@ -264,7 +264,11 @@ fn public_hygiene_uses_staged_content_and_rejects_private_paths() {
     let ignore = fs::read_to_string(root.path().join(".gitignore")).unwrap();
     fs::write(
         root.path().join(".gitignore"),
-        ignore.replace("data/\n", ""),
+        ignore
+            .lines()
+            .filter(|&line| line != "data/")
+            .collect::<Vec<_>>()
+            .join("\n"),
     )
     .unwrap();
     stage(root.path());
