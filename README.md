@@ -1,79 +1,117 @@
 # Trail Atlas
 
-Trail Atlas keeps a local log of what people and agents do with books, articles and other materials. Each record names the material and the person or agent involved. Optional fields store their original statement and other details. Saving a reference alone does not claim reading or understanding.
+Trail Atlas is a command-line log for people and agents working with books, articles and other materials. Save an account such as "Vera Example: I opened the introduction", find it later, and correct it when needed. Atlas keeps the records in local JSON files.
 
 ## Install
 
-The package is `trail-atlas`. The command is `tatlas`.
+The package is `trail-atlas`. It installs the `tatlas` command:
 
 ```sh
 pip install trail-atlas
-tatlas --help
 ```
 
-Run pip in a Python environment where you can install packages. On supported platforms it installs a ready-made program; Rust and uv are not needed. Wheels cover Linux with glibc 2.28 or newer on x86_64 and ARM64, macOS 13 or newer on Intel and Apple silicon, and Windows x86_64. Other targets require a source build.
+Run this in a Python environment where you can install packages. Supported platforms need neither Rust nor uv. See [other installation methods](#other-installation-methods) for platform requirements and source builds.
 
-## Make a record
+## Save and read a record
+
+The following example uses invented Vera Example data in a fresh temporary directory. Choose the setup line for your shell.
+
+Bash on Linux or macOS:
 
 ```sh
-tatlas add --help
+ATLAS_DEMO_DIR="$(mktemp -d /tmp/vera-example-atlas.XXXXXX)"
 ```
 
-Each command's help explains its fields, gives a complete example with invented Vera Example data, and describes the result. Commands that change data also explain recovery after a conflict or uncertain result. Examples use Bash on Linux/macOS and PowerShell on Windows.
+PowerShell on Windows:
 
-Choose an absolute private data directory and pass it as `--data-dir` on every data command. Use the same directory for later commands. Keep real records outside public code checkouts; Atlas does not discover repository boundaries at runtime. The temporary directories in the help examples are for disposable data.
+```powershell
+$ATLAS_DEMO_DIR = Join-Path ([IO.Path]::GetTempPath()) ("vera-example-atlas-" + [guid]::NewGuid())
+```
 
-`--material` is an exact URL or other reference. Atlas does not fetch or normalize it. `--actor` names the person or agent who interacted with the material; the caller and actor may be different. Preserve the supplied account rather than inferring an action from the reference.
+Then run these commands in the same shell:
 
-Use `--json` when a program or agent will read the result. Results go to stdout, errors to stderr. JSON is output only. `--data-dir` and `--json` work before or after the subcommand.
+```sh
+tatlas --data-dir "$ATLAS_DEMO_DIR" --json add --id vera-example-1 --material https://example.org/book --actor "Vera Example" --original "Vera Example: I opened the introduction."
+tatlas --data-dir "$ATLAS_DEMO_DIR" --json get --id vera-example-1
+```
 
-## Commands
+`add` saves the record. `get` reads it back by ID. Both JSON results contain `record.id` set to `vera-example-1` and `record.revision` set to `1`.
 
-| Command | Purpose |
+- `--material` identifies the book, article or other material by an exact URL or reference. Atlas does not fetch it or rewrite the reference.
+- `--actor` names the person or agent who interacted with that material. This can be someone other than the caller.
+- `--original` stores the supplied statement word for word.
+
+Only material and actor are required record fields. Saving a reference alone leaves the action unspecified. `tatlas add --help` explains the optional fields.
+
+For real records, choose a fixed, absolute, private directory outside public code checkouts. Pass it as `--data-dir` every time. Later commands must use the same directory. Atlas creates the store on the first write; it does not detect repository boundaries. The example's temporary directory is for disposable data.
+
+`--json` produces operation results on stdout and errors on stderr. Help remains text. Input comes from flags. `--data-dir` and `--json` work before or after the command name.
+
+## Records and marks
+
+A record describes one interaction with a material. If Vera Example opens a book today and reads a chapter tomorrow, those can be two records with different IDs. Use `add` for another interaction and `edit` to correct an existing record. Choose and retain a new ID for each interaction so you can retry by ID. If you omit `--id`, Atlas generates one.
+
+A mark describes a material's current priority. Use `focus` for materials to work on now, `later` for ones to revisit, or `none` to clear it. One material can have many records and at most one current mark. Marks can exist without records. Editing or deleting a record does not change the mark, and marks never change automatically.
+
+## Choose a command
+
+| To | Use |
 | --- | --- |
-| `add` | Save a reference and any supplied account of interaction. |
-| `list` | Read live interactions, newest recording time first. |
-| `get` | Read one record and its revision, including a deletion receipt. |
-| `edit` | Change specified fields or clear optional fields. |
-| `rm` | Remove record content, keeping its ID/revision deletion receipt. |
-| `mark` | Set Focus/Later or clear a material's current mark. |
-| `marks` | Read current marks and their revisions. |
+| Save another interaction | `add` |
+| Find saved records | `list` |
+| Read a record by ID | `get` |
+| Correct a record or clear optional fields | `edit` |
+| Delete a record's content | `rm` |
+| Set or clear a material's mark | `mark` |
+| Read material marks | `marks` |
 
-Run `tatlas COMMAND --help` for the command you need. The common route is `add`, then `list` or `get`. Before `edit` or `rm`, read the record with `get` and use its revision. Before `mark`, read `marks` and use the material's mark revision. These are separate revision counters.
+Run `tatlas COMMAND --help` for the fields and a complete example of that command.
 
-Focus and Later are mutually exclusive current marks on exact material references. They are independent of the interaction records. Clearing uses `--state none`. Marks can exist without records and never change automatically. In `list`, omit `--state` for All; `--state none` includes unmarked materials and cleared marks. Filters combine with AND. `--context` matches a case-sensitive substring.
+`list` puts the newest saved records first and omits deletion receipts. Filter by an exact reference with `--material`, or by a case-sensitive substring with `--context`. Add `--state focus`, `--state later` or `--state none` to filter by material marks. Omit `--state` for all records. `none` includes both never-marked and cleared materials. A record must match every supplied filter.
 
-Recording time is generated in UTC when saving and appears as Unix milliseconds in `recorded_at_ms`. The optional `--interaction-date` is separate and does not control list order. Equal recording times use ascending IDs. Supplied IDs use 1 to 64 lowercase ASCII letters, digits, hyphens or underscores; Windows device names are reserved on every platform.
+## Change existing data
 
-Exit codes are 0 for success, 1 for an operation or storage error, 2 for flag parsing errors and 3 for revision or ID conflicts. Conflicts include the current revision.
+A revision identifies a saved version. Atlas increases it on each edit, deletion or mark update. `--if-revision` makes your command fail if the current revision differs from the one you read.
 
-## Recovery and storage
+- Before `edit` or `rm`, use `get --id ID` and pass its `record.revision`.
+- Before `mark`, use `marks`, find the exact material reference and pass that entry's `revision`. Use `0` only when the material is absent. Clearing a mark increases its revision; it does not reset to `0`.
 
-For a retry-safe creation, choose and retain `--id` before sending `add`. Repeating the same ID and caller fields returns the existing revision-1 record with `replayed: true`. Changed fields, an edited record or a deleted ID cause a conflict. A generated-ID creation with an unknown outcome must be recovered with `list --material` and `get`; blindly repeating it can create a duplicate. If several records match, the result remains uncertain until the caller identifies it.
+Record revisions and mark revisions are separate counters. If the revision has changed, Atlas rejects the write and returns `current_revision`. Read the current data and reconsider your change before trying again.
 
-Edits and marks require the revision observed by the caller. A stale write fails without changing state. After losing an edit or mark receipt, use `get` or `marks` and compare the intended state with the returned revision. A matching value alone does not prove which caller wrote it. Repeating a successful deletion with the same pre-deletion revision confirms its tombstone without another write. IDs remain reserved after deletion.
+`edit` changes only the fields you supply. Repeat `--clear FIELD` to clear multiple optional fields. The record ID and recording time stay unchanged. `rm` removes the content but keeps an ID/revision deletion receipt that `get` can read. The deleted ID stays reserved. Deletion does not securely erase old filesystem blocks or backups.
 
-The store is a directory containing `records/<id>.json`, optional `marks.json`, and `.lock`. JSON schema version 1 rejects unknown fields and invalid record identities. Writers initialize the store; reads require an initialized store. New directories and files use private permissions on Unix. Existing directory permissions remain the owner's responsibility.
+## Recover from an uncertain result
 
-All Atlas processes using a store coordinate through the same OS advisory lock. Writers hold an exclusive lock across reading, revision checks and replacement; readers use a shared lock. A writer creates a temporary file beside its destination, flushes and syncs it, renames it atomically, then syncs the directory on Linux and macOS. Windows flushes the record file but does not sync the containing directory; a power loss can therefore lose a recently completed rename. Process coordination and complete file replacement still apply. The OS releases locks when processes die. Leftover `.atlas-*` temporary files are ignored; they may retain uncommitted content and may be removed only while no Atlas process is using the store. Keep `.lock` in place.
+An error or missing response does not always mean the write failed. Check saved state before repeating a command.
 
-Use a local filesystem with working advisory locks and atomic rename. Network filesystems and uncoordinated direct edits are outside this protocol. Malformed JSON fails visibly, and Atlas does not repair it automatically. Lists fail without partial output if any record is malformed. A failure after rename or a lost output receipt may mean the write committed; read current state before retrying. These tests exercise process restarts and concurrent processes, not power-loss simulation.
+| Command | What to do |
+| --- | --- |
+| `add` with a retained ID | Repeat the same ID and all the same fields. `replayed: true` confirms the revision-1 record without another write. Different fields, a later revision or a deleted record cause a conflict. |
+| `add` without a known ID | Find it with `list --material` and `get`. Repeating `add` can create a duplicate. Several matching records leave the outcome unresolved until you identify yours. |
+| `edit` or `mark` | Read `get` or `marks` and compare fields and revision with the intended change. Matching values alone do not prove which caller wrote them. |
+| `rm` | Repeat with the same pre-deletion revision to confirm its receipt without another write, or read `get`. |
+
+Exit codes are `0` for success, `1` for an operation or storage error, `2` for flag parsing errors and `3` for revision or ID conflicts.
+
+## Storage details
+
+The store contains `records/<id>.json`, optional `marks.json` and `.lock`. Reads require an initialized store. Schema version 1 rejects unknown fields and invalid record identities. IDs use 1 to 64 lowercase ASCII letters, digits, hyphens or underscores; Windows device names are reserved on every platform. On Unix, Atlas creates private directories and files. Existing directory permissions remain the owner's responsibility.
+
+Atlas generates recording time in UTC, stored as Unix milliseconds in `recorded_at_ms`. The optional `--interaction-date` describes when the interaction happened. It does not change list order. Equal recording times use ascending IDs.
+
+Processes coordinate through an OS advisory lock. Readers hold a shared lock. Writers hold an exclusive lock while reading, checking revisions and replacing files. A writer writes a temporary file beside the destination, flushes and syncs it, then renames it atomically. Linux and macOS also sync the containing directory. Windows does not, so power loss can lose a recently completed rename. Process coordination and complete file replacement still apply. Tests cover process restarts and concurrent processes, not power loss.
+
+Use a local filesystem with working advisory locks and atomic rename. Network filesystems and direct edits outside Atlas are outside this protocol. Malformed data fails visibly without automatic repair; lists fail without partial output.
+
+The OS releases locks when processes die. Keep `.lock` in place. Leftover `.atlas-*` temporary files are ignored and may contain uncommitted data. Remove them only while no Atlas process is using the store.
 
 ## Other installation methods
 
-If you already use uv:
+Ready-made packages cover Linux with glibc 2.28 or newer on x86_64 and ARM64, macOS 13 or newer on Intel and Apple silicon, and Windows x86_64. Other targets require a source build and have no native CI coverage.
 
-```sh
-uv tool install trail-atlas
-```
+With uv, use `uv tool install trail-atlas`. For one run, use `uvx --from trail-atlas tatlas --help`.
 
-For one run:
-
-```sh
-uvx --from trail-atlas tatlas --help
-```
-
-A source build needs current stable Rust and a native linker. This implementation was checked with Rust 1.98.1. Pip also needs these tools when it must build the source archive because no wheel matches the platform.
+A source build needs current stable Rust and a native linker. This implementation was checked with Rust 1.98.1. Pip also needs these tools if no ready-made package matches the platform.
 
 ```sh
 cargo build --locked --release
