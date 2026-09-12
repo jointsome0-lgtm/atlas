@@ -1,2 +1,4 @@
 #!/bin/sh
-exec bun scripts/check_public_hygiene.ts
+set -eu
+cargo fmt --all -- --check
+python3 scripts/limits.py

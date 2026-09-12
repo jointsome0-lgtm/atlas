@@ -1,38 +1,20 @@
-# Private data kinds
-*.sqlite*
+/target/
 *.db*
 *.jsonl
+*.sqlite*
+.agents/
+.claude/
+.codex/
 .env
 .env.*
-engine.pin
-copies-manifest
-delivery-registry
-
-# Instance-shaped directories
 atlas/
+copies-manifest
 data/
-state/
-intake/
-!fixtures/intake/
-!fixtures/intake/vera-example-batch.json
+delivery-registry
+engine.pin
 graph/
+intake/
 plans/
 runs/
 secrets/
-
-# Viewer emission: built from viewer/src by `bun run build`, not tracked
-viewer/viewer.js
-viewer/contract.js
-
-# Local agent and tool state
-.claude/
-.codex/
-.agents/
-.atlas-lock
-__pycache__/
-node_modules/
-
-# Cargo's scratch for the POSIX boundary. The shipped artifact is NOT here —
-# §25.8 commits it per target under native/*/lib/<triple>/, so a plain checkout
-# runs everything without a Rust toolchain, and CI rebuilds and compares it.
-native/*/target/
+state/

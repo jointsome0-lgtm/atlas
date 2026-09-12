@@ -1,52 +1,82 @@
 # Atlas
 
-Atlas is a knowledge-state graph under a **partial freeze**. The approved knowledge-domain vertical is active; Body Atlas remains design-only and implementation-frozen until the objective gates in [§29's Body Atlas freeze section](spec/29-implementation-phases.md) are satisfied and a new explicit owner decision is recorded. See [§29](spec/29-implementation-phases.md) for the current implementation posture.
+Atlas records how people and agents interact with materials. It is one local Rust CLI with the same flags for everyone. A saved reference says only that it was saved. Atlas does not infer reading, understanding or an actor.
 
-## Design docs
+## Build and install
 
-[`SDD.md`](SDD.md) is the map and stable-numbered § index; each section lives in its own file under [`spec/`](spec/). Start with the index, then open only the section files needed for the question at hand. The spec documents what Atlas is. Day-to-day changes flow issue → PR; a § file changes in the same PR that moves the contract it documents.
+Use current stable Rust with a native linker. This implementation was checked with Rust 1.98.1; CI checks stable Rust on Linux.
 
-## Building
-
-The engine runs on [Bun](https://bun.sh). The CLIs need nothing installed; `bun install` restores the dev tooling (typechecker and viewer tests) from the committed lockfile.
-
-One piece is not TypeScript: the narrow POSIX boundary in [`native/atlas-posix`](native/atlas-posix), a small Rust library giving the CLIs the no-follow directory operations the platform will not expose to a script. Per §25.8 its artifact ships committed, one directory per supported target, under `native/atlas-posix/lib/<triple>/` — so a plain checkout runs everything and no Rust toolchain is needed to use Atlas. The supported platforms are exactly the targets built there; today that is `x86_64-unknown-linux-gnu`, and a host without one refuses at startup rather than falling back.
-
-Rebuild it after changing the crate:
-
-```
-bun run build:native
+```sh
+cargo build --locked --release
+cargo install --locked --path .
 ```
 
-That needs `cargo` at the version [`rust-toolchain.toml`](rust-toolchain.toml) pins, runs `--offline` (the crate has no dependencies to fetch), and writes the committed artifact in place. CI runs `bun scripts/build_native.ts --check`, which rebuilds and compares instead of writing: the bytes in the tree have to be the bytes the pinned toolchain produces.
+The executable is `target/release/atlas`. Rust and Cargo are needed to build, not to run it. This version is tested on local Linux filesystems. Data is plain JSON; there is no server or network access.
 
-## Viewing a graph
+## Try it
 
-The viewer is static and fetches `graph/atlas-graph.json` relative to itself, so it needs an HTTP origin where `viewer/` and `graph/` are siblings — `file://` will not do. Two commands provide one:
+All data below is invented and marked Vera Example. Every command uses an explicitly chosen absolute directory. Choose a private directory outside every public code checkout for real records. Atlas does not discover repository boundaries at runtime.
 
-- `bun scripts/view_demo.ts` builds the invented demo fixtures into a temporary directory and serves them at `http://127.0.0.1:8137/viewer/index.html`.
-- `bun scripts/serve_instance.ts INSTANCE_DIR` serves a private instance's already-built graph together with this checkout's viewer at `http://127.0.0.1:8138/viewer/index.html` (`--port` overrides). The instance path is required — the engine never guesses or remembers where private data lives.
+```sh
+ATLAS_DEMO_DIR="$(mktemp -d /tmp/vera-example-atlas.XXXXXX)"
+atlas --data-dir "$ATLAS_DEMO_DIR" add --id vera-example-1 \
+  --material https://example.org/book --actor 'Vera Example' \
+  --original 'Vera Example: I opened the introduction.' \
+  --action opened --portion introduction --context 'Vera Example research'
+atlas --data-dir "$ATLAS_DEMO_DIR" mark \
+  --material https://example.org/book --state focus --if-revision 0
+atlas --data-dir "$ATLAS_DEMO_DIR" list --context research --state focus
+atlas --data-dir "$ATLAS_DEMO_DIR" edit --id vera-example-1 \
+  --if-revision 1 --note 'Vera Example correction' --clear action
+atlas --data-dir "$ATLAS_DEMO_DIR" --json get --id vera-example-1
+atlas --data-dir "$ATLAS_DEMO_DIR" rm --id vera-example-1 --if-revision 2
+atlas --data-dir "$ATLAS_DEMO_DIR" mark \
+  --material https://example.org/book --state none --if-revision 1
+```
 
-Both commands rebuild `viewer/viewer.js` and `viewer/contract.js` from `viewer/src/` before serving, using Bun's built-in transpiler — nothing is installed to view. With the dev tooling restored (`bun install`), the same build also runs the decorator gate.
+`atlas --help` has command examples. Each subcommand has `--help`. `--data-dir` and `--json` work before or after the subcommand. JSON is output only. JSON failures go to stderr, successful results to stdout. Exit codes are 0 for success, 1 for storage or operation failure, 2 for CLI syntax and 3 for revision or ID conflicts. Conflicts include the current revision.
 
-Port 8138 is the fixed origin an embedding shell allowlists in its CSP (§16.4); a random port could not be. The command is read-only: it binds loopback explicitly, answers GET and HEAD over a closed route table (the viewer's own files plus the one graph file — no listing, no other instance path), serves only requests addressed to `127.0.0.1`/`localhost` at its own port, and writes nothing. Building the graph belongs to `scripts/build_atlas_graph.ts`.
+## Records and marks
 
-## Ecosystem
+`add` requires `--material` and `--actor`. An ID is generated unless you supply `--id`. Supplied IDs contain 1 to 64 ASCII letters, digits, hyphens or underscores. Material references are exact strings. Atlas neither normalizes URLs nor fetches sources.
 
-Atlas is the knowledge layer of [selfos](https://github.com/jointsome0-lgtm/selfos), a personal state platform, alongside [ephemeris](https://github.com/jointsome0-lgtm/ephemeris) (activity) and [exp2res](https://github.com/jointsome0-lgtm/exp2res) (experience).
+Optional flags are `--original`, `--interaction-date YYYY-MM-DD`, `--action`, `--portion`, `--context`, `--note` and `--artifact`. The original statement is stored exactly as supplied. Recording time is UTC, generated when saving, and separate from the optional interaction date. JSON represents it as Unix milliseconds in `recorded_at_ms`.
 
-## Public data boundary
+`get --id ID` reads a record and its revision. `edit --id ID --if-revision N` changes only supplied fields. Use `--clear FIELD` to remove an optional field; repeat the flag to clear several. ID and recording time remain stable. Original statements remain unchanged unless explicitly corrected or cleared. `rm --id ID --if-revision N` removes the record content and prints its deletion receipt. It leaves a content-free ID/revision tombstone, which `get` can read. File replacement does not securely erase old filesystem blocks or external backups.
 
-This is a public engine repository. All real data lives in a private instance repository outside this checkout. Only invented demo fixtures authored by the synthetic persona and marked with the literal `Vera Example` belong here. The [architecture](https://github.com/jointsome0-lgtm/selfos/blob/main/docs/architecture.md), [private-instance ownership](https://github.com/jointsome0-lgtm/selfos/blob/main/docs/instance.md), and [deletion](https://github.com/jointsome0-lgtm/selfos/blob/main/docs/deletion.md) contracts are canonical in selfos.
+`mark --material REF --state focus|later|none --if-revision N` updates one current material mark. Use revision 0 for a material never marked. `marks` lists marks and their revisions, including cleared entries. Focus and Later are mutually exclusive. Marks can exist without records, and deleting or correcting an interaction does not change marks. No time-based transitions occur.
 
-## Public hygiene
+`list` returns all live interactions, sorted by ID. `--material` matches the exact reference; `--context` searches a case-sensitive substring; `--state` filters by the current material mark. Filters combine with AND. Omit `--state` for All. Unmarked and explicitly cleared materials both match `--state none`.
 
-Run the public-hygiene checker with `bun scripts/check_public_hygiene.ts`. Enable the committed pre-commit hook once per clone with `git config core.hooksPath .githooks`.
+## Recovery and concurrent commands
 
-## Security
+For a retry-safe creation, choose and retain `--id` before sending `add`. Repeating the same ID and caller fields returns the existing revision-1 record with `replayed: true`. Changed fields, an edited record or a deleted ID cause a conflict. A generated-ID creation with an unknown outcome must be recovered with `list --material` and `get`; blindly repeating it can create a duplicate. If several records match, the result remains uncertain until the caller identifies it.
 
-Security policy is canonical in the [selfos umbrella repository](https://github.com/jointsome0-lgtm/selfos/blob/main/SECURITY.md).
+Edits and marks require the revision observed by the caller. A stale write fails without changing state. After losing an edit or mark receipt, use `get` or `marks` and compare the intended state with the returned revision. A matching value alone does not prove which caller wrote it. Repeating a successful deletion with the same pre-deletion revision confirms its tombstone without another write. IDs remain reserved after deletion.
 
-## License
+The store is a directory containing `records/<id>.json`, optional `marks.json`, and `.lock`. JSON schema version 1 rejects unknown fields and invalid record identities. Writers initialize the store; reads require an initialized store. New directories and files use private permissions on Unix. Existing directory permissions remain the owner's responsibility.
 
-[MIT](LICENSE)
+All Atlas processes using a store coordinate through the same OS advisory lock. Writers hold an exclusive lock across reading, revision checks and replacement; readers use a shared lock. A writer creates a temporary file beside its destination, flushes and syncs it, renames it atomically, then syncs the directory. The OS releases locks when processes die. Leftover `.atlas-*` temporary files are ignored; they may retain uncommitted content and may be removed only while no Atlas process is using the store. Keep `.lock` in place.
+
+Use a local filesystem with working advisory locks and atomic rename. Network filesystems and uncoordinated direct edits are outside this protocol. Malformed JSON fails visibly, and Atlas does not repair it automatically. Lists fail without partial output if any record is malformed. A failure after rename or a lost output receipt may mean the write committed; read current state before retrying. These tests exercise process restarts and concurrent processes, not power-loss simulation.
+
+## Development
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+python3 scripts/limits.py
+```
+
+The repository follows the limits model. The Python entrypoint checks tracked size, directories, Markdown and public Git hygiene. It uses Cargo's integration-target discovery, verifies that each target lists runnable tests, and uses a Rust syntax checker built with `rustc_lexer` and `syn` for comments, doc attributes, test discovery and source-inclusion rules. Tests exercise the executable and the checker with invented temporary repositories. This is an explicit Rust adaptation of the Python-oriented limits skill.
+
+Stage new files before running the repository limits check. The public-hygiene check reads staged blobs, so an unstaged edit cannot hide an unmarked staged fixture or missing ignore rule. Its known path rules do not detect every personal fact. Review data before committing. The optional `.githooks/pre-commit` runs formatting and limits; no tool changes your Git hook configuration.
+
+## Map
+
+- `examples/`: Rust syntax checker used by the limits entrypoint.
+- `scripts/`: Repository limits and public Git hygiene entrypoint.
+- `src/`: CLI parsing, presentation, record operations and JSON storage.
+- `tests/`: Product and limits tests through executable boundaries.
+- `tests/support/`: Temporary-store and subprocess helpers for CLI tests.
